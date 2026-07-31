@@ -1,0 +1,710 @@
+/**
+ * Forge Hub's own layer, on top of @cloudsforge/ui.
+ *
+ * Everything here is prefixed `wt-`. That is the web template's prefix rather than a `hub-` of
+ * this app's own, and deliberately so: `src/components/states.tsx` and `src/lib/auth.tsx` are
+ * carried from the template byte for byte, they emit `wt-` class names, and a second prefix beside
+ * them would mean two answers to "what is the empty state called" in one stylesheet. The rule the
+ * prefix exists for is unchanged — nothing in this file may collide with, or quietly override, a
+ * `cf-` class from the design system.
+ *
+ * Every colour, space and font is a token. A literal hex here is a colour that will not follow the
+ * substrate, and a page that does not follow the substrate is the one page in the estate that
+ * looks wrong on a dark display.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--cf-bg);
+  color: var(--cf-fg);
+  font-family: var(--cf-font, system-ui, sans-serif);
+  /* The bar is dark on every surface; the page follows the substrate. */
+  color-scheme: dark;
+}
+
+/* ------------------------- the bar's search ------------------------ */
+
+/*
+ * Rendered into `CloudsForgeBar`'s `rightSlot`, so it sits inside the 46px bar rather than in a
+ * second bar underneath it. It collapses below the width where a placeholder stops being legible:
+ * a search field too narrow to read the prompt in is worse than the ⌘K shortcut alone.
+ */
+.wt-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wt-search__input {
+  width: 15rem;
+  max-width: 32vw;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.14));
+  background: var(--cf-bg-sunken);
+  color: var(--cf-fg);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.wt-search__input:focus-visible {
+  outline: 2px solid var(--cf-accent);
+  outline-offset: 1px;
+}
+
+.wt-search__hint {
+  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  color: var(--cf-fg-mute);
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.14));
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
+@media (max-width: 40rem) {
+  .wt-search {
+    display: none;
+  }
+}
+
+/* ----------------------------- sub-nav ----------------------------- */
+
+/*
+ * Docked at exactly the bar's height. `--cf-bar-h` is the token the bar itself is sized with, so
+ * the two cannot drift; a copied `46px` would leave a gap or an overlap the day the bar changes,
+ * on every surface at once and on none of the ones anybody rechecked.
+ */
+.wt-subnav {
+  position: sticky;
+  top: var(--cf-bar-h);
+  z-index: 40;
+  background: var(--cf-bg-raised);
+  border-bottom: 1px solid var(--cf-border, rgba(255, 255, 255, 0.08));
+}
+
+.wt-subnav__inner {
+  display: flex;
+  gap: 0.25rem;
+  align-items: stretch;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  /* Seven entries do not fit a phone. Scrolling the nav beats wrapping it into two rows, which
+     would move the page content down by a line on exactly one breakpoint. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wt-subnav__link {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  padding: 0.7rem 0.85rem;
+  color: var(--cf-fg-dim);
+  text-decoration: none;
+  font-size: 0.875rem;
+  /* The active marker is a 2px underline in the accent, and the LABEL also changes weight and
+     colour: colour is never the only channel. */
+  border-bottom: 2px solid transparent;
+}
+
+.wt-subnav__link:hover {
+  color: var(--cf-fg);
+  background: var(--cf-surface-hover);
+}
+
+.wt-subnav__link.is-active {
+  color: var(--cf-fg);
+  font-weight: 600;
+  border-bottom-color: var(--cf-accent);
+}
+
+.wt-subnav__link:focus-visible {
+  outline: 2px solid var(--cf-accent);
+  outline-offset: -2px;
+}
+
+/* ------------------------------ page ------------------------------- */
+
+.wt-main {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.wt-page__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.wt-page__title {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+.wt-page__meta {
+  margin: 0;
+  color: var(--cf-fg-mute);
+  font-size: 0.8rem;
+}
+
+.wt-panel {
+  background: var(--cf-surface-solid);
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+/* A capability the estate does not serve yet is drawn as a hole, not as a panel with nothing in
+   it: dashed, so it reads as "unfinished" at a glance rather than as "empty". */
+.wt-panel--hole {
+  background: none;
+  border-style: dashed;
+}
+
+.wt-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.wt-panel__title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--cf-fg-dim);
+  font-weight: 600;
+}
+
+/* Two panels side by side above 60rem, stacked below. Grid rather than flex so the two columns
+   are equal regardless of how much is in each — a wallet list of one and an activity list of
+   twenty must not produce two panels of wildly different widths. */
+.wt-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 60rem) {
+  .wt-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.wt-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.wt-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px dashed var(--cf-border, rgba(255, 255, 255, 0.18));
+  color: var(--cf-fg-dim);
+  font-size: 0.85rem;
+}
+
+.wt-banner--degraded {
+  border-style: solid;
+  border-color: var(--cf-warning, #f4a63c);
+  color: var(--cf-fg);
+}
+
+.wt-banner__icon {
+  color: var(--cf-warning, #f4a63c);
+}
+
+.wt-note {
+  color: var(--cf-fg-dim);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+/* A statement that qualifies a number above it — "3 holdings are unpriced and excluded from this
+   total". Indented against the accent so it reads as attached to the figure rather than as a
+   separate remark. */
+.wt-note--caveat {
+  border-left: 2px solid var(--cf-warning, #f4a63c);
+  padding-left: 0.6rem;
+}
+
+.wt-link {
+  color: var(--cf-accent);
+  font-size: 0.85rem;
+}
+
+.wt-facts {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.wt-facts dt {
+  color: var(--cf-fg-mute);
+}
+
+.wt-facts dd {
+  margin: 0;
+}
+
+.wt-facts--mono dd {
+  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+/* --------------------------- tile notes ---------------------------- */
+
+/*
+ * What a panel says about the freshness of what is under it. Three tones, and each differs in
+ * SHAPE (the icon) and in WORDS as well as in colour, so a reader who cannot separate amber from
+ * red still has two other channels.
+ */
+.wt-tilenote {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--cf-fg-dim);
+}
+
+.wt-tilenote--degraded {
+  color: var(--cf-fg);
+}
+
+.wt-tilenote--degraded .wt-tilenote__icon {
+  color: var(--cf-warning, #f4a63c);
+}
+
+.wt-tilenote--unavailable {
+  color: var(--cf-fg);
+}
+
+.wt-tilenote--unavailable .wt-tilenote__icon {
+  color: var(--cf-critical, #d6412f);
+}
+
+/* ------------------------------ rows ------------------------------- */
+
+.wt-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--cf-border, rgba(255, 255, 255, 0.06));
+  font-size: 0.875rem;
+}
+
+.wt-row:first-child {
+  border-top: none;
+}
+
+.wt-row--critical {
+  /* The one row shape that is coloured, because a stuck withdrawal is money that is neither the
+     user's nor gone, and it must not read as one more line in a list. */
+  border-left: 2px solid var(--cf-critical, #d6412f);
+  padding-left: 0.5rem;
+}
+
+.wt-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.wt-row__title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.wt-row__sub {
+  color: var(--cf-fg-mute);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.wt-row__sub--critical {
+  color: var(--cf-critical, #d6412f);
+}
+
+.wt-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.wt-row__time {
+  color: var(--cf-fg-mute);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.wt-row__amount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A feed is scanned by time, so its rows are denser than a list that is read one item at a time. */
+.wt-rows--feed .wt-row {
+  padding: 0.4rem 0;
+}
+
+.wt-addr {
+  font-size: 0.78rem;
+  color: var(--cf-fg-dim);
+  /* An address retyped by hand is an address sent to the wrong place. One click selects all of
+     it, and it wraps rather than being clipped. */
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.wt-addr--short {
+  user-select: text;
+}
+
+/* ------------------------------ chips ------------------------------ */
+
+.wt-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.14));
+  color: var(--cf-fg-mute);
+  font-size: 0.7rem;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.wt-chip--ok {
+  border-color: var(--cf-success, #7fae5c);
+  color: var(--cf-success, #7fae5c);
+}
+
+.wt-chip--warn {
+  border-color: var(--cf-warning, #f4a63c);
+  color: var(--cf-warning, #f4a63c);
+}
+
+.wt-chip--hole {
+  border-style: dashed;
+}
+
+/* Lifecycle dot. Colour is never the only channel — every dot sits beside a text state chip. */
+.wt-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--cf-fg-mute);
+}
+
+.wt-dot--active {
+  background: var(--cf-success, #7fae5c);
+}
+
+.wt-dot--pending,
+.wt-dot--provisioning {
+  background: var(--cf-warning, #f4a63c);
+}
+
+.wt-dot--critical,
+.wt-dot--frozen {
+  background: var(--cf-critical, #d6412f);
+}
+
+/* --------------------------- needs-you ----------------------------- */
+
+.wt-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.wt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.1));
+  background: var(--cf-bg-raised);
+}
+
+.wt-card--warning {
+  border-color: var(--cf-warning, #f4a63c);
+}
+
+.wt-card--critical {
+  border-color: var(--cf-critical, #d6412f);
+}
+
+.wt-card__title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.wt-card__detail {
+  margin: 0;
+  color: var(--cf-fg-dim);
+  font-size: 0.8rem;
+}
+
+.wt-card__progress {
+  margin: 0;
+  color: var(--cf-fg-mute);
+  font-size: 0.78rem;
+}
+
+.wt-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* Each card names ONE source, because each card is derived from exactly one upstream and that is
+   what makes "a card that cannot load is absent, not broken" legible rather than mysterious. */
+.wt-card__source {
+  color: var(--cf-fg-mute);
+  font-size: 0.7rem;
+  text-transform: lowercase;
+}
+
+/* ----------------------------- alerts ------------------------------ */
+
+.wt-alerts {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wt-alert {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--cf-warning, #f4a63c);
+  font-size: 0.85rem;
+}
+
+.wt-alert--critical {
+  border-color: var(--cf-critical, #d6412f);
+}
+
+.wt-alert__icon {
+  color: var(--cf-warning, #f4a63c);
+}
+
+.wt-alert--critical .wt-alert__icon {
+  color: var(--cf-critical, #d6412f);
+}
+
+.wt-alert__source {
+  margin-left: auto;
+  color: var(--cf-fg-mute);
+  font-size: 0.7rem;
+}
+
+/* ----------------------------- tables ------------------------------ */
+
+/* A table is the accessible, copyable and printable form of these numbers. It scrolls inside its
+   own wrapper so a narrow screen scrolls the table rather than the page. */
+.wt-tablewrap {
+  overflow-x: auto;
+}
+
+.wt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.wt-table th,
+.wt-table td {
+  text-align: left;
+  padding: 0.45rem 0.6rem 0.45rem 0;
+  border-bottom: 1px solid var(--cf-border, rgba(255, 255, 255, 0.06));
+  white-space: nowrap;
+}
+
+.wt-table thead th {
+  color: var(--cf-fg-mute);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wt-table tbody th {
+  font-weight: 600;
+}
+
+.wt-table__row--inactive {
+  color: var(--cf-fg-mute);
+}
+
+/*
+ * An unpriced holding. It is NOT dimmed away and it is NOT struck through: the amount on that row
+ * is exactly as true as every other amount in the table, and only the valuation is missing. The
+ * marker is on the value cell alone.
+ */
+.wt-unpriced {
+  color: var(--cf-warning, #f4a63c);
+  font-size: 0.8rem;
+}
+
+.wt-unpriced__why {
+  color: var(--cf-fg-mute);
+}
+
+/* Each quote's own observation time, beside its own value. Distinct from the summary stamp in the
+   page head, which is the OLDEST of them. */
+.wt-asof {
+  color: var(--cf-fg-mute);
+  font-size: 0.72rem;
+  margin-left: 0.35rem;
+}
+
+.wt-unit {
+  color: var(--cf-fg-mute);
+  font-size: 0.72rem;
+}
+
+/* ------------------------------ feed ------------------------------- */
+
+.wt-feed__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* ------------------------- the four states ------------------------- */
+
+/*
+ * Loading, empty, failed and forbidden differ in SHAPE and WORDS as well as colour: a reader who
+ * cannot separate two hues still has two other channels telling them which of the four they are
+ * looking at.
+ */
+.wt-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 3rem 1rem;
+  border-radius: 10px;
+}
+
+.wt-state__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.wt-state__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.wt-state__hint,
+.wt-state__meta {
+  margin: 0;
+  color: var(--cf-fg-dim);
+  font-size: 0.875rem;
+  max-width: 34rem;
+}
+
+.wt-state--empty {
+  border: 1px dashed var(--cf-border, rgba(255, 255, 255, 0.14));
+  color: var(--cf-fg-dim);
+}
+
+.wt-state--failed {
+  border: 1px solid var(--cf-critical, #d6412f);
+}
+
+.wt-state--failed .wt-state__icon,
+.wt-state--forbidden .wt-state__icon {
+  color: var(--cf-critical, #d6412f);
+}
+
+.wt-state--forbidden {
+  border: 1px solid var(--cf-border, rgba(255, 255, 255, 0.14));
+  background: var(--cf-bg-sunken);
+}
+
+/*
+ * The request id is the string a user reads down a phone line or pastes into a support form, so
+ * it is monospace, selectable and on a line of its own.
+ */
+.wt-reqid {
+  user-select: all;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--cf-bg-sunken);
+  font-family: var(--cf-font-mono, ui-monospace, monospace);
+}
+
+.wt-spinner {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 2px solid var(--cf-border, rgba(255, 255, 255, 0.2));
+  border-top-color: var(--cf-accent);
+  animation: wt-spin 0.7s linear infinite;
+}
+
+@keyframes wt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A spinner is decoration; a reader who asked for less motion gets a static ring. */
+@media (prefers-reduced-motion: reduce) {
+  .wt-spinner {
+    animation: none;
+  }
+}

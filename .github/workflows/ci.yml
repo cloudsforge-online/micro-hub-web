@@ -1,0 +1,206 @@
+# Continuous integration.
+#
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+# THE `check` AND `image` JOBS BELOW ARE TEMPORARY. The org's reusable `web-ci.yml` is the target
+# and the `hygiene` job already calls the org repository; the two local jobs exist for one reason
+# and disappear with it:
+#
+#   @cloudsforge/ui is unpublished, and this repository consumes it as `link:../ui/packages/ui`.
+#   The reusable workflow does a single checkout and then `pnpm install --frozen-lockfile`, which
+#   cannot resolve a sibling directory that is not there. The day the design system is published
+#   and the specifier in package.json becomes `^1.0.0`, everything from `check:` to the end of
+#   `image:` is deleted and replaced by:
+#
+#     jobs:
+#       ci:
+#         uses: cloudsforge-online/micro-org/.github/workflows/web-ci.yml@main
+#         with:
+#           app: hub-web
+#         permissions:
+#           contents: read
+#           packages: read
+#
+#   — the calling convention in `org/templates/web/_github/workflows/ci.yml`. The measured target
+#   in docs/ecosystem/03 §5 is zero repositories with a bespoke CI file, so treat every line from
+#   `check:` down as a liability with a deletion date rather than as something to extend.
+#
+# ONE INPUT OF THE REUSABLE WORKFLOW WILL STILL NOT SUIT THIS REPOSITORY: its `image` job probes
+# `/some/deep/route` and requires a 200. Forge Hub's nginx.conf enumerates the app's real routes
+# and answers 404 for everything else ON PURPOSE — an unknown address served as a success is
+# indexed by crawlers and called healthy by monitors. So `build-image: false` will be passed and
+# the image is checked here, where the probe can assert the honest answer instead.
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: hub-web }
+
+      # Temporary, for the same reason as the Dockerfile's second build context: the design system
+      # is unpublished and resolves through `link:../ui/packages/ui`.
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-ui
+          path: ui
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: hub-web/pnpm-lock.yaml }
+
+      - name: Install
+        working-directory: hub-web
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: hub-web
+        run: pnpm typecheck
+
+      - name: Test
+        working-directory: hub-web
+        run: pnpm test
+
+      - name: Build
+        working-directory: hub-web
+        run: pnpm build
+
+      # A frontend that builds to nothing is a blank page, not a build failure. The previous estate
+      # served SPAs from the API process and shipped an image with no dist in it.
+      - name: The bundle exists
+        working-directory: hub-web
+        run: |
+          test -f dist/index.html || { echo "::error::dist/index.html is missing after a successful build"; exit 1; }
+          echo "ok: $(find dist -type f | wc -l | tr -d ' ') files in dist"
+
+  rules:
+    name: Estate rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No build-time configuration
+        # The same rule as test/no-build-time-config.test.ts, checked again here so it fails even
+        # if somebody deletes the test along with the line it forbids. A `VITE_` variable is read
+        # at build time and frozen into the artefact, and an artefact with an environment frozen
+        # into it has to be rebuilt to be promoted — which means the thing that reaches production
+        # is not the thing that passed CI.
+        run: |
+          set -uo pipefail
+          if grep -rn --include='*.ts' --include='*.tsx' --include='*.html' \
+               -e 'import\.meta\.env' -e 'VITE_' src index.html; then
+            echo "::error::this bundle must read no build-time environment; hosts come from cloudsforgeHosts() at runtime"
+            exit 1
+          fi
+          echo "ok: no build-time environment"
+
+      - name: No hard-coded CloudsForge hostname
+        # A literal hostname is a second, unversioned copy of the surface registry, and the copy is
+        # the one that will be wrong.
+        run: |
+          set -uo pipefail
+          if grep -rn --include='*.ts' --include='*.tsx' 'cloudsforge\.online' src; then
+            echo "::error::resolve hosts through cloudsforgeHosts() rather than naming them"
+            exit 1
+          fi
+          echo "ok: no literal hostnames in src"
+
+      - name: The SPA fallback keeps its 404
+        # Comments are stripped first. nginx.conf's own header QUOTES the directive it forbids, in
+        # order to explain why the routes are enumerated by hand, so a grep over the raw file
+        # matches the warning and fails a correct config. (The web template's copy of this step
+        # does exactly that, and fails on its own pristine nginx.conf.)
+        run: |
+          set -uo pipefail
+          directives=$(grep -v '^[[:space:]]*#' nginx.conf)
+          if printf '%s\n' "$directives" | grep -nE 'try_files[[:space:]]+\$uri[[:space:]]+(\$uri/[[:space:]]+)?/index\.html'; then
+            echo "::error::unknown paths must 404; serve the shell through error_page 404 /index.html"
+            exit 1
+          fi
+          printf '%s\n' "$directives" | grep -q 'error_page 404 /index.html'
+          echo "ok: unknown paths answer 404"
+
+      - name: The auth callback is redeemed before the app renders
+        # The hand-off code has to leave the address bar before the exchange goes over the wire,
+        # and that only happens if bootstrapSession() runs before React mounts.
+        run: grep -q 'bootstrapSession' src/main.tsx
+
+      - name: The route table, the navigation and nginx agree
+        # Already asserted by test/routes.test.ts; repeated here so deleting the test does not
+        # silently delete the rule. A route in the router but not in nginx works under `pnpm dev`
+        # and 404s on the first hard refresh in production.
+        run: test -f test/routes.test.ts && grep -q 'nginx.conf' test/routes.test.ts
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: hub-web }
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-ui
+          path: ui
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: hub-web
+          build-contexts: uipkg=ui
+          build-args: RELEASE=${{ github.sha }}
+          push: false
+          load: true
+          tags: hub-web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: The image serves the SPA, and 404s an address it does not own
+        run: |
+          set -euo pipefail
+          docker run -d --name ci-hub-web -p 127.0.0.1:8080:8080 hub-web:ci
+          for attempt in $(seq 1 20); do
+            code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          [ "${code:-}" = "200" ] || { echo "::error::the image returned ${code:-no answer} for /"; docker logs --tail 60 ci-hub-web; exit 1; }
+
+          # A route this app OWNS must survive a hard refresh.
+          deep=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/wallet/deposits/abc || true)
+          [ "$deep" = "200" ] || { echo "::error::/wallet/deposits/abc returned $deep — an owned route must be served the shell"; exit 1; }
+
+          # A route it does NOT own must answer 404 while still serving the shell, so the reader
+          # gets a real page and the status line tells the truth. This is the assertion the org's
+          # reusable image job cannot make, because it requires a 200 for any deep link.
+          unknown=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/nope/not/a/route || true)
+          [ "$unknown" = "404" ] || { echo "::error::an unknown address returned $unknown; it must be 404"; exit 1; }
+          curl -s -m 5 http://127.0.0.1:8080/nope/not/a/route | grep -q '<div id="root">' \
+            || { echo "::error::the 404 did not serve the app shell"; exit 1; }
+          echo "ok: owned routes are served, unknown addresses 404 with the shell"
+      - name: Down
+        if: always()
+        run: docker rm -f ci-hub-web || true
+
+  hygiene:
+    # The org's reusable secret check. Cheap, and it catches the failure that cannot be undone: a
+    # secret pushed to a repository is compromised the moment it lands, and rotating it is the only
+    # remedy.
+    uses: cloudsforge-online/micro-org/.github/workflows/secret-hygiene.yml@main
+    permissions:
+      contents: read

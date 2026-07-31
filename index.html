@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  data-cf-product picks the accent ramp and data-cf-substrate the ash ramp, both from
+  @cloudsforge/ui/tokens.css. They are on <html> and set STATICALLY here rather than by React,
+  because a page that paints before the attributes land flashes the default and then changes
+  colour.
+
+  `hub` is the one product key that resolves to --cf-ember rather than to a product accent.
+  Design-system rule 1 of section 3: ember is company chrome, and Hub is the container the user is
+  already inside rather than a destination in the switcher, so it never has to be told apart from
+  anything.
+-->
+<html lang="en-GB" data-cf-product="hub" data-cf-substrate="warm">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="colour-scheme" content="dark" />
+    <!--
+      The build that produced this bundle. Stamped by the Dockerfile, read by src/lib/obs.ts, and
+      the reason an error report can be pinned to the deploy that introduced it. It is an identity
+      rather than a configuration: it names the artefact, it does not tell it where it is running.
+    -->
+    <meta name="cf-release" content="dev" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192x192.png" />
+
+    <title>Forge Hub</title>
+    <meta name="description" content="Your CloudsForge control centre: portfolio, wallets, activity and security in one place." />
+    <!--
+      The card is an absolute URL in the served page, but this file may not name a hostname — the
+      same bundle is served from localhost, a preview host and the apex. So the path is relative
+      and the crawlers that require an absolute one resolve it against the page they fetched.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Forge Hub" />
+    <meta property="og:description" content="Your CloudsForge control centre: portfolio, wallets, activity and security in one place." />
+    <meta property="og:image" content="/og-1200x630.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

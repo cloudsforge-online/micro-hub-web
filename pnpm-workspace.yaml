@@ -1,0 +1,8 @@
+# pnpm reads its settings from here rather than from package.json as of pnpm 11.
+#
+# esbuild — which both Vite and tsx sit on — installs its platform binary from a postinstall
+# script, and pnpm blocks install-time scripts by default. Without this allowance the toolchain
+# installs and then fails to run, reporting a missing binary rather than a blocked script.
+# Nothing else in the tree is permitted to run code at install time.
+allowBuilds:
+  esbuild: true

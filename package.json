@@ -1,0 +1,32 @@
+{
+  "name": "@cloudsforge/hub-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Forge Hub — the CloudsForge control centre. Dashboard, portfolio, wallet, activity, security and settings.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "//": "@cloudsforge/ui is consumed from a sibling path because it is not published yet. It becomes a registry version ('^1.0.0') the day it is, and nothing else here changes — the Dockerfile's uipkg build context and the second checkout in ci.yml go with it. The specifier is link: rather than file: because pnpm PACKS a file: directory, honouring that package's `files` field, which lists only dist — the installed copy would then have an exports map pointing at sources that were never packed. link: symlinks the working tree, which is also what makes an edit in the design system visible here without a republish. JSON has no comment syntax, hence this key.",
+  "dependencies": {
+    "@cloudsforge/ui": "link:../ui/packages/ui",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
