@@ -63,9 +63,18 @@ jobs:
           # dies before install. Same wiring as the service repos' runtime checkout.
           token: ${{ secrets.ESTATE_READ_TOKEN }}
 
+      # Pinned, because the checkout lives at hub-web/ and the action looks for the
+      # packageManager field in the workspace root, where there is no package.json.
       - uses: pnpm/action-setup@v4
+        with: { version: 11.9.0 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: hub-web/pnpm-lock.yaml }
+
+      # `link:` resolves to the sibling's own node_modules, so the design system must be
+      # installed before this repository is — without this, `tsc` cannot resolve ../ui's own
+      # imports (react, react/jsx-runtime) when it typechecks the linked sources.
+      - name: Install the sibling design system
+        run: pnpm --dir ui install --frozen-lockfile
 
       - name: Install
         working-directory: hub-web
