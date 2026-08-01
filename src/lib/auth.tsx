@@ -10,10 +10,25 @@ import { useLocation } from 'react-router-dom'
 import type { AccountState } from '@cloudsforge/ui'
 import { AUTH_EXPIRED_EVENT, clearTokens, hasSession, nimbus, signIn, signOut } from './api.ts'
 
-/** What Nimbus answers at `/auth/me`, narrowed to what the bar needs. */
+/**
+ * What identity answers at `/auth/me`.
+ *
+ * The profile is **nested under `user`** — the body is
+ * `{ user, session, organisations }` (`identity/src/server.ts:891-903`), and `user` is built by
+ * `toPublicUser` (`identity/src/users.ts:52-63`). This interface used to declare `handle` and
+ * `roles` at the TOP level, where identity has never put them: `roles` was therefore always
+ * `undefined`, `isAdmin` was always false, and the switcher hid admin, lantern and beacon from
+ * every signed-in operator. Nothing failed — the menu was simply, silently, short.
+ *
+ * Only the nested shape is accepted. Tolerating the flat one as a fallback would encode a
+ * response identity does not send, and the next reader would not be able to tell which is real.
+ */
 interface Me {
-  handle?: string | null
-  roles?: readonly string[] | null
+  user?: {
+    id?: string | null
+    handle?: string | null
+    roles?: readonly string[] | null
+  } | null
 }
 
 export type SessionStatus = 'loading' | 'anonymous' | 'signedIn'
@@ -80,8 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       account: {
         signedIn: status === 'signedIn',
-        handle: me?.handle ?? null,
-        roles: me?.roles ?? null,
+        handle: me?.user?.handle ?? null,
+        roles: me?.user?.roles ?? null,
       },
       signIn,
       signOut: doSignOut,
