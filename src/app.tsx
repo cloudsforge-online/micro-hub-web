@@ -7,18 +7,26 @@
  * route added here and not there works under `pnpm dev` and dies on the first hard refresh in
  * production. The test is the mechanism; "remember to update nginx.conf" is not.
  *
- * ── Every route here is behind the gate ────────────────────────────────────────────────────────
+ * ── Every route here is behind the gate, except the three that cannot be ──────────────────────
  *
- * Forge Hub has no public page: every route reads an authenticated composition of somebody's
- * money, sessions and entitlements. The wrapper is applied per route rather than around the whole
- * table anyway, because that is what lets a genuinely public route be added later WITHOUT the
- * wrapper — and hiding a route is never the security boundary in either case. Every service
+ * Forge Hub has no page that SHOWS anything without a session: every one of them reads an
+ * authenticated composition of somebody's money, sessions and entitlements. The wrapper is applied
+ * per route rather than around the whole table, which is what lets a genuinely public route exist
+ * without it — and hiding a route is never the security boundary in either case. Every service
  * verifies the token and the scope on the request itself; this exists so a signed-out reader is
  * sent to sign in rather than shown a screen made entirely of failures.
+ *
+ * The exceptions are `account/login`, `account/register` and `account/logout`: the estate's
+ * sign-in surface, which lives here because nothing else in the estate served one at all
+ * (docs/ecosystem/22 §8.1). They are declared in `lib/routes.ts` as PUBLIC_ROUTES and
+ * `test/routes.test.ts` reads that list — an ungated route that is not on it fails the build, and
+ * so does a listed route that is gated. The list is not a comment; it is what the test compares
+ * against.
  */
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/shell.tsx'
 import { AuthProvider, ProtectedRoute } from './lib/auth.tsx'
+import { RegisterPage, SignInPage, SignOutPage } from './pages/account.tsx'
 import { ActivityPage } from './pages/activity.tsx'
 import { EntitlementsPage } from './pages/entitlements.tsx'
 import { NotFoundPage } from './pages/not-found.tsx'
@@ -121,6 +129,24 @@ export function App() {
               yet, and sending a reader to the list that contains their record is a better answer
               than a page that does not exist.
             */}
+            {/*
+              THE THREE ADDRESSES THAT MUST NOT BE GATED, and the only ones in this app.
+
+              `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so `signInRedirect()`
+              in every product in the estate sends its signed-out visitors to `/account/login` and
+              `signOutRedirect()` sends them to `/account/logout`. A session gate in front of a
+              sign-in page is a redirect loop, and until these existed the redirect went to
+              `account.<apex>`, which nothing serves at all (docs/ecosystem/22 §8.1).
+
+              They are declared in `lib/routes.ts` as PUBLIC_ROUTES and `test/routes.test.ts`
+              checks each <Route> here against that list in both directions — an ungated route
+              that is not declared public fails the build, and so does a declared one that is
+              gated. Being listed FIRST is not what makes them match; react-router ranks by
+              specificity, so `account/login` wins over `account/*` wherever it is written.
+            */}
+            <Route path="account/login" element={<SignInPage />} />
+            <Route path="account/register" element={<RegisterPage />} />
+            <Route path="account/logout" element={<SignOutPage />} />
             <Route
               path="account/*"
               element={

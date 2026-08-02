@@ -82,6 +82,20 @@ export const hasSession = (): boolean => Boolean(getAccessToken() && getRefreshT
 
 /* ---- errors -------------------------------------------------------- */
 
+/**
+ * One field the server refused, in the shape identity sends it.
+ *
+ * `identity/src/server.ts:434-445` puts a `fields` array of `{ field, code, message }` inside the
+ * error envelope for every validation failure. Nothing in this app decides what is valid — the
+ * rules live in `@cloudsforge/contracts-auth` and are enforced server-side — so a form's job is to
+ * put the server's sentence next to the server's field and keep everything else the user typed.
+ */
+export interface FieldError {
+  readonly field: string
+  readonly code: string
+  readonly message: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | undefined
@@ -91,13 +105,22 @@ export class ApiError extends Error {
    * at once — which is why every failure state in this app displays it.
    */
   readonly requestId: string | undefined
+  /** Per-field refusals, when the service sent any. Empty for everything else. */
+  readonly fields: readonly FieldError[]
 
-  constructor(status: number, message: string, code?: string, requestId?: string) {
+  constructor(
+    status: number,
+    message: string,
+    code?: string,
+    requestId?: string,
+    fields: readonly FieldError[] = [],
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.requestId = requestId
+    this.fields = fields
   }
 }
 
@@ -126,13 +149,14 @@ export function readErrorBody(body: unknown): {
   message: string | undefined
   code: string | undefined
   requestId: string | undefined
+  fields: readonly FieldError[]
 } {
-  const none = { message: undefined, code: undefined, requestId: undefined }
+  const none = { message: undefined, code: undefined, requestId: undefined, fields: [] }
   if (typeof body !== 'object' || body === null) return none
 
   const outer = body as { error?: unknown; code?: unknown; requestId?: unknown; message?: unknown }
   const inner = typeof outer.error === 'object' && outer.error !== null
-    ? (outer.error as { code?: unknown; message?: unknown; requestId?: unknown })
+    ? (outer.error as { code?: unknown; message?: unknown; requestId?: unknown; fields?: unknown })
     : null
 
   const str = (value: unknown): string | undefined =>
@@ -143,7 +167,28 @@ export function readErrorBody(body: unknown): {
     message: str(inner?.message) ?? str(outer.error) ?? str(outer.message),
     code: str(inner?.code) ?? str(outer.code),
     requestId: str(inner?.requestId) ?? str(outer.requestId),
+    fields: readFieldErrors(inner?.fields),
   }
+}
+
+/**
+ * The `fields` array, or nothing.
+ *
+ * An entry missing any of the three strings is dropped rather than rendered with a blank message:
+ * a form control marked invalid with no sentence beside it tells the user their input is wrong and
+ * not why, which is worse than showing the summary alone.
+ */
+function readFieldErrors(raw: unknown): readonly FieldError[] {
+  if (!Array.isArray(raw)) return []
+  const out: FieldError[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const { field, code, message } = entry as Record<string, unknown>
+    if (typeof field !== 'string' || field === '') continue
+    if (typeof message !== 'string' || message === '') continue
+    out.push({ field, code: typeof code === 'string' ? code : 'invalid', message })
+  }
+  return out
 }
 
 /** What a failure state needs: the sentence, and the id to quote at support. */
@@ -311,11 +356,13 @@ async function request<T>(base: string, path: string, opts: RequestOptions = {})
     let requestId = res.headers.get('x-request-id') ?? undefined
     let message = res.statusText || `Request failed (${res.status})`
     let code: string | undefined
+    let fields: readonly FieldError[] = []
     try {
       const parsed = readErrorBody(await res.json())
       if (parsed.message) message = parsed.message
       if (parsed.code) code = parsed.code
       if (parsed.requestId) requestId = parsed.requestId
+      fields = parsed.fields
     } catch (err) {
       // A non-JSON error body means something in FRONT of the service answered — a gateway, a
       // CDN, a misrouted deploy — and the request never reached it. Nothing server-side logs
@@ -331,7 +378,7 @@ async function request<T>(base: string, path: string, opts: RequestOptions = {})
       })
     }
     if (res.status === 401 && auth) expireSession()
-    throw new ApiError(res.status, message, code, requestId)
+    throw new ApiError(res.status, message, code, requestId, fields)
   }
 
   if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T

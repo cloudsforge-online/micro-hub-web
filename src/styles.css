@@ -708,3 +708,151 @@ body {
     animation: none;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * FORMS — the sign-in surface, and the wallet's money-moving screens.
+ *
+ * Controls themselves are `cf-input`, `cf-select` and `cf-btn` from @cloudsforge/ui, which is
+ * where they belong: five repositories were carrying private copies before the design system had
+ * them. What is here is the LAYOUT around a control — label, hint, error, action row — which is
+ * this app's own composition and is not a control anybody else has asked for yet. The moment a
+ * second surface needs the same arrangement it moves to the design system rather than being
+ * copied, because a copied layout is the same defect as a copied control one level up.
+ * ═════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.wt-account {
+  /* A sign-in form is read in one column at reading width. Wider is not more usable; it just
+     puts the label and the input at opposite ends of a 27-inch display. */
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+.wt-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cf-space-md);
+}
+
+.wt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.wt-field__label {
+  font-size: var(--cf-text-sm);
+  font-weight: 600;
+  color: var(--cf-fg);
+}
+
+.wt-field__hint {
+  margin: 0;
+  min-height: 1rem;
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg-mute);
+}
+
+/*
+ * The server's sentence about one field. Danger-coloured AND prefixed with a mark, because colour
+ * is never the only channel — the same rule the switcher's glyphs exist for.
+ */
+.wt-field__error {
+  margin: 0;
+  font-size: var(--cf-text-sm);
+  color: var(--cf-danger);
+}
+
+.wt-field__error::before {
+  content: '▲ ';
+}
+
+.wt-formerror {
+  margin: 0;
+  padding: var(--cf-space-sm) var(--cf-space-md);
+  border: 1px solid var(--cf-danger);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg-sunken);
+  color: var(--cf-fg);
+  font-size: var(--cf-text-sm);
+}
+
+.wt-form__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-space-md);
+  flex-wrap: wrap;
+}
+
+/*
+ * The confirmation step of a money-moving form.
+ *
+ * Bordered and set apart from the form it came from, because the one thing a reader must be able
+ * to do here is compare what is on screen with what they meant. The destination is rendered in
+ * `cf-num wt-addr` with `user-select: all` for the same reason it is on the wallet list: an
+ * address read by eye is an address sent to the wrong place.
+ */
+.wt-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cf-space-md);
+  padding: var(--cf-space-md);
+  border: 1px solid var(--cf-line-strong);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg-sunken);
+}
+
+.wt-confirm__warn {
+  margin: 0;
+  padding: var(--cf-space-sm) var(--cf-space-md);
+  border-left: 3px solid var(--cf-warn, #b28e1e);
+  color: var(--cf-fg);
+  font-size: var(--cf-text-sm);
+}
+
+/* One stage of a multi-stage ceremony, in a list a reader can see the whole of. */
+.wt-stages {
+  list-style: none;
+  margin: 0 0 var(--cf-space-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.wt-stage {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cf-space-sm);
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg-mute);
+}
+
+.wt-stage.is-current {
+  color: var(--cf-fg);
+  font-weight: 600;
+}
+
+.wt-stage.is-done .wt-stage__mark {
+  color: var(--cf-success, #6d9a49);
+}
+
+.wt-stage__mark {
+  font-family: var(--cf-font-mono, ui-monospace, monospace);
+}
+
+/*
+ * Revealed key material. Monospace, wrapping, selectable in whole — and never inside anything
+ * that scrolls it out of sight, because it is shown exactly once.
+ */
+.wt-secret {
+  margin: 0;
+  padding: var(--cf-space-md);
+  border: 1px solid var(--cf-danger);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg-sunken);
+  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-size: var(--cf-text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}

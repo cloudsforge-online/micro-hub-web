@@ -32,6 +32,52 @@ export interface HubRoute {
   readonly wildcard: boolean
 }
 
+/**
+ * The addresses that render WITHOUT a session, and the only ones allowed to.
+ *
+ * ── Why Forge Hub, of all surfaces, has public routes ──────────────────────────────────────────
+ *
+ * It did not, and could not: "Forge Hub has no public page: every route reads an authenticated
+ * composition of somebody's money, sessions and entitlements." That is still true of every page
+ * that shows anything. These three show nothing — they are the estate's SIGN-IN SURFACE, and a
+ * sign-in page behind a session gate is a redirect loop.
+ *
+ * They live here because nothing else in the estate could serve them. `signInRedirect()` sent
+ * every product's signed-out visitor to `${accountUrl()}/login`, which resolved
+ * `account.<apex>` — a hostname no repository serves and identity explicitly refuses to render
+ * HTML for (`identity/src/server.ts` §3, `identity/src/server.test.ts:890`). docs/ecosystem/22
+ * §8.1 records it as the estate's largest blocker: 86 of 318 browser scenarios start by signing
+ * in, and none of them could. `@cloudsforge/ui`'s `signin` registry row now resolves to
+ * `<hub>/account`, and these are the pages at the other end of it.
+ *
+ * The gate test in `test/routes.test.ts` reads this list. A route added to `app.tsx` without a
+ * `<ProtectedRoute>` and without an entry here fails the build — which is the point: this is a
+ * list of exemptions, and an exemption nobody wrote down is the failure it exists to prevent.
+ */
+export interface PublicRoute {
+  /** The full path, relative to the app root and without a leading slash. */
+  readonly path: string
+  /** Why this address may be seen by somebody with no session. */
+  readonly because: string
+}
+
+export const PUBLIC_ROUTES: readonly PublicRoute[] = [
+  {
+    path: 'account/login',
+    because: 'the sign-in form itself; a session gate in front of it is a redirect loop',
+  },
+  {
+    path: 'account/register',
+    because: 'registration, reached from the sign-in form and from `site`',
+  },
+  {
+    path: 'account/logout',
+    because:
+      'it revokes the refresh token and returns; gating it would leave a signed-out visitor ' +
+      'unable to complete a sign-out that had already partly happened elsewhere',
+  },
+]
+
 export const ROUTES: readonly HubRoute[] = [
   { path: '', label: 'Overview', wildcard: false },
   { path: 'portfolio', label: 'Portfolio', wildcard: false },
@@ -45,10 +91,14 @@ export const ROUTES: readonly HubRoute[] = [
   // Reached from the bar's search field, not from the sub-navigation: a nav entry for a page that
   // is empty until you type into something else is a nav entry that wastes a slot.
   { path: 'search', label: null, wildcard: false },
-  // Not this app's own naming — these two are the prefixes hub-api's "needs you" cards link into:
-  // `/account/security`, `/account/restrictions/<id>` and `/billing/subscriptions/<id>`
-  // (nextactions.ts:200, 214, 235, 251). A card "carries a verb and a destination", and a
-  // destination that 404s is a worry with no outlet.
+  // `account` carries two unrelated things, and both are addresses somebody else emits.
+  //
+  //   1. hub-api's "needs you" cards link into `/account/security` and
+  //      `/account/restrictions/<id>` (nextactions.ts:200, 214, 235). A card "carries a verb and a
+  //      destination", and a destination that 404s is a worry with no outlet.
+  //   2. `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so every product in the
+  //      estate sends its signed-out visitors to `/account/login` and `/account/logout`. Those are
+  //      in PUBLIC_ROUTES above; everything else under this prefix stays behind the gate.
   { path: 'account', label: null, wildcard: true },
   { path: 'billing', label: null, wildcard: true },
 ]

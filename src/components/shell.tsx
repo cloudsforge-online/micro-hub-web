@@ -39,23 +39,31 @@ export function AppShell() {
         The sub-nav is sticky at exactly `var(--cf-bar-h)` — the bar's own height token, not a
         number copied out of it. When the bar's height changes, this moves with it; a hard-coded
         46px would leave a seam that only appears on the surfaces nobody rechecked.
+
+        It is absent for a signed-out reader. Every entry in it goes to a page that reads somebody's
+        money or sessions, so for a visitor on the sign-in page it is eight links that all end in a
+        redirect back to the form they are already looking at. Hiding it is not a security
+        boundary and is not pretending to be one — every service verifies the token on the request
+        — it is the same reasoning as the switcher's `adminOnly`: a menu entry nobody can open.
       */}
-      <nav className="wt-subnav" aria-label="Sections">
-        <div className="wt-subnav__inner">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              // `end` only on the index: without it, `/` matches every path and the Overview tab
-              // stays highlighted on all seven pages.
-              end={item.to === '/'}
-              className={({ isActive }) => `wt-subnav__link${isActive ? ' is-active' : ''}`}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </div>
-      </nav>
+      {account.signedIn && (
+        <nav className="wt-subnav" aria-label="Sections">
+          <div className="wt-subnav__inner">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                // `end` only on the index: without it, `/` matches every path and the Overview tab
+                // stays highlighted on all seven pages.
+                end={item.to === '/'}
+                className={({ isActive }) => `wt-subnav__link${isActive ? ' is-active' : ''}`}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      )}
       <main className="wt-main" id="main">
         <Outlet />
       </main>

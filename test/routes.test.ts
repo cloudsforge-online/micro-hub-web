@@ -21,7 +21,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
-import { NAV, NON_INDEX_PATHS, ROUTES } from '../src/lib/routes.ts'
+import { NAV, NON_INDEX_PATHS, PUBLIC_ROUTES, ROUTES } from '../src/lib/routes.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
@@ -114,9 +114,14 @@ describe('the router', () => {
 
   it('declares no <Route path=…> that the declaration does not know about', () => {
     const declared = new Set(NON_INDEX_PATHS)
+    const publicPaths = new Set(PUBLIC_ROUTES.map((r) => r.path))
     for (const match of appSource.matchAll(/path="([^"]+)"/g)) {
       const path = (match[1] ?? '').replace(/\/\*$/, '')
       if (path === '*') continue // the catch-all
+      // A sub-path is legal only when it is a declared public route: `account/login` and its two
+      // siblings are addresses the whole estate redirects to, and they need their own components.
+      // Anything else with a slash is a top-level segment somebody forgot to declare.
+      if (publicPaths.has(path)) continue
       assert.ok(declared.has(path), `app.tsx routes ${path}, which lib/routes.ts does not declare`)
     }
   })
@@ -125,15 +130,83 @@ describe('the router', () => {
     assert.ok(appSource.includes('path="*"'))
     assert.ok(appSource.includes('NotFoundPage'))
   })
+})
 
-  it('puts every route behind the session gate', () => {
-    // Forge Hub has no public page: every route reads an authenticated composition of somebody's
-    // money, sessions and entitlements. Counting rather than eyeballing, because an unwrapped
-    // route looks exactly like a wrapped one in a diff.
-    const routes = [...appSource.matchAll(/<Route\s/g)].length
-    const gates = [...appSource.matchAll(/<ProtectedRoute>/g)].length
-    // Every <Route> except the shell's layout route and the catch-all carries a gate.
-    assert.equal(gates, routes - 2, 'a route was added without ProtectedRoute')
+/**
+ * The session gate, checked per route rather than by counting.
+ *
+ * The version this replaces asserted `gates === routes - 2`. It was a real check while every route
+ * was gated, but it cannot say WHICH route lost its gate, and once a route is legitimately public
+ * the arithmetic has to be adjusted by hand — at which point it is one edit away from being
+ * adjusted to whatever number makes the build green. So each `<Route>` is now read individually
+ * and matched against the declared exemptions.
+ */
+describe('the session gate', () => {
+  /** Each `<Route …>` in app.tsx as `{ path, gated }`, read from the text. */
+  function routeBlocks(): { path: string; gated: boolean }[] {
+    // Splitting on the opening tag gives each route its own chunk up to the next one. The layout
+    // route (`<Route element={<AppShell />}>`) has no path and is skipped by the filter below.
+    return appSource
+      .split('<Route')
+      .slice(1)
+      .map((chunk) => ({
+        path: /path="([^"]+)"/.exec(chunk)?.[1] ?? (/^\s+index/.test(chunk) ? '' : null),
+        gated: chunk.includes('<ProtectedRoute>'),
+      }))
+      .filter((r): r is { path: string; gated: boolean } => r.path !== null)
+  }
+
+  it('finds the routes at all, so nothing below can pass for the wrong reason', () => {
+    assert.ok(routeBlocks().length >= ROUTES.length, 'app.tsx parsed to too few routes')
+  })
+
+  it('gates every route that is not a declared public one', () => {
+    const publicPaths = new Set<string>(PUBLIC_ROUTES.map((r) => r.path))
+    for (const route of routeBlocks()) {
+      if (route.path === '*') continue // the catch-all renders the 404 page and reads nothing
+      if (publicPaths.has(route.path)) continue
+      assert.ok(
+        route.gated,
+        `/${route.path} renders without <ProtectedRoute>, and lib/routes.ts does not declare it ` +
+          `public. Every other route in Forge Hub reads an authenticated composition of ` +
+          `somebody's money, sessions and entitlements.`,
+      )
+    }
+  })
+
+  it('does NOT gate the sign-in surface, because a gate there is a redirect loop', () => {
+    const byPath = new Map(routeBlocks().map((r) => [r.path, r.gated]))
+    for (const route of PUBLIC_ROUTES) {
+      assert.ok(byPath.has(route.path), `app.tsx has no <Route path="${route.path}">`)
+      assert.equal(
+        byPath.get(route.path),
+        false,
+        `/${route.path} is behind <ProtectedRoute>. ${route.because}`,
+      )
+    }
+  })
+
+  it('keeps the public set to the sign-in surface and nothing else', () => {
+    // The list is a list of EXEMPTIONS. Anything added to it stops being checked by the test
+    // above, so the set itself is pinned: a fourth entry is a decision somebody has to make here.
+    assert.deepEqual(
+      PUBLIC_ROUTES.map((r) => r.path),
+      ['account/login', 'account/register', 'account/logout'],
+    )
+    for (const route of PUBLIC_ROUTES) {
+      assert.ok(route.because.length > 20, `${route.path} is exempt for no stated reason`)
+    }
+  })
+
+  it('serves every public route from nginx, under a prefix it already enumerates', () => {
+    // These are addresses OTHER surfaces redirect to, so they are entered cold — a hard navigation
+    // from another origin, never a client-side transition. If nginx does not serve the prefix,
+    // every `Sign in` button in the estate lands on a 404.
+    const served = new Set(nginxPaths())
+    for (const route of PUBLIC_ROUTES) {
+      const top = route.path.split('/')[0] ?? ''
+      assert.ok(served.has(top), `nginx.conf does not serve /${top}, so /${route.path} 404s`)
+    }
   })
 })
 
