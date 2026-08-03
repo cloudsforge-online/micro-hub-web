@@ -1,6 +1,7 @@
 # cloudsforge-hub-web
 
 [![ci](https://github.com/cloudsforge-online/micro-hub-web/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudsforge-online/micro-hub-web/actions/workflows/ci.yml)
+![licence](https://img.shields.io/badge/licence-MIT-97CA00)
 ![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?logo=node.js&logoColor=white)
 ![typescript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![module](https://img.shields.io/badge/module-ESM-F7DF1E?logo=javascript&logoColor=black)
