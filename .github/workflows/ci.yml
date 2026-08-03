@@ -144,7 +144,12 @@ jobs:
             echo "::error::unknown paths must 404; serve the shell through error_page 404 /index.html"
             exit 1
           fi
-          printf '%s\n' "$directives" | grep -q 'error_page 404 /index.html'
+          # `grep -q PATTERN <<<"$var"` rather than `printf '%s\n' "$var" | grep -q PATTERN`.
+          # grep -q exits on its first match by design; the producer then writes into a closed pipe,
+          # and `pipefail` promoted that SIGPIPE (exit 141) to a failed step — a gate that failed for
+          # no reason and passed on re-run, which teaches re-running instead of reading. The here-string
+          # is byte-identical input with the same exit status and no pipe, so the rule is unchanged.
+          grep -q 'error_page 404 /index.html' <<<"$directives"
           echo "ok: unknown paths answer 404"
 
       - name: The auth callback is redeemed before the app renders
