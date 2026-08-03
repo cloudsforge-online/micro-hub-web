@@ -49,6 +49,7 @@ import {
   type KeyExport,
   type RevealedKey,
 } from '../lib/money.ts'
+import type { Absence } from '../lib/tile.ts'
 import type { WalletRecord } from '../lib/hub.ts'
 
 /** The stages, in order, as a reader sees them. Labels only — custody owns the transitions. */
@@ -59,7 +60,20 @@ const STAGES: readonly { readonly status: string; readonly label: string }[] = [
   { status: 'redeemed', label: 'Key revealed' },
 ]
 
-export function KeyExportPanel({ wallets }: { wallets: readonly WalletRecord[] }) {
+export function KeyExportPanel({
+  wallets,
+  walletsAbsent = null,
+}: {
+  wallets: readonly WalletRecord[]
+  /**
+   * Set when the wallet list could not be READ, as opposed to being empty.
+   *
+   * Same conflation as `SendPanel`'s `balanceAbsent`, and worse here: "there is no managed wallet
+   * to export" told to somebody whose wallet list simply failed to load is this screen saying
+   * CloudsForge holds no key for them, which is the opposite of true.
+   */
+  walletsAbsent?: Absence | null
+}) {
   // Only a managed wallet has a key in custody to export. An external or watch wallet's key was
   // never here, and offering it would be offering something that cannot exist.
   const exportable = wallets.filter((w) => w.origin === 'managed' && w.status === 'active')
@@ -110,10 +124,18 @@ export function KeyExportPanel({ wallets }: { wallets: readonly WalletRecord[] }
         <header className="wt-panel__head">
           <h2 className="wt-panel__title">Export a private key</h2>
         </header>
-        <p className="wt-note">
-          There is no managed wallet to export. CloudsForge only holds keys for wallets it
-          provisioned; a wallet you connected yourself was never in custody here.
-        </p>
+        {walletsAbsent ? (
+          <p className="wt-note wt-note--caveat" role="alert">
+            ▲ CloudsForge could not read your wallet list — {walletsAbsent.reason}. That is not the
+            same as having no wallet in custody, and nothing here should be read as saying so.
+            Reload in a moment.
+          </p>
+        ) : (
+          <p className="wt-note">
+            There is no managed wallet to export. CloudsForge only holds keys for wallets it
+            provisioned; a wallet you connected yourself was never in custody here.
+          </p>
+        )}
       </section>
     )
   }

@@ -35,7 +35,7 @@ import { NotComposed, TilePanel } from '../components/tile.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { confirmationLabel, formatAmount, shortHash, utcDateTime } from '../lib/format.ts'
 import { loadDashboard, type DepositCredit, type WalletRecord, type WithdrawalRecord } from '../lib/hub.ts'
-import { hasAnswer } from '../lib/tile.ts'
+import { absenceOf, hasAnswer } from '../lib/tile.ts'
 import { useResource } from '../lib/resource.ts'
 
 const alwaysPresent = () => 1
@@ -71,6 +71,14 @@ export function WalletPage() {
       <SendPanel
         holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []}
         wallets={hasAnswer(wallets) ? wallets.data : []}
+        /*
+          WHY THE ABSENCE TRAVELS WITH THE LIST. `hasAnswer(t) ? t.data : []` collapses "the
+          ledger did not answer" and "you hold nothing" into one empty array, and the panel then
+          said "There is no balance to send" for both — the rule in lib/tile.ts:22-28 broken by
+          the screen that can least afford it. The list is still empty; what goes with it now is
+          why.
+        */
+        balanceAbsent={absenceOf(portfolio)}
         onSent={reload}
       />
 
@@ -123,7 +131,10 @@ export function WalletPage() {
         )}
       </TilePanel>
 
-      <KeyExportPanel wallets={hasAnswer(wallets) ? wallets.data : []} />
+      <KeyExportPanel
+        wallets={hasAnswer(wallets) ? wallets.data : []}
+        walletsAbsent={absenceOf(wallets)}
+      />
 
       {/*
         Transfers and conversions are real operations — wallet serves `POST /v1/transfers` and

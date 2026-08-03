@@ -43,6 +43,7 @@ import { ApiError, noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { formatAmount, scaleOf, toBaseUnits } from '../lib/format.ts'
 import { mintIdempotencyKey } from '../lib/idempotency.ts'
 import { requestWithdrawal, type SendIntent, type Withdrawal } from '../lib/money.ts'
+import type { Absence } from '../lib/tile.ts'
 import type { Holding, WalletRecord } from '../lib/hub.ts'
 
 /** An intent, frozen at Review, with everything the confirmation step needs to render it. */
@@ -61,10 +62,19 @@ const sameIntent = (a: SendIntent, b: SendIntent): boolean =>
 export function SendPanel({
   holdings,
   wallets,
+  balanceAbsent = null,
   onSent,
 }: {
   holdings: readonly Holding[]
   wallets: readonly WalletRecord[]
+  /**
+   * Set when the balance could not be READ, as opposed to being nothing.
+   *
+   * Both arrive here as an empty `holdings`, and saying "there is no balance to send" for the
+   * first is a confident, wrong statement about somebody's money — `lib/tile.ts`'s own rule,
+   * broken by the screen that can least afford it. See `absenceOf`.
+   */
+  balanceAbsent?: Absence | null
   /** Called after a withdrawal is accepted, so the page can re-read the in-flight list. */
   onSent: () => void
 }) {
@@ -159,9 +169,20 @@ export function SendPanel({
         <header className="wt-panel__head">
           <h2 className="wt-panel__title">Send</h2>
         </header>
-        <p className="wt-note">
-          There is no balance to send. A managed wallet is provisioned the first time you deposit.
-        </p>
+        {balanceAbsent ? (
+          // NOT "there is no balance". The tile did not answer, so this app does not know what the
+          // balance is, and a zero is not the safe guess — it is the one wrong answer nobody
+          // questions. `role="alert"`: a user who cannot send today needs to know it is an outage.
+          <p className="wt-note wt-note--caveat" role="alert">
+            ▲ CloudsForge could not read your balances — {balanceAbsent.reason}. This is not a
+            statement that you have nothing to send; it is that Forge Hub does not know. Reload in
+            a moment, and do not act on an empty screen.
+          </p>
+        ) : (
+          <p className="wt-note">
+            There is no balance to send. A managed wallet is provisioned the first time you deposit.
+          </p>
+        )}
       </section>
     )
   }

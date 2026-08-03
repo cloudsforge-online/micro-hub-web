@@ -50,6 +50,39 @@ export function hasAnswer(tile: Tile<unknown> | null | undefined): boolean {
   return tile !== null && tile !== undefined && tile.status !== 'unavailable'
 }
 
+/** A tile that did not answer, reduced to what a panel needs in order to say so. */
+export interface Absence {
+  readonly upstream: string
+  readonly reason: string
+}
+
+/**
+ * The absence behind an unavailable tile, or null when the tile answered.
+ *
+ * ── Why the panels that take a LIST need this as well as the list ──────────────────────────────
+ *
+ * `hasAnswer()` is the guard for a panel that renders the tile itself — `TilePanel` draws no
+ * content for an unavailable tile and names the upstream instead. It is not enough for the two
+ * panels that take a DERIVED list as a plain prop: `SendPanel` receives `holdings` and
+ * `KeyExportPanel` receives `wallets`, and `hasAnswer(tile) ? tile.data : []` collapses "the
+ * ledger did not answer" and "you hold nothing" into the same empty array on the way in.
+ *
+ * Both then said so out loud — "There is no balance to send", "There is no managed wallet to
+ * export" — which is the header's own rule broken by the two screens that can least afford it:
+ * "an `unavailable` wallets tile carries `[]`, and `[]` drawn without its status reads as 'you
+ * have no wallets' — a confident, wrong statement about somebody's money, produced by a client
+ * that was handed the truth and dropped it."
+ *
+ * The empty array still goes down, because a Send form with nothing to send is a Send form with
+ * nothing to send either way. What travels with it is WHY it is empty, so the sentence can be the
+ * true one. `test/journeys.test.ts` BJ-WAL-07 asserts the two sentences are different.
+ */
+export function absenceOf(tile: Tile<unknown> | null | undefined): Absence | null {
+  if (tile === null || tile === undefined) return null
+  if (tile.status !== 'unavailable') return null
+  return { upstream: tile.upstream, reason: tile.reason ?? `${tile.upstream} did not answer` }
+}
+
 /** Everything a panel header needs in order to say how much to trust what is under it. */
 export interface TileNote {
   /** Whether to draw a note at all. False for a fresh, uncached, `ok` tile. */
