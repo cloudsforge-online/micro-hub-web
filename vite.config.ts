@@ -19,8 +19,12 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   optimizeDeps: {
-    // The linked package is shipped as TypeScript source until it is published; pre-bundling it
-    // would freeze a stale copy of a package that is edited in the same working tree.
+    // The linked package now ships BUILT output — its entry points name a committed `dist` — so
+    // the old reason for this line ("shipped as TypeScript source until it is published") is no
+    // longer why it is here. The setting is still right, for the reason that outlives it: `link:`
+    // resolves to a working tree edited beside this one, and pre-bundling copies it into
+    // node_modules/.vite, where it stays until the dep hash changes. A rebuild in micro-ui does
+    // not change this repository's lockfile, so `pnpm dev` would keep serving yesterday's `dist`.
     exclude: ['@cloudsforge/ui'],
   },
   build: {

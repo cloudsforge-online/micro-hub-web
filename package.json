@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
-  "//": "@cloudsforge/ui is consumed from a sibling path because it is not published yet. It becomes a registry version ('^1.0.0') the day it is, and nothing else here changes — the Dockerfile's uipkg build context and the second checkout in ci.yml go with it. The specifier is link: rather than file: because pnpm PACKS a file: directory, honouring that package's `files` field, which lists only dist — the installed copy would then have an exports map pointing at sources that were never packed. link: symlinks the working tree, which is also what makes an edit in the design system visible here without a republish. JSON has no comment syntax, hence this key.",
+  "//": "@cloudsforge/ui is consumed from a sibling path because it is not published yet. It becomes a registry version ('^1.0.0') the day it is, and nothing else here changes — the Dockerfile's uipkg build context and the second checkout in ci.yml go with it. The specifier is link: rather than file: because link: symlinks the working tree, so an edit in the design system is visible here without a republish; pnpm PACKS a file: directory instead, and a packed copy goes stale the moment micro-ui is touched. JSON has no comment syntax, hence this key.",
   "dependencies": {
     "@cloudsforge/ui": "link:../ui/packages/ui",
     "react": "^19.0.0",
