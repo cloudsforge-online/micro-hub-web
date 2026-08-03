@@ -47,7 +47,34 @@ worth nothing. `lib/portfolio.ts` is the single guard, and `test/portfolio.test.
 | **hub-api** | same origin in production, `http://localhost:3010` under `pnpm dev` | every page |
 | **identity** (Nimbus) | always cross-origin, `hosts().nimbus` | tokens, refresh, `/auth/me`, the session list, MFA factors |
 | **Lantern** | `hosts().lantern` | browser error and page-load ingest, unauthenticated |
-| **Account portal** | `hosts().account` | sign-in and sign-out redirects |
+| **wallet** | always cross-origin, `hosts().pay` | withdrawals and deposit addresses — the Send and Receive forms |
+| **custody** | always cross-origin, `hosts().keyvault` | the key export ceremony |
+
+Forge Hub is also **the estate's sign-in surface**: `@cloudsforge/ui`'s `signin` registry row
+resolves to `<hub>/account`, so `signInRedirect()` in all thirteen frontends lands on
+`/account/login` here. See "The sign-in surface" below.
+
+### Two things `micro-deploy` has to add before Send, Receive and Export work in a browser
+
+Both are recorded here because this bundle cannot work around either, and neither is visible from
+inside this repository.
+
+1. **`pay.<apex>` and `vault.<apex>` need gateway routers.** There is none for either in
+   `deploy/gateway/dynamic/`. The routers that exist for `micro-wallet` are on the API host
+   (`public-api.yml:118-124`).
+2. **Those routers need the `cf-cors` middleware, and the API host's routers deliberately do not
+   have it** — "The API host is not a browser origin for a first-party app… so it gets the
+   security headers without the app CORS allowlist" (`public-api.yml:66-69`). A first-party
+   browser calling `api.<apex>` would be refused by CORS with nothing logged server-side, which is
+   the failure mode `policy.yml` already records twice: "an allowlist that omits an origin fails
+   closed and silently."
+
+`hosts().keyvault` is pinned to custody in the registry and checked by
+`ui/packages/ui/src/surfaces.test.ts:196`. `hosts().pay` is **not** pinned, because `micro-wallet`
+binds the service-template default `PORT=4000` and is separated from its neighbours by compose —
+so there is no distinctive port to pin it against, and the registry's 4003 is an allocation rather
+than a fact. `emberkin-web` already resolves the billing half of the payments API through the same
+row.
 
 ### The five hub-api routes, and the five only
 
@@ -77,6 +104,37 @@ everywhere (`DELETE /sessions`) are not composed by hub-api at all — identity 
 them. Proxying them would also flatten the audit trail: identity records a revoke against the
 presenting session, and a BFF in the middle makes every sign-out in the estate look like it came
 from hub-api.
+
+### The sign-in surface
+
+`/account/login`, `/account/register` and `/account/logout` are **the estate's**, not Forge Hub's.
+`signInRedirect()` in `@cloudsforge/ui` sends every signed-out visitor of all thirteen frontends
+here, and until they existed it sent them to `account.<apex>` — a hostname no repository in the
+estate serves. identity binds the port behind it and renders no HTML at all; its own
+`server.test.ts:890` asserts that `/`, `/portal` and `/dashboard` 404. docs/ecosystem/22 §8.1
+records it as the catalogue's largest blocker, with 86 of 318 browser scenarios starting at a
+sign-in that had no page.
+
+Hub took it because it is the only bundle that could today: it is deployed, its nginx already
+serves `/account/*`, and `hub.cloudsforge.online` is on the gateway CORS allowlist — which matters,
+because the form POSTs credentials to `nimbus.<apex>` cross-origin and `account.cloudsforge.online`
+is not on that list.
+
+- Sign-in is `POST /auth/login`, then `POST /auth/mfa` when identity answers `mfaRequired`.
+- A **same-origin** return address is a full navigation back into this bundle. A **cross-origin**
+  one gets a hand-off code from `POST /auth/handoff`, carried in the fragment and redeemed by
+  `consumeAuthCallback()` at the far end.
+- `?return=` is attacker-controllable and is **not** validated against a list here. identity
+  refuses to mint a code for an origin off `IDENTITY_HANDOFF_ORIGINS`, and that refusal is shown
+  as a refusal rather than being turned into a redirect to the dashboard.
+- **`IDENTITY_HANDOFF_ORIGINS` must name every frontend origin**, or SSO from that surface stops
+  at "CloudsForge will not hand a session to …". It is empty in `identity/.env.example:65`.
+- Nothing on these pages holds a credential rule. identity answers a refusal with a `fields`
+  array; the form renders those sentences and clears nothing else.
+
+`src/lib/routes.ts` declares them as `PUBLIC_ROUTES` with a stated reason each, and
+`test/routes.test.ts` reads that list: an ungated `<Route>` that is not on it fails the build, and
+so does a listed one that is gated.
 
 ---
 
@@ -222,19 +280,36 @@ about its own notifications tile: "a client given no tile at all shows nothing a
 the feature is missing."
 
 1. **Transfers and conversions.** Wallet serves `POST /v1/transfers` and `POST /v1/conversions`,
-   both idempotency-keyed. hub-api composes neither and there is no read route for either, so the
-   Wallet page can list nothing and submit nothing.
-2. **Notification preferences.** `notify` serves `GET`/`PUT /preferences`, but `notify` has no
+   both idempotency-keyed. Nothing in the estate LISTS either afterwards, so a form for them could
+   submit and the result would then vanish; `POST /v1/transfers` is also addressed by a `toUserId`
+   that no route resolves a handle to.
+2. **Connecting an external wallet.** `POST /v1/wallets` issues a challenge nonce and
+   `POST /v1/wallets/verify` takes the signature over it. The step between the two is the owner
+   signing with their own key, and this bundle has no signer — no extension bridge, no hardware
+   transport, no dependency that provides one. A field asking a user to paste a signature is not
+   that journey.
+3. **The withdrawal fee, before confirmation.** 05:269 requires it. `micro-wallet` quotes the fee
+   inside `POST /v1/withdrawals` and serves no route that quotes one, so the Send confirmation
+   says the fee is not yet known and the receipt states it. A figure computed here would be
+   invented.
+4. **Policy `deny` / `challenge` / `review` on a withdrawal.** The withdrawal path consults no
+   policy service today, so there is no decision for a screen to render.
+5. **MFA enrolment.** identity serves six MFA routes; nothing renders them, so the Security page
+   states whether a factor exists and cannot add one — which also means the key-export ceremony
+   can be blocked by a gate the user has no screen to satisfy.
+6. **A QR code on the receive screen.** No QR dependency in the bundle, and a hand-rolled encoder
+   in the screen that produces a payment destination is a worse risk than the address in full.
+7. **Notification preferences.** `notify` serves `GET`/`PUT /preferences`, but `notify` has no
    entry in the surface registry, so `cloudsforgeHosts()` cannot produce a URL for it — and it is
    not one of hub-api's seven upstreams either, which is why the `notifications` tile is
    permanently `unavailable`. A registry entry and one upstream client fix both.
-3. **A device inventory.** Identity records a device per session and this app shows the browser and
+8. **A device inventory.** Identity records a device per session and this app shows the browser and
    OS family on each, but there is no route that lists devices in their own right, so a device you
    are no longer signed in on cannot be shown or forgotten.
-4. **A portfolio time series.** hub-api serves a point-in-time valuation and no history, so there
+9. **A portfolio time series.** hub-api serves a point-in-time valuation and no history, so there
    is no area chart on the Portfolio page. Inventing a series from one reading would be a chart of
    a number the estate has never recorded.
-5. **Per-record detail views.** hub-api's cards deep-link to `/wallet/deposits/<id>` and
+10. **Per-record detail views.** hub-api's cards deep-link to `/wallet/deposits/<id>` and
    `/billing/subscriptions/<id>`. Those addresses resolve to the list that contains the record,
    which is honest but not what the link promises.
 

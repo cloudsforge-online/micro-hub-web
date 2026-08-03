@@ -292,10 +292,26 @@ export interface RequestOptions {
   auth?: boolean
   query?: Record<string, string | number | boolean | undefined | null>
   signal?: AbortSignal
+  /**
+   * Extra request headers.
+   *
+   * Exists for exactly one thing: `Idempotency-Key`, which `micro-wallet` REQUIRES on every
+   * money-moving route (`wallet/src/idempotency.ts:65` — "without one a retry moves money
+   * twice"). It is merged under the three this function sets rather than over them, so nothing
+   * passed here can replace the bearer token or the content type.
+   */
+  headers?: Record<string, string>
 }
 
-async function request<T>(base: string, path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true, query, signal } = opts
+/**
+ * The request core.
+ *
+ * Exported so a client for a service that is NOT this app's own API can be built on it —
+ * `nimbus()` below, and `lib/money.ts` for wallet and custody — rather than each growing its own
+ * fetch with its own idea of what an error body looks like and its own missing refresh.
+ */
+export async function request<T>(base: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body, auth = true, query, signal, headers: extra } = opts
 
   // `base` may be '' (relative, same origin), so resolve against the page origin.
   const url = new URL(base + path, pageOrigin())
@@ -306,7 +322,9 @@ async function request<T>(base: string, path: string, opts: RequestOptions = {})
   }
 
   const send = async (): Promise<Response> => {
-    const headers: Record<string, string> = { accept: 'application/json' }
+    // `extra` first, so the three below win. A caller must not be able to replace the bearer
+    // token or the content type by passing a header of the same name.
+    const headers: Record<string, string> = { ...extra, accept: 'application/json' }
     if (body !== undefined) headers['content-type'] = 'application/json'
     const token = getAccessToken()
     if (auth && token) headers['authorization'] = `Bearer ${token}`

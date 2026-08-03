@@ -15,9 +15,9 @@
  * docs/ecosystem/22 §8.1, the largest blocker in the catalogue, blocking 86 of 318 scenarios.
  *
  * Forge Hub is the surface that can host it today: it is deployed, its nginx already serves
- * `/account/*`, and `hub.cloudsforge.online` is on the gateway's CORS allowlist
+ * `/account/*`, and `hub.<apex>` is on the gateway's CORS allowlist
  * (`deploy/gateway/dynamic/policy.yml`) — which matters, because this page POSTs credentials to
- * `nimbus.<apex>` cross-origin and `account.cloudsforge.online` is not on that list. The registry
+ * `nimbus.<apex>` cross-origin and `account.<apex>` is not on that list. The registry
  * row `signin` in `@cloudsforge/ui` points here; the day a bundle is served at `account.<apex>`,
  * that row moves and these three components go with it.
  *

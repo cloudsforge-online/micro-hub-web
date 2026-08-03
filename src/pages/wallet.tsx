@@ -1,14 +1,20 @@
 /**
- * Wallet: addresses to deposit to, deposits arriving, withdrawals leaving.
+ * Wallet: send, receive, export a key — and the lists those three change.
  *
- * ── This page reads `/v1/dashboard`, and that is not laziness ──────────────────────────────────
+ * ── The page READS through hub-api and WRITES to the services directly ─────────────────────────
  *
- * hub-api serves five routes and none of them is a wallet route (see `lib/hub.ts`). The wallet
- * registry, the deposits in flight and the withdrawals in flight are three of the eleven tiles of
- * `/v1/dashboard`, composed there from the wallet service. Fetching the dashboard and rendering
- * three of its tiles is the honest way to draw this page today; inventing `GET /v1/wallet` and
- * writing a client for it is how `wallet/src/pricingclient.ts` came to call a `/v1/quotes` that
- * has never existed.
+ * This page was read-only until docs/ecosystem/22 §8.2 named it as the estate's largest coverage
+ * gap: no `<form>`, no `<button>`, no mutation, while 05's journeys 4, 5 and 6 and fifteen browser
+ * scenarios waited on it. The three mutations are now here; `lib/money.ts` carries the reasoning
+ * for why they go to `micro-wallet` and `micro-custody` directly, which is that **hub-api composes
+ * no mutation at all** — its five routes are all reads — and inventing a sixth one to proxy them
+ * is how `wallet/src/pricingclient.ts` came to call a `/v1/quotes` that has never existed.
+ *
+ * ── The reads still come from `/v1/dashboard`, and that is not laziness ────────────────────────
+ *
+ * The wallet registry, the deposits in flight and the withdrawals in flight are three of the
+ * eleven tiles of `/v1/dashboard`, composed there from the wallet service. Fetching the dashboard
+ * and rendering three of its tiles is the honest way to draw this page.
  *
  * It also costs nothing worth having: hub-api caches the wallet registry for 60s and the two
  * in-flight lists for 5s, keyed per user, and the dashboard load a moment ago warmed all three
@@ -22,10 +28,14 @@
  * what they actually are: what is in flight. The settled history is the Activity page.
  */
 import { useCallback } from 'react'
+import { KeyExportPanel } from '../components/keyexport.tsx'
+import { ReceivePanel } from '../components/receive.tsx'
+import { SendPanel } from '../components/send.tsx'
 import { NotComposed, TilePanel } from '../components/tile.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { confirmationLabel, formatAmount, shortHash, utcDateTime } from '../lib/format.ts'
 import { loadDashboard, type DepositCredit, type WalletRecord, type WithdrawalRecord } from '../lib/hub.ts'
+import { hasAnswer } from '../lib/tile.ts'
 import { useResource } from '../lib/resource.ts'
 
 const alwaysPresent = () => 1
@@ -38,13 +48,33 @@ export function WalletPage() {
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
   if (state === 'loading' || !data) return <Loading label="Loading your wallets" />
 
-  const { wallets, deposits, withdrawals } = data.tiles
+  const { wallets, deposits, withdrawals, portfolio } = data.tiles
 
   return (
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Wallet</h1>
       </header>
+
+      {/*
+        ── The three mutations, above the lists they change ────────────────────────────────────
+        Send and Receive go to `micro-wallet` and the export ceremony to `micro-custody`, each
+        directly and each with the user's own token: hub-api composes no mutation at all (five
+        routes, all reads), and custody's ceremony reads `amr` and `auth_time` off the token a
+        service credential could not carry. See `lib/money.ts` for the hosts and what still has to
+        be true in `micro-deploy` for the browser to reach them.
+
+        They read the wallet and holding lists this page has already loaded rather than fetching
+        their own. A Send form that asked the server what your balance was, while the page above it
+        showed a different figure, would be two answers to one question on one screen.
+      */}
+      <SendPanel
+        holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []}
+        wallets={hasAnswer(wallets) ? wallets.data : []}
+        onSent={reload}
+      />
+
+      <ReceivePanel holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []} />
 
       <TilePanel
         title="Addresses"
@@ -93,19 +123,45 @@ export function WalletPage() {
         )}
       </TilePanel>
 
+      <KeyExportPanel wallets={hasAnswer(wallets) ? wallets.data : []} />
+
       {/*
         Transfers and conversions are real operations — wallet serves `POST /v1/transfers` and
-        `POST /v1/conversions` (wallet/src/server.ts:738, 765), both idempotency-keyed — but hub-api
-        composes neither, and neither has a read route this page could list. Rather than render an
-        empty section that looks like "you have made none", the hole is named. See the README.
+        `POST /v1/conversions` (wallet/src/server.ts:734, 761), both idempotency-keyed — but
+        neither has a READ route anywhere in the estate: hub-api composes neither and wallet lists
+        neither, so a form for them could submit but the result would vanish from the screen the
+        moment it was made. A money-moving control whose outcome the user cannot then see is worse
+        than no control, so the hole is named instead. `POST /v1/transfers` also takes a
+        `toUserId` — an internal identifier this app has no way to look up, and no route resolves a
+        handle to one.
       */}
       <NotComposed title="Transfers and conversions">
         <p>
           Moving value between your own accounts and converting between assets are served by the
           wallet service as <code>POST /v1/transfers</code> and <code>POST /v1/conversions</code>,
-          each behind an idempotency key. hub-api composes neither, so this page has nothing to
-          list and no route to submit to. It is not that you have made none — it is that Forge Hub
-          cannot yet see them.
+          each behind an idempotency key. Nothing in the estate lists either afterwards, and
+          transfers are addressed by an internal user id nothing resolves, so Forge Hub does not
+          offer them. It is not that you have made none — it is that Forge Hub could not show you
+          what you had done.
+        </p>
+      </NotComposed>
+
+      {/*
+        05 journey 6. The flow is: `POST /v1/wallets` with `origin: external` issues a challenge
+        nonce, the OWNER SIGNS IT with the external wallet's key, and `POST /v1/wallets/verify`
+        submits the signature (wallet/src/server.ts:463, 528). The middle step is the whole flow,
+        and it needs a signer — a browser extension, a hardware device, a mobile deep link. This
+        bundle has none, no dependency provides one, and a form that asked a user to paste a
+        signature they produced somewhere else is not journey 6; it is a way to make people move
+        their key to a machine that can sign a string.
+      */}
+      <NotComposed title="Connecting an external wallet">
+        <p>
+          Registering a wallet you hold the key for needs your wallet to sign a challenge
+          CloudsForge issues. Forge Hub cannot ask a browser extension or a hardware wallet to sign
+          anything — there is no signer in this application — so the flow has no screen here. The
+          wallet service serves both halves of it, and an external wallet already verified appears
+          in the list above.
         </p>
       </NotComposed>
     </>
