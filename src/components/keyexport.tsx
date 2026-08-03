@@ -34,7 +34,7 @@
  * material is delivered once, in a `no-store` response, and is never written anywhere by this
  * app — not to storage, not to the observability client, not into an error message.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { utcDateTime } from '../lib/format.ts'
@@ -104,13 +104,42 @@ export function KeyExportPanel({
 
   useEffect(() => reload(), [reload])
 
+  /**
+   * In flight, in a REF rather than in `busy`.
+   *
+   * ── Why the state flag is not enough on this panel specifically ────────────────────────────
+   *
+   * `busy` is state, so a second press that lands before React has re-rendered reads the value
+   * from the same closure as the first and sails through. On the Send form that is survivable:
+   * `POST /v1/withdrawals` requires an `Idempotency-Key`, one key is minted per intent, and
+   * `wallet/src/server.ts:674-676` collapses the duplicates — the flag is a convenience and the
+   * key is the contract.
+   *
+   * **There is no key on this route.** `custody/src/server.ts:474` requires none and custody
+   * dedupes nothing, so two presses are two ceremonies: two 24-hour clocks, two emails, and two
+   * things the user has to cancel. With no server-side collapse to fall back on, the client-side
+   * guard has to hold on its own, and a guard that depends on a re-render having happened does
+   * not. `lib/idempotency.ts:70-72` states the same rule for the same reason: "the key lives in a
+   * ref, not in state: reading it must never depend on a render having happened, because the
+   * submit handler reads it during the click that a re-render would race."
+   *
+   * `busy` stays, because it is what disables the controls and changes their labels. This decides
+   * whether the work runs.
+   */
+  const inFlight = useRef(false)
+
   const act = (run: () => Promise<unknown>, fallback: string) => {
+    if (inFlight.current) return
+    inFlight.current = true
     setBusy(true)
     setNotice(null)
     run()
       .then(() => reload())
       .catch((err: unknown) => setNotice(noticeFor(err, fallback)))
-      .finally(() => setBusy(false))
+      .finally(() => {
+        inFlight.current = false
+        setBusy(false)
+      })
   }
 
   const live = (records ?? []).filter(

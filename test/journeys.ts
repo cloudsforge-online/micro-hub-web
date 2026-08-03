@@ -356,7 +356,7 @@ export const SCENARIOS: readonly Scenario[] = [
     what: 'key export: cancel needs no second factor and is on screen at every point in the window',
     asserts: 'presentation',
     tier: 'T1',
-    ownedBy: { path: 'custody/src/server.ts', grep: 'cancel' },
+    ownedBy: { path: 'custody/src/server.ts', grep: '/v1/exports/:id/cancel' },
     unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/keyexport.tsx:373-376.' },
     caveat:
       'Doc 22’s row says "cancel FROM THE NOTIFICATION LINK". The link is in an email, and an ' +
@@ -444,7 +444,14 @@ export const SCENARIOS: readonly Scenario[] = [
     asserts: 'presentation',
     tier: 'T1',
     gate: true,
-    ownedBy: { path: 'wallet/src/server.ts', grep: 'idempotency_key_reused' },
+    // NOT `wallet/src/server.ts` for the string `idempotency_key_reused`, which was the first
+    // citation written here and which the meta-test rejected: that literal appears nowhere in
+    // micro-wallet. The rule is real and lives here — "a reused key with a different body is
+    // refused, not replayed" — and the 409 it produces is what this scenario renders.
+    ownedBy: {
+      path: 'wallet/src/idempotency.ts',
+      grep: 'reused key with a different body is refused',
+    },
   },
   {
     id: 'BJ-ADV-20-H5',
