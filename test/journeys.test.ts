@@ -47,7 +47,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
-import { createElement as h, type ReactElement } from 'react'
+import { StrictMode, createElement as h, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { IDENTITY_AUTH_ROUTES } from '@cloudsforge/ui'
 
@@ -216,7 +216,12 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
     let minted = 0
 
     await withScreen(
-      page(h(SignInPage), `/account/login?return=${encodeURIComponent(elsewhere)}`),
+      // UNDER StrictMode, which is the whole point of the ref this scenario guards: React mounts
+      // every effect TWICE in development, and `main.tsx` renders the app inside <StrictMode>. A
+      // scenario mounted without it cannot tell a ref-guarded effect from an unguarded one — the
+      // effect runs once either way — and a mutation removing the guard survived until this was
+      // added. It is `pages/account.tsx:216-218`'s own stated reason, exercised.
+      h(StrictMode, null, page(h(SignInPage), `/account/login?return=${encodeURIComponent(elsewhere)}`)),
       {
         url: `${ORIGIN}/account/login`,
         storage: SIGNED_IN,
@@ -662,7 +667,11 @@ describe('BJ-WAL — Send', () => {
       async (s) => {
         await arm(s, fx.OTHER_ADDRESS, '1')
         await s.click(s.byRole('button', 'Send it'))
-        assert.match(s.text(), /Already requested|does not send twice/i, 'a replay was not explained')
+        // BOTH, not either. This was `/Already requested|does not send twice/` and a mutation that
+        // hard-coded the heading to "Withdrawal requested" survived it: the alternation let the
+        // note cover for the heading, so half the screen could be wrong and the guard still pass.
+        assert.match(s.text(), /Already requested/i, 'a replay is titled as a fresh withdrawal')
+        assert.match(s.text(), /does not send twice/i, 'a replay is not explained to the user')
         assert.equal(s.allByRole('alert').length, 0, 'a replay was rendered as an error')
         // The receipt reads back off the SERVICE's record, not off the form.
         assert.ok(s.text().includes(fx.withdrawal().state), 'the receipt does not carry the service’s state')
@@ -818,6 +827,16 @@ describe('BJ-WAL-07 — an empty strip may be correct rather than broken', () =>
       // 5. THE TWO ARE DIFFERENT SENTENCES. This is the whole scenario: a reader must be able to
       //    tell "there is nothing" from "we could not find out".
       assert.notEqual(unread, answered, 'unread and empty render the same words')
+      //    And specifically: the unread strip does NOT also render the answered-empty sentence.
+      //    Without this line a mutation that rendered `children ?? empty` unconditionally survived
+      //    — the panel then said BOTH "wallet did not answer" and "No wallet has been created or
+      //    connected yet", and every other assertion here still passed. Two contradictory
+      //    sentences in one strip is worse than either alone, because the reader picks one.
+      assert.ok(
+        !/No wallet has been created or connected/i.test(unread),
+        `the unread strip also rendered the empty-state sentence: "${unread}"`,
+      )
+      assert.ok(!/^No /i.test(unread.replace(/^[^A-Za-z]+/, '')), 'the unread strip opens with a claim')
 
       // 6. The strip that DID answer with something is unaffected. One upstream failing does not
       //    blank the page — 05's rule, and hub-api answers 200 with holes precisely for it.
