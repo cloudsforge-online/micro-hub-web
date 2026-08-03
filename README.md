@@ -1,5 +1,11 @@
 # cloudsforge-hub-web
 
+[![ci](https://github.com/cloudsforge-online/micro-hub-web/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudsforge-online/micro-hub-web/actions/workflows/ci.yml)
+![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?logo=node.js&logoColor=white)
+![typescript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![module](https://img.shields.io/badge/module-ESM-F7DF1E?logo=javascript&logoColor=black)
+![tests](https://img.shields.io/badge/tests-in--process%20DOM-6E56CF)
+
 **Forge Hub** — the CloudsForge control centre. Dashboard, portfolio, wallet, activity, security,
 settings and entitlements, in one signed-in surface.
 
@@ -317,3 +323,10 @@ the feature is missing."
 
 The parts that need a real browser: the `window` listeners in `src/lib/obs.ts`, the ⌘K key binding,
 and React rendering itself. They are listed rather than approximated in jsdom.
+
+---
+
+## Provenance
+
+The code in this repository was written by **Claude Opus 5** and **Claude Fable 5**, assets
+generated with **FLUX 2 Pro**, under human direction and review.
