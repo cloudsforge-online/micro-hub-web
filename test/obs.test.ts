@@ -5,6 +5,8 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { __resetObs, enqueueBounded, envelope, flush, kindFor, report } from '../src/lib/obs.ts'
+import { existsSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { installFetch, installWindow, json, removeWindow } from './browser-stubs.ts'
 
 afterEach(() => {
@@ -206,5 +208,43 @@ describe('the send', () => {
     } finally {
       fetch.restore()
     }
+  })
+})
+/**
+ * THE JOURNEY MOCK MUST INTERCEPT
+ THE PATH THE BUNDLE ACTUALLY POSTS TO.
+ *
+ * `test/journeys/browser.ts` fulfils Lantern's ingest for every scenario so that none of them
+ * fails on a connection it did not arrange. It intercepted `/ingest/browser` for exactly as long
+ * as the bundle posted there — and when the bundle moved, the intercept went on matching NOTHING
+ * while still reading as coverage. That is this estate's signature defect in miniature: a check
+ * that cannot fail. Nothing went red when the two drifted apart, because a mock that matches no
+ * request is indistinguishable from a mock that was never needed.
+ *
+ * So the two are compared against each other rather than each being pinned to a literal. Pinning
+ * both to `/ingest/client` separately would be two copies of one decision, which is the same
+ * failure wearing a different coat.
+ */
+describe('the journey mock and the bundle agree about the ingest path', () => {
+  it('intercepts exactly the path obs.ts posts to', (t) => {
+    const journeys = fileURLToPath(new URL('./journeys/browser.ts', import.meta.url))
+    if (!existsSync(journeys)) {
+      // `t.skip`, never a bare `return`: a return marks this GREEN, and a silently-green check on
+      // a file that does not exist is precisely the thing being guarded against here.
+      t.skip('this repository carries no journey harness')
+      return
+    }
+    const obs = readFileSync(fileURLToPath(new URL('../src/lib/obs.ts', import.meta.url)), 'utf8')
+    const declared = /const INGEST_PATH = '([^']+)'/.exec(obs)?.[1]
+    assert.ok(declared, 'obs.ts no longer declares INGEST_PATH; this check has stopped measuring')
+
+    const mock = readFileSync(journeys, 'utf8')
+    const intercepted = [...mock.matchAll(/url\.pathname === '(\/ingest\/[^']*)'/g)].map((m) => m[1])
+    assert.ok(intercepted.length > 0, 'the journey harness intercepts no /ingest/ path at all')
+    assert.deepEqual(
+      intercepted,
+      [declared],
+      `the harness intercepts ${intercepted.join(', ')} but the bundle posts to ${declared}`,
+    )
   })
 })
