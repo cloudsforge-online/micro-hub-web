@@ -47,11 +47,11 @@
 #   * `rules:` was never claimed to be temporary — read the first line of this header again, it
 #     names `check` and `image` only — and web-ci.yml has no input that could carry it. Its
 #     `runtime-hosts` job checks VITE_*, build arguments, third-party analytics and the README.
-#     It does not and cannot check that `bootstrapSession` runs before React mounts (line 155),
-#     that no CloudsForge hostname is written down literally (line 124), or that nginx.conf keeps
-#     its `error_page 404` (line 135). Those are this repository's rules, not the estate's.
+#     It does not and cannot check that `bootstrapSession` runs before React mounts (line 182),
+#     that no CloudsForge hostname is written down literally (line 151), or that nginx.conf keeps
+#     its `error_page 404` (line 162). Those are this repository's rules, not the estate's.
 #   * the `image:` job here asserts strictly more than the shared one: that the 404 still SERVES
-#     THE APP SHELL (lines 213-214), which web-ci.yml only checks the status code of.
+#     THE APP SHELL (lines 240-241), which web-ci.yml only checks the status code of.
 #
 # Migrating would therefore delete assertions to save a checkout that is already written. What was
 # genuinely missing was a PRODUCER — nothing here ever pushed the image it built — and that is what
@@ -254,11 +254,20 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────────────────────────
   # THE IMAGE, PUBLISHED. Until this job existed the `image:` job above built this image and threw
-  # it away, so the release path could not name it: `cfctl release` writes a manifest naming
-  # ghcr.io/cloudsforge-online/<repo> at this repository's package.json version (micro-org
-  # tools/cfctl.ts:889-934), `cfctl release --verify` runs `docker manifest inspect` on every entry
-  # (:937-975), and deploy/scripts/release-deploy.sh:99-125 refuses to change anything until all of
-  # them pull. A frontend with no producer was a manifest entry that could never verify.
+  # it away, so the release path could not name it. Every line number below was read off the source,
+  # not off the prose that cites it — the numbers in micro-org's own publish-image.yml header have
+  # already drifted:
+  #
+  #   generator  `cfctl release` pins one image per deployable, the name from
+  #              org/tools/registry.ts:367-369 (`ghcr.io/<org>/<repo.repo>`, which is why the package
+  #              is micro-<app> and not <app>) and the tag from that repository's package.json
+  #              version, org/tools/cfctl.ts:962-968.
+  #   verifier   `cfctl release --verify` runs `docker manifest inspect` on EVERY entry and returns
+  #              non-zero if one cannot be pulled, org/tools/cfctl.ts:997-1038.
+  #   deployer   deploy/scripts/release-deploy.sh:99-124 refuses to change anything while any image
+  #              is missing.
+  #
+  # A frontend with no producer was therefore a manifest entry that could never verify.
   #
   # `packages: write` IS GRANTED HERE and not asked for inside the shared workflow, which is forced
   # rather than stylistic: a called workflow's GITHUB_TOKEN can only be maintained or reduced, never
