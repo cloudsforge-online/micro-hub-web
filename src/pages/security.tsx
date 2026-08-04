@@ -23,6 +23,7 @@ import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { NotComposed, TilePanel } from '../components/tile.tsx'
 import { shortHash, utcDateTime } from '../lib/format.ts'
 import { useSession } from '../lib/auth.tsx'
+import { useLatch } from '../lib/latch.ts'
 import {
   loadDashboard,
   loadSessions,
@@ -48,6 +49,20 @@ export function SecurityPage() {
   const { signOut } = useSession()
   /** Which revoke is in flight, by session id, or `'all'`. Disables every button while set. */
   const [busy, setBusy] = useState<string | null>(null)
+  /**
+   * And what actually enforces "one at a time", because `busy` cannot.
+   *
+   * `busy` is state: two same-tick presses of End both read `null` and both sent. On a single
+   * session that is merely two `DELETE /sessions/:id` and two reloads — identity answers 204
+   * whether or not a session existed, so nothing breaks. On **Sign out everywhere** it is not
+   * cosmetic: the first `DELETE /sessions` revokes this tab's own tokens, so the second is sent
+   * with a credential that is already dead, 401s, and lands in the `catch` — which calls
+   * `reload()` against a revoked session and paints a failure over a sign-out that worked.
+   *
+   * One latch covers both controls rather than one each, because `disabled={busy !== null}`
+   * already says only one revoke may run at a time; the latch is what makes that true.
+   */
+  const revoking = useLatch()
 
   const load = useCallback(
     (signal: AbortSignal): Promise<SecurityData> =>
@@ -76,12 +91,14 @@ export function SecurityPage() {
   const view = security?.data ?? null
 
   const endSession = (id: string) => {
+    if (!revoking.take()) return
     setBusy(id)
     revokeSession(id)
       // A failed revoke needs no message of its own: the reload that follows shows the session
       // still listed, which is the accurate report of what happened.
       .catch(() => undefined)
       .finally(() => {
+        revoking.release()
         setBusy(null)
         // Reloaded from identity rather than spliced out here. The 204 is returned whether or not
         // a session existed, so it proves nothing about the list.
@@ -90,6 +107,7 @@ export function SecurityPage() {
   }
 
   const endEverything = () => {
+    if (!revoking.take()) return
     setBusy('all')
     revokeAllSessions()
       // The current session is revoked too — deliberately, because "a 'sign out everywhere' that
@@ -101,6 +119,10 @@ export function SecurityPage() {
         setBusy(null)
         reload()
       })
+      // Released even on the success path, where `signOut()` has already torn the session down.
+      // It costs nothing there and it is the only way to be sure the failure path cannot wedge
+      // the control — the two must not be allowed to diverge.
+      .finally(() => revoking.release())
   }
 
   return (

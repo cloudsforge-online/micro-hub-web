@@ -42,7 +42,8 @@ import { useState, type FormEvent } from 'react'
 import { ApiError, noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { formatAmount, scaleOf, toBaseUnits } from '../lib/format.ts'
 import { mintIdempotencyKey } from '../lib/idempotency.ts'
-import { requestWithdrawal, type SendIntent, type Withdrawal } from '../lib/money.ts'
+import { useLatch } from '../lib/latch.ts'
+import { requestWithdrawal, settlesOnChain, type SendIntent, type Withdrawal } from '../lib/money.ts'
 import type { Absence } from '../lib/tile.ts'
 import type { Holding, WalletRecord } from '../lib/hub.ts'
 
@@ -81,7 +82,13 @@ export function SendPanel({
   // Only what can actually be sent: a chain asset with a positive available balance. A SHARD row
   // would be offered and then refused by the service ("does not settle on a chain"), which is a
   // dead end presented as a choice.
-  const sendable = holdings.filter((h) => h.available !== '0' && /^[A-Z]+$/.test(h.assetCode))
+  //
+  // That comment is older than this line and was always right. The test it sat above was
+  // `/^[A-Z]+$/.test(h.assetCode)`, which does not implement it: `SHARD` is plain uppercase, so it
+  // matched, and this menu offered a withdrawal the service refuses with `not_withdrawable`. The
+  // regex excluded the `TOKEN:<urn>` holdings and nothing else. `settlesOnChain` asks the actual
+  // question, against the list `micro-wallet` was observed to accept — see `lib/money.ts`.
+  const sendable = holdings.filter((h) => h.available !== '0' && settlesOnChain(h.assetCode))
 
   const [assetCode, setAssetCode] = useState(sendable[0]?.assetCode ?? '')
   const [destination, setDestination] = useState('')
@@ -139,8 +146,20 @@ export function SendPanel({
     }))
   }
 
+  /**
+   * One withdrawal per intent, and the latch is what enforces it.
+   *
+   * This used to read `if (!armed || busy) return`, and `busy` is state — so two Confirm clicks in
+   * one tick both read `busy === false` and both posted. The reason nobody noticed is at the top
+   * of this file: one intent mints one `Idempotency-Key`, both requests carried it, and
+   * `wallet/src/server.ts:674-676` replayed the second. No money moved twice, which made this a
+   * guard that only worked because the service cleaned up after it. `micro-beacon`'s BJ-WAL-09
+   * drives real Chromium and counts what leaves the browser, and it counted two.
+   */
+  const submission = useLatch()
+
   const confirm = () => {
-    if (!armed || busy) return
+    if (!armed || !submission.take()) return
     setBusy(true)
     setNotice(null)
     requestWithdrawal(armed.intent, armed.key)
@@ -160,7 +179,13 @@ export function SendPanel({
           setArmed(null)
         }
       })
-      .finally(() => setBusy(false))
+      // The latch first, and both in the `finally`. Releasing only on success would leave Confirm
+      // permanently dead the first time a withdrawal failed — the failure mode that gets a latch
+      // deleted rather than fixed.
+      .finally(() => {
+        submission.release()
+        setBusy(false)
+      })
   }
 
   if (sendable.length === 0) {

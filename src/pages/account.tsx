@@ -31,6 +31,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react'
+import { useLatch } from '../lib/latch.ts'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, hasSession } from '../lib/api.ts'
 import {
@@ -234,8 +235,26 @@ export function SignInPage() {
     void finish(granted)
   }, [finish, returnTo])
 
+  /**
+   * One credential attempt per press, on both steps of this form.
+   *
+   * Neither handler had a synchronous guard — only `disabled={busy}`, which is not on the DOM node
+   * until the render commits and so cannot see a second event dispatched before that. Two Enter
+   * presses on the password field sent two `POST /auth/login`, which identity counts against the
+   * account's own rate limit: a user who double-taps Sign in spends two of their attempts on one
+   * intention and is locked out twice as fast.
+   *
+   * On the MFA step it is worse and not merely wasteful. identity spends the challenge whether or
+   * not the code was right — "a challenge that survives a wrong code is an unlimited offline-speed
+   * oracle against a six-digit secret" — so of two same-tick answers the first consumes the
+   * challenge and the second is refused. The refusal resolves last, so a user who entered the
+   * RIGHT code is sent back to the password step and told their code was rejected.
+   */
+  const attempt = useLatch()
+
   const submitPassword = (event: FormEvent) => {
     event.preventDefault()
+    if (!attempt.take()) return
     setBusy(true)
     setRefusal(null)
     setRefused(null)
@@ -249,11 +268,16 @@ export function SignInPage() {
         setRefusal(refusalFrom(err))
         setBusy(false)
       })
+      // In a `finally`, so a refused sign-in leaves the form usable. Released only after `finish`
+      // has resolved: it is `finish` that performs the hand-off, and a latch dropped before then
+      // would let a second press start a second hand-off for one sign-in.
+      .finally(() => attempt.release())
   }
 
   const submitMfa = (event: FormEvent) => {
     event.preventDefault()
     if (stage.at !== 'mfa') return
+    if (!attempt.take()) return
     setBusy(true)
     setRefusal(null)
     answerMfaChallenge(stage.challenge, code)
@@ -268,6 +292,7 @@ export function SignInPage() {
         setRefusal(refusalFrom(err))
         setBusy(false)
       })
+      .finally(() => attempt.release())
   }
 
   if (stage.at === 'handing-off') {
@@ -390,8 +415,23 @@ export function RegisterPage() {
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<Refusal | null>(null)
 
+  /**
+   * `POST /auth/register` carries no idempotency key, and this is the sharpest handler on the
+   * surface for it.
+   *
+   * With only `disabled={busy}` in the way, two same-tick presses of Create account sent two
+   * registrations for one person. The first creates the account; the second is refused because
+   * the handle and the email are now taken — by the account that was just made for them — and it
+   * resolves last, so what the user is left looking at is "that handle is already in use" on a
+   * form for an account that exists and that they are not signed in to. They then pick a
+   * different handle, and the estate has two accounts for one person, or the user concludes
+   * registration is broken and leaves.
+   */
+  const attempt = useLatch()
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (!attempt.take()) return
     setBusy(true)
     setRefusal(null)
     registerAccount({ email, handle, password })
@@ -413,6 +453,7 @@ export function RegisterPage() {
         setRefusal(refusalFrom(err))
         setBusy(false)
       })
+      .finally(() => attempt.release())
   }
 
   return (

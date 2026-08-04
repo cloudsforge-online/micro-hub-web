@@ -52,6 +52,76 @@ const wallet = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
 const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
   request<T>(hosts().keyvault, path, opts)
 
+/* ══════════════════════════════ which assets move on a chain ══════════════════════════════ */
+
+/**
+ * The asset codes `micro-wallet` will actually deposit and withdraw.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── WHY THIS LIST IS HERE AT ALL, AND WHAT IT REPLACED ────────────────────────────────────────
+ *
+ * Send and Receive both used to select their assets with `/^[A-Z]+$/.test(assetCode)`, under a
+ * comment claiming that a SHARD row "would be offered and then refused by the service". The
+ * comment described the right behaviour and the regex did not implement it: `SHARD` is nothing
+ * but uppercase letters, so it matched, and Send offered a Shard withdrawal that `micro-wallet`
+ * refuses. The code disagreed with its own documentation, and the documentation was right.
+ *
+ * The regex was not pointless — it excluded the `TOKEN:<urn>` codes that hub-api also serves as
+ * holdings (`hub-api/src/portfolio.ts:43`). It simply was not the question. The question is
+ * whether an asset settles on a chain, and only one component in the estate answers it.
+ *
+ * ── ESTABLISHED AGAINST THE RUNNING SERVICE, NOT AGAINST A STUB ───────────────────────────────
+ *
+ * `wallet/src/withdrawals.ts:283-290` calls `chainForAsset` and throws `not_withdrawable` for
+ * `null`; `wallet/src/deposits.ts:163-172` does the same with `not_depositable`. The map behind
+ * both is `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:66-73`), and its file says why SHARD is
+ * absent: "Shards are a platform unit with no chain, so asking for their deposit address must
+ * fail rather than fall through to a default."
+ *
+ * That reading of the source was then CONFIRMED against the live estate, through the real
+ * gateway, because a frontend harness that stubs every response cannot see a service refuse an
+ * asset. `POST /v1/withdrawals` for each code in turn:
+ *
+ *   EMBER, BTC, ETH, SOL, XRP  → 422 `invalid_address`   (past the asset gate; the probe address
+ *                                                         was deliberately wrong for the chain)
+ *   SHARD, USD, TOKEN:…        → 422 `not_withdrawable`  ("… does not settle on a chain")
+ *
+ * `USD` is the reason this is an allowlist rather than `assetCode !== 'SHARD'`: it is also plain
+ * uppercase, it is also refused, and a denylist would have to grow a new entry every time the
+ * estate invents another off-chain unit — which is the defect above, recurring on a timer.
+ *
+ * ── THE STALENESS THIS ACCEPTS, DELIBERATELY ──────────────────────────────────────────────────
+ *
+ * `micro-wallet` serves no route that enumerates its withdrawable assets, so this bundle cannot
+ * ask and must carry the answer. The cost is that adding a sixth chain to wallet leaves it
+ * missing from Send until this list ships too. That is the safe direction to be wrong in: an
+ * asset absent from a menu is a visible gap somebody reports, whereas an asset present in the
+ * menu and refused on submit is a dead end presented to a user as a choice.
+ *
+ * ── SPARKS ARE NOT ON THIS LIST, AND MUST NEVER BE ────────────────────────────────────────────
+ *
+ * Shards are being withdrawn estate-wide in favour of EMBER denominated in Sparks, where one
+ * Spark is 10⁻⁶ EMBER. A Spark is a DISPLAY DENOMINATION of EMBER — the same relationship a penny
+ * has to a pound — and deliberately never a second asset code. `EMBER` below already covers it.
+ * Adding `SPARK` here would re-create the exact defect this list closes, in the currency that
+ * replaced the one that caused it.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+export const CHAIN_ASSETS: readonly string[] = Object.freeze(['EMBER', 'BTC', 'ETH', 'SOL', 'XRP'])
+
+/**
+ * Whether `micro-wallet` will move this asset on a chain — the only assets Send and Receive may
+ * offer.
+ *
+ * Case-sensitive on purpose. `wallet/src/withdrawals.ts:283` upper-cases before it looks the code
+ * up, so `ember` would in fact be accepted; but every code hub-api serves is already upper-case,
+ * and quietly accepting a second spelling here would hide a real disagreement between the two
+ * services rather than surface it.
+ */
+export function settlesOnChain(assetCode: string): boolean {
+  return CHAIN_ASSETS.includes(assetCode)
+}
+
 /* ══════════════════════════════ withdrawals ══════════════════════════════ */
 
 /** Mirrors `WithdrawalRecord`, `wallet/src/withdrawals.ts:114-133`. */

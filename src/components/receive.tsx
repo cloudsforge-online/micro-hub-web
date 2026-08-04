@@ -33,28 +33,50 @@
 import { useCallback, useState } from 'react'
 import { noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { utcDateTime } from '../lib/format.ts'
-import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
+import { useLatch } from '../lib/latch.ts'
+import { assignDepositAddress, settlesOnChain, type DepositAssignment } from '../lib/money.ts'
 import type { Holding } from '../lib/hub.ts'
 
 export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
   // Every chain asset the account could receive, whether or not it holds any today — a receive
   // screen that only offers what you already have cannot be used for the first deposit.
-  const assets = holdings.map((h) => h.assetCode).filter((code) => /^[A-Z]+$/.test(code))
+  //
+  // The same broken test as Send carried the same defect here: `/^[A-Z]+$/` matches `SHARD`, so
+  // this menu offered a Shard deposit address and `wallet/src/deposits.ts:163-172` refuses it with
+  // `not_depositable` — "a Shard deposit address would be an address on no chain". Confirmed
+  // against the running service, not against a stub.
+  const assets = holdings.map((h) => h.assetCode).filter((code) => settlesOnChain(code))
   const [assetCode, setAssetCode] = useState(assets[0] ?? 'EMBER')
   const [assignment, setAssignment] = useState<DepositAssignment | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<ErrorNotice | null>(null)
 
+  /**
+   * There was no guard here at all beyond `disabled={busy}`, and this route carries no key.
+   *
+   * `POST /v1/deposits` with `rotate: true` is the sharp one: wallet's own note says defaulting to
+   * rotation "would mint a new address on every page load and leave a trail of addresses nobody
+   * was told about", and a double click on Rotate does precisely that — two rotations, so the
+   * address the user is finally shown is the second, while the first is already retired and may
+   * have been copied from the screen in between. `disabled={busy}` cannot stop it: the attribute
+   * is not on the node until the render commits, and the second click was dispatched before that.
+   */
+  const request = useLatch()
+
   const fetchAddress = useCallback(
     (rotate: boolean) => {
+      if (!request.take()) return
       setBusy(true)
       setNotice(null)
       assignDepositAddress(assetCode, rotate)
         .then((answer) => setAssignment(answer.assignment))
         .catch((err: unknown) => setNotice(noticeFor(err, 'Could not get a deposit address.')))
-        .finally(() => setBusy(false))
+        .finally(() => {
+          request.release()
+          setBusy(false)
+        })
     },
-    [assetCode],
+    [assetCode, request],
   )
 
   return (

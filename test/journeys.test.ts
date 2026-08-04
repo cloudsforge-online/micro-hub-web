@@ -620,24 +620,39 @@ describe('BJ-WAL — Send', () => {
         await s.settle(40)
 
         const posted = s.api.matching('POST /v1/withdrawals')
-        assert.ok(posted.length >= 1, 'the confirm button sent nothing')
 
-        // ── WHAT THIS ASSERTS, AND WHY IT IS THE KEY AND NOT THE COUNT ────────────────────────
+        // ── THE COUNT. THIS ASSERTION USED TO BE `posted.length >= 1` ─────────────────────────
         //
-        // Doc 22's row reads "exactly one withdrawal request leaves the browser". The `busy` flag
-        // in `components/send.tsx:133` is what delivers that in a real browser, where two clicks
-        // are two discrete events and React flushes state between them. This harness runs with
-        // `IS_REACT_ACT_ENVIRONMENT` set, which queues updates until `act` exits — so both
-        // handlers observe the same pre-click state and the count here is a property of the
-        // harness's scheduling rather than of the screen. Asserting it would be asserting
-        // something this file cannot faithfully reproduce, and a guard that fails on correct code
-        // is a guard somebody deletes.
+        // Doc 22's row reads "exactly one withdrawal request leaves the browser", and this line
+        // used to decline to check it, under a comment claiming the count was "a property of the
+        // harness's scheduling rather than of the screen" because in a real browser "two clicks
+        // are two discrete events and React flushes state between them".
         //
-        // The KEY is the contract, and it holds under either scheduling: one intent, one key, and
-        // `wallet/src/server.ts:674-676` collapses the duplicates on the strength of it. A key
-        // minted per fetch — the defect `lib/idempotency.ts:12-16` exists to prevent — makes two
-        // clicks two withdrawals no matter how well the button guards itself, and shows up here.
-        // `market-web/test/journeys.test.ts:315-317` reaches the same conclusion for BJ-MKT-04.
+        // Both halves were false, and the assertion they justified — `>= 1` against a control
+        // that had just been pressed — could not fail. React does not flush between two clicks
+        // dispatched in one task, which is precisely why `micro-beacon`'s BJ-WAL-09 dispatches
+        // both from a single `page.evaluate` in real Chromium, and why it found TWO POSTs against
+        // the `if (!armed || busy)` guard that used to be in `components/send.tsx`.
+        //
+        // The harness is stricter here than a browser rather than looser: two dispatches inside
+        // one `act()` is the worst case, not an unreachable one. `test/double-submit.test.ts`
+        // proves that directly — it mounts a control with NO latch and asserts both handlers
+        // observe the same pre-click state — and repeats every scenario under `<StrictMode>`.
+        assert.equal(
+          posted.length,
+          1,
+          `two synchronous presses of Confirm sent ${posted.length} withdrawal request(s). The ` +
+            `guard is the ref latch in components/send.tsx, not \`busy\`: \`setBusy(true)\` only ` +
+            `schedules a render, so both clicks read the same pre-click state.`,
+        )
+
+        // ── AND THE KEY, WHICH IS A SEPARATE CONTRACT ─────────────────────────────────────────
+        //
+        // One intent, one key, and `wallet/src/server.ts:674-676` collapses duplicates on the
+        // strength of it. That is what makes a genuine RETRY safe, and it is orthogonal to the
+        // count: a key minted per fetch — the defect `lib/idempotency.ts:12-16` exists to prevent
+        // — makes two requests two withdrawals no matter how well the button guards itself. It is
+        // asserted separately so that a regression in either is legible on its own.
         const keys = new Set(posted.map((p) => p.headers['idempotency-key']))
         assert.equal(
           keys.size,
@@ -649,7 +664,9 @@ describe('BJ-WAL — Send', () => {
         // Every attempt carried the same body, too: one key over two different bodies is a 409
         // from the service and would be this bundle's bug rather than the user's.
         for (const p of posted) assert.deepEqual(p.json, posted[0]?.json)
-        assert.ok(posts >= 1)
+        // The stub's own counter and the recorded wire agree. Two independent observations of the
+        // same number, so the count above cannot pass because the harness stopped recording.
+        assert.equal(posts, posted.length, 'the stub was entered a different number of times than was recorded')
       },
     )
   })

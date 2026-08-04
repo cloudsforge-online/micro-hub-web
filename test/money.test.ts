@@ -25,10 +25,12 @@ import {
   assignDepositAddress,
   cancelKeyExport,
   challengeKeyExport,
+  CHAIN_ASSETS,
   loadKeyExports,
   redeemKeyExport,
   requestKeyExport,
   requestWithdrawal,
+  settlesOnChain,
   type SendIntent,
 } from '../src/lib/money.ts'
 import {
@@ -295,6 +297,60 @@ describe('assignDepositAddress', () => {
     stub = installServices()
     await assignDepositAddress('EMBER', true)
     assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), { assetCode: 'EMBER', rotate: true })
+  })
+})
+
+/* ══════════════════════════════ which assets may be offered ══════════════════════════════ */
+
+describe('settlesOnChain', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * WHAT THIS TEST IS, AND — MORE IMPORTANTLY — WHAT IT IS NOT.
+   *
+   * It is NOT the evidence that `micro-wallet` refuses SHARD. It cannot be: every test in this
+   * file answers its own requests from a stand-in, and a stand-in will happily accept an asset
+   * the real service rejects. That was exactly the defect — Send offered SHARD, the whole
+   * frontend suite was green, and the refusal only ever existed at the service.
+   *
+   * The evidence is `micro-wallet`'s source and the running estate, in that order:
+   *
+   *   wallet/src/addresses.ts:66-73     CHAIN_FOR_ASSET — EMBER, ETH, BTC, SOL, XRP, and its own
+   *                                     comment on why SHARD is absent
+   *   wallet/src/withdrawals.ts:283-290 `chainForAsset(...) === null` → `not_withdrawable`
+   *   wallet/src/deposits.ts:163-172    the same, → `not_depositable`
+   *
+   * and then confirmed by driving `POST /v1/withdrawals` through the real gateway against the
+   * live estate, once per code — SHARD, USD and TOKEN:… came back 422 `not_withdrawable`, while
+   * the five below got past the asset gate and were refused on the address instead.
+   *
+   * What THIS test does is narrower and still worth having: it pins the list so that a later
+   * edit cannot quietly widen it, and it states the SHARD case by name so the regression has a
+   * red test with the defect's own name on it.
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   */
+  it('accepts exactly the five assets micro-wallet maps to a chain', () => {
+    assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'SOL', 'XRP'])
+    for (const code of CHAIN_ASSETS) assert.equal(settlesOnChain(code), true, `${code} was excluded`)
+  })
+
+  it('refuses SHARD, which is the defect this exists for', () => {
+    // The old test was `/^[A-Z]+$/`, which matches SHARD — so Send offered a withdrawal the
+    // service answers with "SHARD does not settle on a chain and cannot be withdrawn".
+    assert.equal(settlesOnChain('SHARD'), false)
+  })
+
+  it('refuses the other things hub-api serves as holdings but wallet will not move', () => {
+    // `USD` is why this is an allowlist and not `assetCode !== 'SHARD'`: it is also plain
+    // uppercase and also refused. `TOKEN:<urn>` was the only thing the old regex did exclude.
+    assert.equal(settlesOnChain('USD'), false)
+    assert.equal(settlesOnChain('TOKEN:cf:mint:token:1'), false)
+  })
+
+  it('does not accept SPARK, which is a denomination of EMBER and not an asset', () => {
+    // One Spark is 10⁻⁶ EMBER — the relationship a penny has to a pound. Shards are being
+    // withdrawn estate-wide in favour of EMBER denominated in Sparks, and a `SPARK` entry here
+    // would re-create the defect above in the unit that replaced the one that caused it.
+    assert.equal(settlesOnChain('SPARK'), false)
   })
 })
 

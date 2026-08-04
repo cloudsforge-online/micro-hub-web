@@ -27,6 +27,7 @@ import { Empty, Failed, Forbidden, Loading } from '../components/states.tsx'
 import { ageLabel, formatAmount, utcDateTime, utcTime } from '../lib/format.ts'
 import { noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { appendPage, canLoadMore, feedSummary, EMPTY_FEED, type FeedState } from '../lib/feed.ts'
+import { useLatch } from '../lib/latch.ts'
 import { loadActivity, type ActivityRecord } from '../lib/hub.ts'
 
 export function ActivityPage() {
@@ -34,10 +35,10 @@ export function ActivityPage() {
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<ErrorNotice | null>(null)
 
-  const fetchPage = useCallback((cursor: string | null, signal: AbortSignal) => {
+  const fetchPage = useCallback((cursor: string | null, signal: AbortSignal): Promise<void> => {
     setLoading(true)
     setNotice(null)
-    loadActivity(signal, cursor)
+    return loadActivity(signal, cursor)
       .then((page) => {
         if (signal.aborted) return
         // `cursor` is passed back in as `spent` so the reducer can tell a server that moved from
@@ -55,13 +56,30 @@ export function ActivityPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchPage(null, controller.signal)
+    void fetchPage(null, controller.signal)
     return () => controller.abort()
   }, [fetchPage])
 
+  /**
+   * Load more is a READ, and it still may not go out twice.
+   *
+   * `disabled={loading}` is state, so two same-tick presses both read `loading === false` and both
+   * fetch the same cursor. `appendPage` deduplicates by record id, so no row is doubled — but two
+   * requests still leave the browser for one press, and `feed.pages` counts two pages for one, so
+   * "loaded 3 pages" stops being true.
+   *
+   * The latch is taken here rather than inside `fetchPage` on purpose. `fetchPage` is also called
+   * from the mount effect, and under `<StrictMode>` that effect runs twice: the first run is
+   * aborted by the cleanup and the second starts in the same tick, so a latch held by the first
+   * would block the second and the page would never load at all. Guarding only the control the
+   * user can press twice is the narrow, correct scope.
+   */
+  const more = useLatch()
+
   const loadMore = () => {
+    if (!more.take()) return
     const controller = new AbortController()
-    fetchPage(feed.cursor, controller.signal)
+    void fetchPage(feed.cursor, controller.signal).finally(() => more.release())
   }
 
   if (notice?.forbidden) return <Forbidden notice={notice} />

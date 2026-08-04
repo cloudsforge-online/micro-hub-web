@@ -34,10 +34,11 @@
  * material is delivered once, in a `no-store` response, and is never written anywhere by this
  * app — not to storage, not to the observability client, not into an error message.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { utcDateTime } from '../lib/format.ts'
+import { useLatch } from '../lib/latch.ts'
 import {
   EXPORT_FORMATS,
   cancelKeyExport,
@@ -110,10 +111,11 @@ export function KeyExportPanel({
    * ── Why the state flag is not enough on this panel specifically ────────────────────────────
    *
    * `busy` is state, so a second press that lands before React has re-rendered reads the value
-   * from the same closure as the first and sails through. On the Send form that is survivable:
-   * `POST /v1/withdrawals` requires an `Idempotency-Key`, one key is minted per intent, and
-   * `wallet/src/server.ts:674-676` collapses the duplicates — the flag is a convenience and the
-   * key is the contract.
+   * from the same closure as the first and sails through. On the Send form that LOOKED
+   * survivable: `POST /v1/withdrawals` requires an `Idempotency-Key`, one key is minted per
+   * intent, and `wallet/src/server.ts:674-676` collapses the duplicates — so the flag was a
+   * convenience and the key was the contract. That reasoning was right about the money and wrong
+   * about the guard, and Send has since taken the same latch this panel already had.
    *
    * **There is no key on this route.** `custody/src/server.ts:474` requires none and custody
    * dedupes nothing, so two presses are two ceremonies: two 24-hour clocks, two emails, and two
@@ -125,19 +127,22 @@ export function KeyExportPanel({
    *
    * `busy` stays, because it is what disables the controls and changes their labels. This decides
    * whether the work runs.
+   *
+   * The latch itself now comes from `lib/latch.ts`, which is where this panel's reasoning was
+   * generalised when the rest of the surface was swept for the same shape. It is the same guard,
+   * in one place, rather than eight copies of a `useRef(false)`.
    */
-  const inFlight = useRef(false)
+  const inFlight = useLatch()
 
   const act = (run: () => Promise<unknown>, fallback: string) => {
-    if (inFlight.current) return
-    inFlight.current = true
+    if (!inFlight.take()) return
     setBusy(true)
     setNotice(null)
     run()
       .then(() => reload())
       .catch((err: unknown) => setNotice(noticeFor(err, fallback)))
       .finally(() => {
-        inFlight.current = false
+        inFlight.release()
         setBusy(false)
       })
   }
@@ -206,23 +211,29 @@ export function KeyExportPanel({
             }
             onRedeem={() => {
               if (!revealToken) return
-              setBusy(true)
-              setNotice(null)
-              redeemKeyExport(
-                record.id,
-                revealToken,
-                record.format === 'keystore' ? passphrase : undefined,
+              // Through `act`, which holds the latch, rather than round the outside of it. This
+              // handler used to run its own `setBusy(true)` chain with no synchronous guard, and
+              // `revealToken` is state — so two presses in one tick both read the same non-null
+              // token and both POSTed. `custody/src/exports.ts` spends the token on the first, so
+              // the loser is refused, resolves last, and the user is told "The key could not be
+              // revealed" about the key that is on screen underneath the message. This is the one
+              // control on the surface whose second request is a failure notice over a private
+              // key the user has exactly one chance to copy.
+              act(
+                () =>
+                  redeemKeyExport(
+                    record.id,
+                    revealToken,
+                    record.format === 'keystore' ? passphrase : undefined,
+                  ).then((answer) => {
+                    // The token is spent. Dropping it here as well means a second press cannot
+                    // even attempt a replay that custody would refuse anyway.
+                    setRevealToken(null)
+                    setPassphrase('')
+                    setRevealed(answer.export)
+                  }),
+                'The key could not be revealed.',
               )
-                .then((answer) => {
-                  // The token is spent. Dropping it here as well means a second press cannot even
-                  // attempt a replay that custody would refuse anyway.
-                  setRevealToken(null)
-                  setPassphrase('')
-                  setRevealed(answer.export)
-                  reload()
-                })
-                .catch((err: unknown) => setNotice(noticeFor(err, 'The key could not be revealed.')))
-                .finally(() => setBusy(false))
             }}
           />
         ))
