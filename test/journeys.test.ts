@@ -1052,7 +1052,26 @@ const exportsInOrder = (...stages: readonly (readonly unknown[])[]) =>
 describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
   it('BJ-WAL-18 ★ T1: every stage is on screen, the hold is stated, and cancel is beside it', async () => {
     fresh()
-    const holding = fx.keyExport({ status: 'cooling_off', availableAt: '2026-08-04T08:00:00.000Z' })
+    /*
+     * ── THE HOLD MUST STILL BE PENDING, SO THE INSTANT IS RELATIVE TO NOW ──────────────────────
+     *
+     * This was the literal `2026-08-04T08:00:00.000Z`, which was comfortably in the future when it
+     * was written and became the past at 08:00 UTC on 4 August 2026 — at which point this test
+     * began failing on correct code, in CI and everywhere else, for a reason that had nothing to
+     * do with the product.
+     *
+     * `keyexport.tsx:347` computes `holdOver` against `Date.now()`, and once the hold HAS passed
+     * the panel deliberately renders "The 24-hour hold has passed" INSTEAD of the date. So a fixed
+     * future instant is a fuse: this scenario asserts the date is on screen, and the date is only
+     * on screen while the hold is pending.
+     *
+     * A day ahead of whenever the suite runs is what a real `cooling_off` record looks like —
+     * custody sets `availableAt` 24 hours after the request — so this is also closer to the truth
+     * than the literal was. The scenarios that need the OPPOSITE state use `2020-01-01`, which is
+     * safe forever precisely because the past does not move.
+     */
+    const availableAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const holding = fx.keyExport({ status: 'cooling_off', availableAt: availableAt.toISOString() })
     await withScreen(
       page(exportPanel(), '/wallet'),
       { url: `${ORIGIN}/wallet`, routes: { 'GET /v1/exports': { body: { exports: [holding] } } } },
@@ -1065,7 +1084,20 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
         s.before('Second factor answered', 'Key revealed', 'the stages are out of order')
 
         // The hold is stated WITH THE TIME custody sent, not with a duration this bundle computed.
-        assert.ok(s.text().includes('04 Aug 08:00'), 'the availableAt custody sent is not on screen')
+        //
+        // The expected string is built here from the SAME instant the fixture supplied, by an
+        // independent transcription of the format rather than by importing the app's formatter —
+        // two observations of one value, in opposite directions, per hazard 2 in this file's
+        // header. Importing `utcDateTime` would compare the page against itself.
+        const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const pad = (n: number) => n.toString().padStart(2, '0')
+        const shown =
+          `${pad(availableAt.getUTCDate())} ${MONTHS[availableAt.getUTCMonth()]} ` +
+          `${pad(availableAt.getUTCHours())}:${pad(availableAt.getUTCMinutes())}`
+        assert.ok(
+          s.text().includes(shown),
+          `the availableAt custody sent is not on screen: expected "${shown}"`,
+        )
         assert.match(s.text(), /you can stop this at any point/i, 'the cancel route is not stated')
 
         // Cancel is on screen at this stage, and the stage that has not been reached offers no
