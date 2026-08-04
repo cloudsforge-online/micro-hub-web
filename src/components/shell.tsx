@@ -10,7 +10,7 @@
  * not a destination in the list, it is the container the reader is already inside.
  */
 import { useEffect, useRef, useState } from 'react'
-import { CloudsForgeBar } from '@cloudsforge/ui'
+import { CloudsForgeBar, CloudsForgeFooter } from '@cloudsforge/ui'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { PRODUCT } from '../lib/hosts.ts'
 import { MAX_SEARCH_LENGTH } from '../lib/hub.ts'
@@ -67,6 +67,20 @@ export function AppShell() {
       <main className="wt-main" id="main">
         <Outlet />
       </main>
+
+      {/*
+        The company footer, from @cloudsforge/ui. Not written here, and deliberately not
+        `<footer>` markup of this app's own: the estate had four hand-rolled footers and nine
+        surfaces with none, and the registry's `developers` row has been claiming all along that
+        the developer console is "reached from the footer" — a navigation path that existed
+        nowhere. Every link in it is derived from SURFACES, so a new product appears here without
+        this file changing.
+
+        `account` is passed for one reason: it decides whether the operator surfaces are offered.
+        Omitting it would hide them, which is safe, but this app already knows and a signed-in
+        operator should be able to reach Admin from any page.
+      */}
+      <CloudsForgeFooter current={PRODUCT} account={account} />
     </>
   )
 }
