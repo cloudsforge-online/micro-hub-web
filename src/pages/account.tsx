@@ -35,12 +35,15 @@ import { useLatch } from '../lib/latch.ts'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, hasSession } from '../lib/api.ts'
 import {
+  EMAIL_UNVERIFIED_CODE,
   answerMfaChallenge,
   completeSignIn,
   readReturnTo,
   registerAccount,
+  resendVerification,
   revokeRefreshToken,
   signInWithPassword,
+  verifyEmail,
   type Completion,
   type SessionGranted,
   type SignInOutcome,
@@ -183,6 +186,15 @@ export function SignInPage() {
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<Refusal | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
+  /**
+   * The password was right and the address has not been proved yet.
+   *
+   * Kept as its own state rather than folded into `refusal`, because it is the one refusal on this
+   * form with an ACTION attached — and the action is only offerable to someone who has just
+   * presented the correct credential for that account, which is what keeps the resend from being
+   * an enumeration oracle. `null` means it has not happened; `'sent'` means one has been issued.
+   */
+  const [unverified, setUnverified] = useState<null | 'offer' | 'sent'>(null)
 
   const finish = useCallback(
     async (outcome: SignInOutcome) => {
@@ -258,6 +270,7 @@ export function SignInPage() {
     setBusy(true)
     setRefusal(null)
     setRefused(null)
+    setUnverified(null)
     signInWithPassword(identifier, password)
       .then(finish)
       .catch((err: unknown) => {
@@ -266,6 +279,9 @@ export function SignInPage() {
         // less safe; the password field is cleared because a wrong one is not worth editing.
         setPassword('')
         setRefusal(refusalFrom(err))
+        // The one refusal with an action. Offered only here, after the correct password: a resend
+        // reachable without one would answer differently for a real and an invented address.
+        if (err instanceof ApiError && err.code === EMAIL_UNVERIFIED_CODE) setUnverified('offer')
         setBusy(false)
       })
       // In a `finally`, so a refused sign-in leaves the form usable. Released only after `finish`
@@ -354,6 +370,38 @@ export function SignInPage() {
         )}
         {refusal && <RefusalNotice refusal={refusal} />}
 
+        {/*
+          identity has said this account exists, the password is right, and the address is not
+          proved. Nothing here decides that — the code comes off identity's own error envelope
+          (`EMAIL_UNVERIFIED_CODE`) and the sentence above it is identity's.
+
+          The resend is fired and NOT awaited into a success claim: identity answers 202 with one
+          fixed string for every input, so there is no outcome to report and pretending otherwise
+          would put a claim on screen that the response does not support. The failure is swallowed
+          for the same reason — a 202 that did not arrive tells the user nothing they can act on
+          that "check your spam folder" does not already cover.
+        */}
+        {unverified !== null && (
+          <p className="wt-note" role="status" aria-live="polite">
+            {unverified === 'sent' ? (
+              <>If that account is waiting to be confirmed, another link is on its way. It works once and expires in 24 hours.</>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="wt-link"
+                  onClick={() => {
+                    setUnverified('sent')
+                    void resendVerification(identifier).catch(() => undefined)
+                  }}
+                >
+                  Send the confirmation link again
+                </button>
+              </>
+            )}
+          </p>
+        )}
+
         <Field
           id="identifier"
           label="Email or handle"
@@ -422,6 +470,8 @@ export function RegisterPage() {
    * typing — an error before the user has finished making the mistake.
    */
   const [mismatched, setMismatched] = useState(false)
+  /** The address identity says it sent the link to, once it has. Never a token. */
+  const [sent, setSent] = useState<string | null>(null)
 
   /**
    * `POST /auth/register` carries no idempotency key, and this is the sharpest handler on the
@@ -474,9 +524,17 @@ export function RegisterPage() {
     setRefusal(null)
     registerAccount({ email, handle, password })
       .then(async (outcome) => {
-        // A fresh account has no factors, so identity never answers `mfaRequired` here. If it ever
-        // did, sending the user to the sign-in form is the honest handling — it is the page that
-        // knows how to answer a challenge.
+        // THE ORDINARY OUTCOME IS NOW "GO AND READ YOUR EMAIL", NOT A SESSION. The account exists
+        // and is unverified; the link in the mail is what creates the session, on whichever
+        // browser opens it — which is usually a phone, and is why nothing here waits for this tab.
+        if (outcome.kind === 'verify-email') {
+          setSent(outcome.email || email.trim())
+          setBusy(false)
+          return
+        }
+        // A deployment of identity that predates verification still answers with tokens. Honouring
+        // that is not a fall-back for a broken server: the client half of a rolling deploy ships
+        // first, and a bundle that refused this answer would break a registration that succeeded.
         if (outcome.kind !== 'session') throw new Error('This account needs a second factor to finish signing in.')
         const completion = await completeSignIn(outcome, returnTo, pageOrigin())
         if (completion.kind === 'refused') {
@@ -492,6 +550,39 @@ export function RegisterPage() {
         setBusy(false)
       })
       .finally(() => attempt.release())
+  }
+
+  /*
+   * The account exists and the link is in the post.
+   *
+   * THIS SCREEN DOES NOT WAIT AND DOES NOT POLL. The link creates the session in whichever browser
+   * opens it, and that is usually a phone — so a tab that sat here spinning would be waiting for
+   * something that is not going to happen to it. Saying so plainly is the whole screen.
+   *
+   * The address is echoed because the commonest reason a verification mail "never arrives" is a
+   * typo in it, and a person cannot check a value they can no longer see.
+   */
+  if (sent !== null) {
+    return (
+      <AccountFrame title="Check your email">
+        <div className="wt-state" role="status" aria-live="polite">
+          <p className="wt-state__title">
+            Your account is created. We have sent a link to <strong>{sent}</strong>.
+          </p>
+          <p className="wt-note">
+            Open it and you will be signed in — on whichever device you open it on. The link works
+            once and expires in 24 hours. You can close this page.
+          </p>
+          <p className="wt-note">
+            Nothing arrived? Check the spelling above and your spam folder, then{' '}
+            <Link className="wt-link" to={`/account/login?return=${encodeURIComponent(returnTo)}`}>
+              sign in
+            </Link>{' '}
+            to have another one sent.
+          </p>
+        </div>
+      </AccountFrame>
+    )
   }
 
   return (
@@ -614,6 +705,132 @@ export function RegisterPage() {
           </Link>
         </div>
       </form>
+    </AccountFrame>
+  )
+}
+
+/* ─────────────────────────────── verify ─────────────────────────────── */
+
+/**
+ * The page the verification link lands on.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── THE TOKEN IS IN THE FRAGMENT, AND EVERY PART OF THAT IS DELIBERATE ────────────────────────
+ *
+ * The link is `https://hub.<apex>/account/verify#token=…`, never `?token=`. A link that both
+ * verifies and authenticates is a bearer credential in a URL, and URLs leak in ways passwords do
+ * not — browser history, `Referer` on any outbound link from this page, mail scanners, screen
+ * shares. Three defences, and they cover different things:
+ *
+ *   1. **A fragment is not sent to a server.** It is not in the request line, so the token reaches
+ *      no access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts:89-96`
+ *      records what the alternative cost: Nimbus used `?token=`, its own request log wrote the live
+ *      credential to stdout on the request that spent it, and Lantern lifted it into an indexed
+ *      column and every backup.
+ *   2. **A mail scanner that pre-fetches the link consumes nothing.** This is the one that decides
+ *      the shape. Corporate mail security opens every link in every message; with the token in the
+ *      query string, a single-use credential is spent before the human sees it, and the user meets
+ *      a dead link they never clicked. Because the fragment is never transmitted, the pre-fetch is
+ *      `GET /account/verify` with no token at all — it loads this bundle, which does nothing.
+ *      Switching the verb to POST would not have helped: the token would still have been in the
+ *      URL the scanner fetched.
+ *   3. **The mutation is a POST.** `verifyEmail` posts the token that only this page can see. No
+ *      link-follower issues a POST, and there is no GET route in identity that spends a token.
+ *
+ * The hash is stripped with `replaceState` BEFORE the request goes out, not after it resolves —
+ * the same ordering, for the same reasons, as `consumeAuthCallback` in `@cloudsforge/ui`: a code
+ * left in the address bar during a round trip is in the history, in the referrer of anything the
+ * page loads next, and in any screenshot taken while the request is in flight. And an "after"
+ * version never strips it at all when the request throws.
+ *
+ * ── IT RUNS ONCE, AND THE REF IS WHY ──────────────────────────────────────────────────────────
+ *
+ * `main.tsx` mounts under StrictMode, which runs every effect twice. A second run would spend a
+ * second token — except there is no second token, so it would present the one already consumed and
+ * report a working link as expired. Guarded by a ref rather than by the dependency list, exactly
+ * as `SignInPage`'s hand-off is.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+type VerifyStage =
+  | { readonly at: 'working' }
+  | { readonly at: 'no-token' }
+  | { readonly at: 'failed'; readonly refusal: Refusal }
+
+export function VerifyEmailPage() {
+  const returnTo = useReturnTo()
+  const complete = useCompletion()
+  const [stage, setStage] = useState<VerifyStage>({ at: 'working' })
+  const started = useRef(false)
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+
+    const raw = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash
+    const token = new URLSearchParams(raw).get('token')
+    if (!token) {
+      // Which is also what a mail scanner's pre-fetch produces, and what it must produce: a page
+      // that says how to get a link, having spent nothing.
+      setStage({ at: 'no-token' })
+      return
+    }
+
+    // Strip first, then spend. The token is already captured in a local.
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+
+    verifyEmail(token)
+      .then(async (outcome) => {
+        if (outcome.kind !== 'session') {
+          throw new Error('This account needs a second factor to finish signing in.')
+        }
+        const completion = await completeSignIn(outcome, returnTo, pageOrigin())
+        if (completion.kind === 'refused') {
+          throw new Error(`CloudsForge will not hand a session to ${completion.origin}.`)
+        }
+        complete(completion)
+      })
+      .catch((err: unknown) => setStage({ at: 'failed', refusal: refusalFrom(err) }))
+  }, [complete, returnTo])
+
+  if (stage.at === 'working') {
+    return (
+      <AccountFrame title="Confirming your email">
+        <div className="wt-state wt-state--loading" role="status" aria-live="polite">
+          <span className="wt-spinner" aria-hidden="true" />
+          <p className="wt-state__title">Signing you in</p>
+        </div>
+      </AccountFrame>
+    )
+  }
+
+  return (
+    <AccountFrame title="That link did not work">
+      <div className="wt-state" role="status">
+        {stage.at === 'no-token' ? (
+          <p className="wt-state__title">
+            This address needs the link from your email. Open the message and follow the link in it
+            rather than copying the address out of it — the part that matters is after the #, and
+            some mail clients drop it.
+          </p>
+        ) : (
+          <RefusalNotice refusal={stage.refusal} />
+        )}
+        {/*
+          Sending another one is a step on the SIGN-IN page and not a button here, and that is not
+          laziness. Issuing a link from this page would need an address typed into a public form
+          that answers differently for a known and an unknown one — an enumeration oracle, in the
+          one place a fresh visitor is most likely to be probed. Sign-in already has the identifier
+          and already answers identically either way.
+        */}
+        <p className="wt-note">
+          <Link className="wt-link" to={`/account/login?return=${encodeURIComponent(returnTo)}`}>
+            Sign in
+          </Link>{' '}
+          to have another link sent. A link works once and expires 24 hours after it is issued.
+        </p>
+      </div>
     </AccountFrame>
   )
 }

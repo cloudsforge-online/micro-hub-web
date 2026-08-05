@@ -9,8 +9,10 @@
  * to `/auth/exchange`, which identity has never served. So each function below carries the
  * `identity/src/server.ts` line its path and its response shape were verified against.
  *
- *   POST /auth/register       server.ts:688   → { accessToken, refreshToken, expiresIn, user, … }
- *   POST /auth/login          server.ts:732   → the same, OR { mfaRequired, challenge, factors }
+ *   POST /auth/register       server.ts:688   → 202 { verificationRequired: true, email }
+ *   POST /auth/login          server.ts:732   → tokens, OR { mfaRequired, challenge, factors }
+ *   POST /auth/email/verify                   → { accessToken, refreshToken, expiresIn, user }
+ *   POST /auth/email/verify/resend            → 202, one fixed sentence for every input
  *   POST /auth/mfa            server.ts:826   → { accessToken, refreshToken, expiresIn, user }
  *   POST /auth/logout         server.ts:926   → 204
  *   POST /auth/handoff        server.ts:1076  → { code, expiresInSeconds }   (via @cloudsforge/ui)
@@ -175,23 +177,110 @@ export const answerMfaChallenge = (challenge: string, code: string): Promise<Sig
     body: { challenge, code: code.trim() },
   }).then((body) => required(readSignInOutcome(body)))
 
+/* ─────────────────────────────── email verification ─────────────────────────────── */
+
 /**
- * `POST /auth/register` — `identity/src/server.ts:688`.
+ * Registration created the account and is waiting for the address to be proved.
  *
- * A fresh account has no factors, so registration completes a session immediately and never
- * answers `mfaRequired`. It is still read through the same function: a route that cannot return
- * one shape today is not a route that will not tomorrow, and the alternative is a cast.
+ * The owner's decision, in their words: *"yes will need to validate your email with a link and
+ * then redirect to signin (automatically from validation link you should be login)"*. So
+ * registration no longer hands back a session — the link does.
+ */
+export interface VerificationRequired {
+  readonly kind: 'verify-email'
+  /** The address identity says it sent to, echoed so the page can name it. Never a token. */
+  readonly email: string
+}
+
+export type RegisterOutcome = SignInOutcome | VerificationRequired
+
+/**
+ * The error code identity answers a sign-in with when the address is not proved yet.
+ *
+ * Spelled once, here, because two places would be two spellings — which is the defect
+ * `IDENTITY_AUTH_ROUTES` in `@cloudsforge/ui` was created to stop after the SSO callback posted
+ * for the life of the service to a route identity had never served.
+ */
+export const EMAIL_UNVERIFIED_CODE = 'email_unverified'
+
+/**
+ * Read a registration answer.
+ *
+ * `verificationRequired: true` is the marker, and it is deliberately the same SHAPE identity
+ * already uses for `mfaRequired: true` on `POST /auth/login` — one convention for "the credential
+ * was accepted and something else has to happen before there is a session".
+ *
+ * The session branch is kept rather than removed. A deployment of identity that predates
+ * verification still answers with tokens, and a bundle that could not read that answer would
+ * refuse to complete a registration that had in fact succeeded — the two are a rolling deploy
+ * apart, and the client is the half that ships first.
+ */
+export function readRegisterOutcome(body: unknown): RegisterOutcome | null {
+  if (typeof body !== 'object' || body === null) return null
+  const source = body as Record<string, unknown>
+  if (source['verificationRequired'] === true) {
+    return { kind: 'verify-email', email: asString(source, 'email') }
+  }
+  return readSignInOutcome(body)
+}
+
+/**
+ * `POST /auth/register`.
+ *
+ * Answers 202 and `{ verificationRequired: true, email }` for a fresh account: the account exists,
+ * unverified, and the link in the mail is what creates the session.
  */
 export const registerAccount = (input: {
   email: string
   handle: string
   password: string
-}): Promise<SignInOutcome> =>
+}): Promise<RegisterOutcome> =>
   nimbus<unknown>('/auth/register', {
     method: 'POST',
     auth: false,
     body: { email: input.email.trim(), handle: input.handle.trim(), password: input.password },
+  }).then((body) => {
+    const outcome = readRegisterOutcome(body)
+    if (!outcome) throw new UnreadableIdentityResponse()
+    return outcome
+  })
+
+/**
+ * `POST /auth/email/verify` — spend the token from the link.
+ *
+ * **A POST, and the token comes out of `location.hash`.** Both halves matter and neither is
+ * incidental:
+ *
+ *   - the fragment is never transmitted, so the link a corporate mail scanner pre-fetches carries
+ *     `GET /account/verify` and nothing else — it loads a static bundle and consumes no token. A
+ *     `GET` that spends a credential is the trap this shape is built to avoid, and putting the
+ *     token in the query string would spring it whether the verb were GET or not;
+ *   - the mutation is a POST, which no link-follower issues.
+ *
+ * `auth: false` for the same reason as sign-in: a stale token must not turn the 401 of a spent
+ * link into a refresh attempt that signs the user out mid-verification.
+ */
+export const verifyEmail = (token: string): Promise<SignInOutcome> =>
+  nimbus<unknown>('/auth/email/verify', {
+    method: 'POST',
+    auth: false,
+    body: { token },
   }).then((body) => required(readSignInOutcome(body)))
+
+/**
+ * `POST /auth/email/verify/resend`.
+ *
+ * Answers 202 with one fixed sentence for every input — a known address and an unknown one are
+ * indistinguishable in status, body and timing, exactly as `POST /auth/password/forgot` is. So
+ * there is nothing to read, and the page must not pretend there is: it says what identity says,
+ * which is "if that account exists…".
+ */
+export const resendVerification = (identifier: string): Promise<void> =>
+  nimbus<void>('/auth/email/verify/resend', {
+    method: 'POST',
+    auth: false,
+    body: { identifier: identifier.trim() },
+  })
 
 /**
  * `POST /auth/logout` — `identity/src/server.ts:926`. Revokes the presented refresh token.

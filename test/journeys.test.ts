@@ -60,7 +60,7 @@ import { ReceivePanel } from '../src/components/receive.tsx'
 import { KeyExportPanel } from '../src/components/keyexport.tsx'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import { AppShell } from '../src/components/shell.tsx'
-import { RegisterPage, SignInPage, SignOutPage } from '../src/pages/account.tsx'
+import { RegisterPage, SignInPage, SignOutPage, VerifyEmailPage } from '../src/pages/account.tsx'
 import { WalletPage } from '../src/pages/wallet.tsx'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
@@ -566,6 +566,161 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
         assert.ok(s.text().includes(fromIdentity), 'identity’s answer did not replace the token’s')
         assert.ok(s.queryByRole('button', 'Sign in') === null, 'the bar fell back to signed-out')
         s.clean('the bar at first paint')
+      },
+    )
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Email verification. The owner: "i didn't receive any registration email and i was able to
+   login directly." The policy they then chose: the link verifies the address, signs you in, and
+   lands you in the product.
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+describe('BJ-SIGNIN — proving the address', () => {
+  /**
+   * A token-shaped string that is not a token.
+   *
+   * Sixty-four hex characters, because that is what identity mints, and built here from a fixed
+   * pattern so no credential — real or plausible — is written into this repository. What is
+   * asserted below is that THIS EXACT STRING makes the round trip, so the value has to be the
+   * scenario's own input and nothing read back off the code.
+   */
+  const FAKE_TOKEN = 'deadbeef'.repeat(8)
+
+  it('BJ-SIGNIN-08 ★ T1: the link signs you in, and the token leaves the address bar before it goes on the wire', async () => {
+    fresh()
+    const landing = `${ORIGIN}/account/verify`
+    const returnTo = `${ORIGIN}/portfolio`
+
+    /*
+     * THE ADDRESS BAR AS IT WAS AT THE INSTANT THE REQUEST WENT OUT.
+     *
+     * Recorded from inside the stub, because that is the only place the ordering is observable.
+     * The first version of this scenario read `location.hash` after the exchange had settled and
+     * asserted it was clean — which is true of a bundle that strips it AFTERWARDS too, so the
+     * assertion passed against a deliberate mutant that moved the `replaceState` into the `.then`.
+     * A check that cannot fail is worse than no check, and this file has a meta-test about
+     * precisely that class of mistake. The URL is sampled when the credential is on the wire.
+     */
+    let urlWhenSent = '(the request was never made)'
+
+    await withScreen(
+      page(h(VerifyEmailPage), `/account/verify?return=${encodeURIComponent(returnTo)}`),
+      {
+        url: `${landing}?return=${encodeURIComponent(returnTo)}#token=${FAKE_TOKEN}`,
+        routes: {
+          'POST /auth/email/verify': () => {
+            urlWhenSent = globalThis.location.href
+            return { body: fx.session() }
+          },
+        },
+        // Thirty-five characters — a spinner, a title and a live region, and by the time it has
+        // more to say the browser has left. The same case as SignOutPage's thirty-four, answered
+        // the same way: the forty-character heuristic is REPLACED by a named expectation, which is
+        // stricter (a blank page fails it too, and so does the wrong screen) rather than lowered.
+        mountedText: 'Signing you in',
+      },
+      async (s) => {
+        await s.settle(20)
+
+        // ── It was spent, exactly once, and with the token from the fragment.
+        const sent = s.api.matching('POST /auth/email/verify')
+        assert.equal(sent.length, 1, 'the link was not redeemed exactly once')
+        assert.deepEqual(
+          sent[0]?.json,
+          { token: FAKE_TOKEN },
+          'the body is not the token that was in the fragment, and nothing else',
+        )
+
+        // ── THE ORDERING THAT IS THE POINT, ASSERTED WHERE IT IS OBSERVABLE.
+        // The token was already out of the address bar when the request left. An "after it
+        // resolves" version leaves a live credential in the history for the length of a round
+        // trip — in the referrer of anything the page loads next, in any screenshot taken while it
+        // is in flight — and never strips it at all when the request throws.
+        assert.ok(
+          !urlWhenSent.includes(FAKE_TOKEN),
+          `the token was still in the address bar when the redemption request went out: ${urlWhenSent}`,
+        )
+        assert.ok(
+          !s.window.location.href.includes(FAKE_TOKEN),
+          'the token is still somewhere in the current URL',
+        )
+        // And it is not in storage either — the session is, the credential that bought it is not.
+        assert.ok(!s.storageSnapshot().includes(FAKE_TOKEN), 'the link token was persisted')
+
+        // ── And the reader ends up signed in, on the address they were going to.
+        assert.deepEqual(s.navigations, [returnTo], 'a verified link did not land the reader in the product')
+        s.clean('verification')
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-09 ★ T1: the address a mail scanner pre-fetches spends nothing', async () => {
+    fresh()
+    // A pre-fetch is a GET of the path with NO fragment — browsers do not transmit one, which is
+    // the entire reason the token lives there. This is that request, modelled exactly.
+    await withScreen(
+      page(h(VerifyEmailPage), '/account/verify'),
+      {
+        url: `${ORIGIN}/account/verify`,
+        // A route that WOULD succeed, so a bundle that posted something cannot pass by rendering
+        // a failure.
+        routes: { 'POST /auth/email/verify': { body: fx.session() } },
+      },
+      async (s) => {
+        await s.settle(20)
+        assert.equal(
+          s.api.matching('POST /auth/email/verify').length,
+          0,
+          'opening the link without a fragment redeemed something — a mail scanner would then ' +
+            'consume the single-use token before the person it was sent to ever clicked it',
+        )
+        assert.equal(s.navigations.length, 0, 'a pre-fetch navigated somewhere')
+        // It says how to get where they were going, rather than reporting a failure that did not
+        // happen. The person here is either a scanner, which reads nothing, or someone who copied
+        // the address out of a mail client that dropped the fragment.
+        assert.ok(s.text().includes('link from your email'), 'the page does not say what is missing')
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-10 ★ T1: registration does not sign you in — it says where the link went', async () => {
+    fresh()
+    const typed = { email: 'newcomer@example.com', handle: 'newcomer', password: 'a-long-passphrase' }
+    const returnTo = `${ORIGIN}/portfolio`
+
+    await withScreen(
+      page(h(RegisterPage), `/account/register?return=${encodeURIComponent(returnTo)}`),
+      {
+        url: `${ORIGIN}/account/register`,
+        routes: {
+          // identity's 202: the account exists, unverified, and the link is what creates a session.
+          [`POST ${IDENTITY_ROUTES.register}`]: {
+            status: 202,
+            body: { verificationRequired: true, email: typed.email },
+          },
+        },
+      },
+      async (s) => {
+        await s.type(s.byRole('textbox', 'Email'), typed.email)
+        await s.type(s.byRole('textbox', 'Handle'), typed.handle)
+        await s.type(labelled(s, 'Password'), typed.password)
+        await s.type(labelled(s, 'Confirm password'), typed.password)
+        await s.click(s.byRole('button', 'Create account'))
+        await s.settle(20)
+
+        // THE ASSERTION THAT IS TRUE ONLY WHEN THE POLICY HOLDS. A bundle that signed the user in
+        // here would render a perfectly good "check your email" screen on the way past.
+        assert.equal(s.navigations.length, 0, 'registration navigated as though it held a session')
+        assert.ok(
+          !s.storageSnapshot().includes('cf.accessToken'),
+          'registration stored a session for an account whose address is not proved',
+        )
+        // And it names the address, because a typo in it is the commonest reason mail "never
+        // arrives" and a person cannot check a value they can no longer see.
+        assert.ok(s.text().includes(typed.email), 'the address the link was sent to is not shown')
+        assert.ok(s.queryByRole('status', /link to/) !== null, 'the outcome is not announced')
       },
     )
   })
@@ -2063,8 +2218,13 @@ describe('the catalogue and this file agree', () => {
     assert.ok(!/allowEmpty/.test(scenarios), 'a scenario disabled the did-anything-render assertion')
     // `mountedText` replaces it with something stricter and is allowed, but only where a screen is
     // genuinely shorter than forty characters — one place, and it is named.
+    // TWO, and a third is a decision somebody has to make here. Both are screens that are
+    // genuinely shorter than forty characters and legitimately so — SignOutPage's thirty-four and
+    // VerifyEmailPage's thirty-five, each a spinner and a live region on a page the browser is
+    // about to leave. The count is pinned rather than the rule dropped, because `mountedText` is
+    // the one escape from the assertion that makes every scenario worth running.
     const replaced = [...scenarios.matchAll(/mountedText:/g)]
-    assert.equal(replaced.length, 1, 'the forty-character rule was replaced in more than one place')
+    assert.equal(replaced.length, 2, 'the forty-character rule was replaced somewhere new')
   })
 
   it('no scenario asserts a business rule', () => {

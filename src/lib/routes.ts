@@ -71,6 +71,13 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     because: 'registration, reached from the sign-in form and from `site`',
   },
   {
+    path: 'account/verify',
+    because:
+      'the landing page for the link in a verification email; the reader has no session yet — ' +
+      'proving the address is what creates one — so a gate here is the redirect loop that would ' +
+      'make the link useless to the person it was sent to',
+  },
+  {
     path: 'account/logout',
     because:
       'it revokes the refresh token and returns; gating it would leave a signed-out visitor ' +

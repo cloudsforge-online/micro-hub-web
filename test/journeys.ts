@@ -232,6 +232,40 @@ export const SCENARIOS: readonly Scenario[] = [
       'disagreed. The server sentence is already rendered under the field it names.',
   },
   {
+    id: 'BJ-SIGNIN-08',
+    what: 'the verification link signs the reader in, and the token never reaches the address bar or a second request',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'identity/src/emailVerification.ts', grep: 'consumed_at' },
+    caveat:
+      'The client half only. That the token is single-use, expires, and is stored as a hash is ' +
+      'identity’s to enforce and cannot be asserted from a browser at all — a client ' +
+      'that posted the same token twice would still be answered once. What is asserted here is ' +
+      'that this bundle reads it from the fragment, strips it BEFORE the request goes out, posts ' +
+      'it exactly once, and turns the answer into a session.',
+  },
+  {
+    id: 'BJ-SIGNIN-09',
+    what: 'the address a mail scanner pre-fetches carries no token, so opening it spends nothing and posts nothing',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    caveat:
+      'A pre-fetch is modelled as what it actually is on the wire — a GET of the path with ' +
+      'no fragment, because a browser never transmits one — rather than by driving a mail ' +
+      'scanner. That is the whole of the claim: the scenario asserts this bundle issues no ' +
+      'request when there is nothing after the #, which is what makes the pre-fetch harmless.',
+  },
+  {
+    id: 'BJ-SIGNIN-10',
+    what: 'registration no longer creates a session: the browser stays put, is told where the link was sent, and stores no tokens',
+    asserts: 'navigation',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'identity/src/server.ts', grep: 'verificationRequired' },
+  },
+  {
     id: 'BJ-SIGNIN-07',
     what: 'a held session renders the account in the bar at first paint, before /auth/me has answered and without a reload',
     asserts: 'presentation',

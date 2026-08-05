@@ -26,7 +26,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/shell.tsx'
 import { AuthProvider, ProtectedRoute } from './lib/auth.tsx'
-import { RegisterPage, SignInPage, SignOutPage } from './pages/account.tsx'
+import { RegisterPage, SignInPage, SignOutPage, VerifyEmailPage } from './pages/account.tsx'
 import { ActivityPage } from './pages/activity.tsx'
 import { EntitlementsPage } from './pages/entitlements.tsx'
 import { NotFoundPage } from './pages/not-found.tsx'
@@ -130,7 +130,7 @@ export function App() {
               than a page that does not exist.
             */}
             {/*
-              THE THREE ADDRESSES THAT MUST NOT BE GATED, and the only ones in this app.
+              THE FOUR ADDRESSES THAT MUST NOT BE GATED, and the only ones in this app.
 
               `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so `signInRedirect()`
               in every product in the estate sends its signed-out visitors to `/account/login` and
@@ -147,6 +147,13 @@ export function App() {
             <Route path="account/login" element={<SignInPage />} />
             <Route path="account/register" element={<RegisterPage />} />
             <Route path="account/logout" element={<SignOutPage />} />
+            {/*
+              The fourth ungated address, and the one that MUST be ungated: it is where the link in
+              a verification email lands, and the reader following it has no session — proving the
+              address is what creates one. A gate here would bounce them to a sign-in they cannot
+              complete, which is the loop this whole group exists outside of.
+            */}
+            <Route path="account/verify" element={<VerifyEmailPage />} />
             <Route
               path="account/*"
               element={

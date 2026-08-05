@@ -188,10 +188,17 @@ describe('the session gate', () => {
 
   it('keeps the public set to the sign-in surface and nothing else', () => {
     // The list is a list of EXEMPTIONS. Anything added to it stops being checked by the test
-    // above, so the set itself is pinned: a fourth entry is a decision somebody has to make here.
+    // above, so the set itself is pinned: a FIFTH entry is a decision somebody has to make here.
+    //
+    // `account/verify` is the fourth, added 2026-08-05, and the decision is recorded rather than
+    // assumed. It is where the link in a verification email lands, and the reader following it has
+    // no session by definition — proving the address is what creates one. Gating it would send
+    // them to a sign-in they cannot complete, so the link would fail for exactly the person it was
+    // addressed to. It shows nothing: it reads a token out of `location.hash`, posts it, and
+    // either navigates or says the link did not work.
     assert.deepEqual(
       PUBLIC_ROUTES.map((r) => r.path),
-      ['account/login', 'account/register', 'account/logout'],
+      ['account/login', 'account/register', 'account/verify', 'account/logout'],
     )
     for (const route of PUBLIC_ROUTES) {
       assert.ok(route.because.length > 20, `${route.path} is exempt for no stated reason`)
