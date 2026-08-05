@@ -326,11 +326,40 @@ describe('settlesOnChain', () => {
    * What THIS test does is narrower and still worth having: it pins the list so that a later
    * edit cannot quietly widen it, and it states the SHARD case by name so the regression has a
    * red test with the defect's own name on it.
+   *
+   * ── AND THE LINE ABOVE NAMES ITS OWN LIMIT, WHICH IS NOW CLOSED ELSEWHERE ─────────────────
+   *
+   * "the evidence is micro-wallet's source" was true, and reading it once is not a check. A list
+   * pinned against a second list typed beside it cannot notice an asset that is in NEITHER — the
+   * missing direction, where wallet gains a chain and Send silently goes on not offering it.
+   * `test/wallet-assets.test.ts` closes that: it parses `CHAIN_FOR_ASSET` out of the sibling
+   * checkout and asserts set equality, so wallet decides and this repository follows.
+   *
+   * **So do not fix a failure of the assertion below by editing the literal.** Read
+   * `wallet/src/addresses.ts` first; if wallet really did gain the asset, `CHAIN_ASSETS` is what
+   * changes and this literal follows it.
    * ══════════════════════════════════════════════════════════════════════════════════════════
    */
   it('accepts exactly the five assets micro-wallet maps to a chain', () => {
     assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'SOL', 'XRP'])
     for (const code of CHAIN_ASSETS) assert.equal(settlesOnChain(code), true, `${code} was excluded`)
+  })
+
+  it('does not offer Litecoin, because micro-wallet does not move it', () => {
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // THE ASSET THAT MAKES "DERIVE IT FROM ON_CHAIN_ASSETS" WRONG, ASSERTED BY NAME.
+    //
+    // LTC is in `ON_CHAIN_ASSETS` (contracts/packages/chain/src/index.ts:360), custody and
+    // indexer support it, and micro-foresight accepts stakes in it. Wallet does not: there is
+    // no `'ltc'` in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET`, so `chainForAsset('LTC')` is
+    // null and `POST /v1/withdrawals` answers 422 `not_withdrawable`.
+    //
+    // This is a TEMPORARY truth and it is asserted anyway, because the thing that must not
+    // happen quietly is it changing. When wallet adds Litecoin, `wallet-assets.test.ts` goes
+    // red first with the reason, and this line is deleted as part of the same change — not
+    // before it, and never by somebody who read only `ON_CHAIN_ASSETS`.
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    assert.equal(settlesOnChain('LTC'), false)
   })
 
   it('refuses SHARD, which is the defect this exists for', () => {

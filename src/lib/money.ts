@@ -90,13 +90,38 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * uppercase, it is also refused, and a denylist would have to grow a new entry every time the
  * estate invents another off-chain unit — which is the defect above, recurring on a timer.
  *
- * ── THE STALENESS THIS ACCEPTS, DELIBERATELY ──────────────────────────────────────────────────
+ * ── THE STALENESS THIS ACCEPTS, AND THE CHECK THAT NOW BOUNDS IT ──────────────────────────────
  *
  * `micro-wallet` serves no route that enumerates its withdrawable assets, so this bundle cannot
- * ask and must carry the answer. The cost is that adding a sixth chain to wallet leaves it
- * missing from Send until this list ships too. That is the safe direction to be wrong in: an
- * asset absent from a menu is a visible gap somebody reports, whereas an asset present in the
- * menu and refused on submit is a dead end presented to a user as a choice.
+ * ask at runtime and must carry the answer. The cost is that adding a sixth chain to wallet
+ * leaves it missing from Send until this list ships too. That is the safe direction to be wrong
+ * in: an asset absent from a menu is a visible gap somebody reports, whereas an asset present in
+ * the menu and refused on submit is a dead end presented to a user as a choice.
+ *
+ * What it no longer accepts is that the gap goes UNNOTICED. `test/wallet-assets.test.ts` reads
+ * `wallet/src/addresses.ts` in the sibling checkout, parses `CHAIN_FOR_ASSET`, and asserts this
+ * array equals its keys. So the list is still typed — a browser bundle cannot import a private
+ * service's source — but it can no longer drift in silence, in either direction. The test does
+ * not skip when the sibling is absent; it fails and says what to check out.
+ *
+ * ── AND `ON_CHAIN_ASSETS` IS THE WRONG PLACE TO DERIVE IT FROM. THIS WAS TRIED ────────────────
+ *
+ * The obvious fix was to derive this from `contracts-chain`'s `ON_CHAIN_ASSETS` and stop
+ * maintaining it. That would be a defect, and Litecoin is the live proof: LTC joined
+ * `ON_CHAIN_ASSETS` on 2026-08-05 (`contracts/packages/chain/src/index.ts:360`), custody and
+ * indexer support it, `micro-foresight` accepts stakes in it — and `micro-wallet` has no `'ltc'`
+ * in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:56,66-73`), so
+ * `chainForAsset('LTC')` is null and both gates refuse: `not_withdrawable` at 422
+ * (`wallet/src/withdrawals.ts:284-291`) and `not_depositable` at 400
+ * (`wallet/src/deposits.ts:166-173`).
+ *
+ * Deriving from `ON_CHAIN_ASSETS` would therefore have put Litecoin in the Send menu and had the
+ * service refuse it on submit — the exact dead end the paragraph above rules out, shipped in the
+ * name of removing a hardcoded list. The two arrays answer different questions: "does the estate
+ * custody this asset" and "will wallet move it for this user". They are converging and they are
+ * not the same, and the second is the only one Send may ask. The test asserts this array is a
+ * SUBSET of `ON_CHAIN_ASSETS` — which is a real invariant, because wallet cannot move an asset
+ * the estate does not hold — and stops there.
  *
  * ── SPARKS ARE NOT ON THIS LIST, AND MUST NEVER BE ────────────────────────────────────────────
  *
