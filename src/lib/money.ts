@@ -107,21 +107,28 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * ── AND `ON_CHAIN_ASSETS` IS THE WRONG PLACE TO DERIVE IT FROM. THIS WAS TRIED ────────────────
  *
  * The obvious fix was to derive this from `contracts-chain`'s `ON_CHAIN_ASSETS` and stop
- * maintaining it. That would be a defect, and Litecoin is the live proof: LTC joined
- * `ON_CHAIN_ASSETS` on 2026-08-05 (`contracts/packages/chain/src/index.ts:360`), custody and
- * indexer support it, `micro-foresight` accepts stakes in it — and `micro-wallet` has no `'ltc'`
- * in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:56,66-73`), so
- * `chainForAsset('LTC')` is null and both gates refuse: `not_withdrawable` at 422
- * (`wallet/src/withdrawals.ts:284-291`) and `not_depositable` at 400
- * (`wallet/src/deposits.ts:166-173`).
+ * maintaining it. That would be a defect, and Litecoin was the live proof of it: LTC joined
+ * `ON_CHAIN_ASSETS` on 2026-08-05 (`contracts/packages/chain/src/index.ts:360`) while
+ * `micro-wallet` still had no `'ltc'` in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET`, so
+ * `chainForAsset('LTC')` was null and both gates refused: `not_withdrawable` at 422
+ * (`wallet/src/withdrawals.ts`) and `not_depositable` at 400 (`wallet/src/deposits.ts`).
+ * Deriving from `ON_CHAIN_ASSETS` would have put Litecoin in the Send menu and had the service
+ * refuse it on submit — the exact dead end this list exists to rule out, shipped in the name of
+ * removing a hardcoded list.
  *
- * Deriving from `ON_CHAIN_ASSETS` would therefore have put Litecoin in the Send menu and had the
- * service refuse it on submit — the exact dead end the paragraph above rules out, shipped in the
- * name of removing a hardcoded list. The two arrays answer different questions: "does the estate
- * custody this asset" and "will wallet move it for this user". They are converging and they are
- * not the same, and the second is the only one Send may ask. The test asserts this array is a
- * SUBSET of `ON_CHAIN_ASSETS` — which is a real invariant, because wallet cannot move an asset
- * the estate does not hold — and stops there.
+ * **LTC IS ON THE LIST NOW, AND HOW IT GOT THERE IS THE POINT.** `micro-wallet` added `ltc` to
+ * `ChainId` and `LTC: 'ltc'` to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:90,99`, commit
+ * 87f2251 "a Litecoin address is a Litecoin address, not a Bitcoin one wearing its name"). This
+ * array did not move with it, and for a while wallet would move an asset Send did not offer — a
+ * capability the user has and cannot reach. **Nobody noticed and nothing broke; the failing check
+ * is what found it**, in the direction its own comment predicted would open again on the next
+ * chain. The lag is the accepted cost written above; the check is what bounds it.
+ *
+ * The two arrays still answer different questions — "does the estate custody this asset" and
+ * "will wallet move it for this user" — and the second is the only one Send may ask. They are
+ * converging and they are not the same. The test asserts this array is a SUBSET of
+ * `ON_CHAIN_ASSETS` — a real invariant, because wallet cannot move an asset the estate does not
+ * hold — and stops there.
  *
  * ── SPARKS ARE NOT ON THIS LIST, AND MUST NEVER BE ────────────────────────────────────────────
  *
@@ -132,7 +139,14 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * replaced the one that caused it.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-export const CHAIN_ASSETS: readonly string[] = Object.freeze(['EMBER', 'BTC', 'ETH', 'SOL', 'XRP'])
+export const CHAIN_ASSETS: readonly string[] = Object.freeze([
+  'EMBER',
+  'BTC',
+  'ETH',
+  'SOL',
+  'XRP',
+  'LTC',
+])
 
 /**
  * Whether `micro-wallet` will move this asset on a chain — the only assets Send and Receive may

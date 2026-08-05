@@ -8,7 +8,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { AccountState } from '@cloudsforge/ui'
-import { AUTH_EXPIRED_EVENT, clearTokens, hasSession, nimbus, signIn, signOut } from './api.ts'
+import { AUTH_EXPIRED_EVENT, clearTokens, getAccessToken, hasSession, nimbus, signIn, signOut } from './api.ts'
+import { readTokenClaims, type TokenClaims } from './claims.ts'
 
 /**
  * What identity answers at `/auth/me`.
@@ -51,7 +52,29 @@ export function useSession(): Session {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<SessionStatus>(() => (hasSession() ? 'loading' : 'anonymous'))
+  /**
+   * THE SESSION IS RESOLVED BEFORE THE FIRST PAINT, FROM STORAGE, WITH NO REQUEST.
+   *
+   * This used to start at `loading` whenever a token was held, and `loading` renders as signed OUT
+   * — so the bar said `Sign in` to a signed-in user for as long as `GET /auth/me` took, which is a
+   * cross-origin preflight and a request over the tunnel, or four round trips when the access
+   * token has expired. On the live estate that is hundreds of milliseconds on every page load, and
+   * it is what the owner reported: a working sign-in that looks broken until something forces a
+   * re-render.
+   *
+   * `lib/claims.ts` reads the handle and the roles out of the access token that is already in
+   * `localStorage`. It is a DISPLAY read and never a decision — see that file's header for why
+   * that distinction is the whole safety argument, and why the expiry is deliberately not checked.
+   *
+   * `loading` is kept for the one case it is still true of: a session is held and the token cannot
+   * be read, so this build genuinely does not know the handle yet and `/auth/me` is the only way
+   * to find out. It is no longer the ordinary path.
+   */
+  const [claims] = useState<TokenClaims | null>(() => readTokenClaims(getAccessToken()))
+  const [status, setStatus] = useState<SessionStatus>(() => {
+    if (!hasSession()) return 'anonymous'
+    return claims ? 'signedIn' : 'loading'
+  })
   const [me, setMe] = useState<Me | null>(null)
 
   useEffect(() => {
@@ -94,14 +117,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       account: {
+        // identity's answer wins the moment it arrives; the token's claims are what is shown
+        // until then. `??` and not `||`: a service that one day answers `handle: ''` should show
+        // the empty string it sent rather than silently falling back to a stale one.
         signedIn: status === 'signedIn',
-        handle: me?.user?.handle ?? null,
-        roles: me?.user?.roles ?? null,
+        handle: me?.user?.handle ?? claims?.handle ?? null,
+        roles: me?.user?.roles ?? claims?.roles ?? null,
       },
       signIn,
       signOut: doSignOut,
     }),
-    [status, me, doSignOut],
+    [status, me, claims, doSignOut],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

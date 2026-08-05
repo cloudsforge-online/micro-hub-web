@@ -340,26 +340,34 @@ describe('settlesOnChain', () => {
    * changes and this literal follows it.
    * ══════════════════════════════════════════════════════════════════════════════════════════
    */
-  it('accepts exactly the five assets micro-wallet maps to a chain', () => {
-    assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'SOL', 'XRP'])
+  it('accepts exactly the six assets micro-wallet maps to a chain', () => {
+    // LTC joined on 2026-08-05, and it joined the way the block above says it must: `wallet-
+    // assets.test.ts` went red first, naming `wallet/src/addresses.ts:99` as the source, and
+    // `CHAIN_ASSETS` and this literal moved together in that change. Nobody edited this line to
+    // make a red test green.
+    assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'LTC', 'SOL', 'XRP'])
     for (const code of CHAIN_ASSETS) assert.equal(settlesOnChain(code), true, `${code} was excluded`)
   })
 
-  it('does not offer Litecoin, because micro-wallet does not move it', () => {
+  it('offers Litecoin, because micro-wallet moves it now — and the old assertion is gone', () => {
     // ══════════════════════════════════════════════════════════════════════════════════════
-    // THE ASSET THAT MAKES "DERIVE IT FROM ON_CHAIN_ASSETS" WRONG, ASSERTED BY NAME.
+    // THIS ROW USED TO ASSERT THE OPPOSITE, AND THE INVERSION IS THE RECORD OF A REAL GAP.
     //
-    // LTC is in `ON_CHAIN_ASSETS` (contracts/packages/chain/src/index.ts:360), custody and
-    // indexer support it, and micro-foresight accepts stakes in it. Wallet does not: there is
-    // no `'ltc'` in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET`, so `chainForAsset('LTC')` is
-    // null and `POST /v1/withdrawals` answers 422 `not_withdrawable`.
+    // It read "does not offer Litecoin, because micro-wallet does not move it", and it said of
+    // itself: "This is a TEMPORARY truth and it is asserted anyway, because the thing that must
+    // not happen quietly is it changing. When wallet adds Litecoin, `wallet-assets.test.ts` goes
+    // red first with the reason, and this line is deleted as part of the same change."
     //
-    // This is a TEMPORARY truth and it is asserted anyway, because the thing that must not
-    // happen quietly is it changing. When wallet adds Litecoin, `wallet-assets.test.ts` goes
-    // red first with the reason, and this line is deleted as part of the same change — not
-    // before it, and never by somebody who read only `ON_CHAIN_ASSETS`.
+    // That is exactly what happened. `micro-wallet` added `ltc` to `ChainId` and `LTC: 'ltc'` to
+    // `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:90,99`, commit 87f2251) and this repository did
+    // not follow, so for a while wallet would move an asset Send did not offer — a capability the
+    // user has and cannot reach. Nothing broke and nobody noticed; the derived check found it.
+    //
+    // It is kept as an assertion rather than deleted because the pair is what has value: the
+    // literal above pins the set, and this pins the ONE asset whose two answers were out of step,
+    // so a revert in either repository is red here with the history attached.
     // ══════════════════════════════════════════════════════════════════════════════════════
-    assert.equal(settlesOnChain('LTC'), false)
+    assert.equal(settlesOnChain('LTC'), true)
   })
 
   it('refuses SHARD, which is the defect this exists for', () => {

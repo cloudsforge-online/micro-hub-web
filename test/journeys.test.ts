@@ -58,6 +58,8 @@ import { __resetAuth } from '../src/lib/api.ts'
 import { SendPanel } from '../src/components/send.tsx'
 import { ReceivePanel } from '../src/components/receive.tsx'
 import { KeyExportPanel } from '../src/components/keyexport.tsx'
+import { AuthProvider } from '../src/lib/auth.tsx'
+import { AppShell } from '../src/components/shell.tsx'
 import { RegisterPage, SignInPage, SignOutPage } from '../src/pages/account.tsx'
 import { WalletPage } from '../src/pages/wallet.tsx'
 
@@ -120,6 +122,7 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
         await s.type(s.byRole('textbox', 'Email'), typed.email)
         await s.type(s.byRole('textbox', 'Handle'), typed.handle)
         await s.type(labelled(s, 'Password'), typed.password)
+        await s.type(labelled(s, 'Confirm password'), typed.password)
         await s.click(s.byRole('button', 'Create account'))
 
         // What the client SENT (doc 22 §3.1), against the scenario's inputs.
@@ -167,6 +170,7 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
         await s.type(s.byRole('textbox', 'Email'), typed.email)
         await s.type(s.byRole('textbox', 'Handle'), typed.handle)
         await s.type(labelled(s, 'Password'), typed.password)
+        await s.type(labelled(s, 'Confirm password'), typed.password)
         await s.click(s.byRole('button', 'Create account'))
 
         // Presentation, relative to what the API returned IN THIS SAME RUN.
@@ -447,7 +451,142 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
       },
     )
   })
+
+  /* ── The two the owner found by hand on the live estate, 2026-08-05 ──────────────────────── */
+
+  it('BJ-SIGNIN-06 ★ T1: two passwords that disagree are not posted, and the second field says why', async () => {
+    fresh()
+    // The scenario's own inputs. The two differ by ONE character in the middle, which is the slip
+    // this field exists to catch — a trailing difference is the one people notice unaided.
+    const typed = { email: 'newcomer@example.com', handle: 'newcomer', password: 'a-long-passphrase' }
+    const slip = 'a-long-pASsphrase'
+    assert.notEqual(typed.password, slip, 'the scenario’s two values are the same; it asserts nothing')
+
+    await withScreen(
+      page(h(RegisterPage), '/account/register'),
+      {
+        url: `${ORIGIN}/account/register`,
+        // A route that WOULD succeed. The scenario is that it is never called: stubbing a failure
+        // here would let a bundle that posted the mismatch pass by rendering the failure.
+        routes: { [`POST ${IDENTITY_ROUTES.register}`]: { status: 201, body: fx.session() } },
+      },
+      async (s) => {
+        await s.type(s.byRole('textbox', 'Email'), typed.email)
+        await s.type(s.byRole('textbox', 'Handle'), typed.handle)
+        await s.type(labelled(s, 'Password'), typed.password)
+        await s.type(labelled(s, 'Confirm password'), slip)
+        await s.click(s.byRole('button', 'Create account'))
+
+        // THE ASSERTION THAT IS TRUE ONLY WHEN IT WORKS. A registration that reaches identity has
+        // already created the account with whichever of the two the code happened to send, and the
+        // user is signed in holding a credential they did not choose.
+        assert.equal(
+          s.api.matching(`POST ${IDENTITY_ROUTES.register}`).length,
+          0,
+          'a registration with two different passwords was posted to identity',
+        )
+        assert.equal(s.navigations.length, 0, 'a mismatched registration navigated somewhere')
+
+        // Said where the mistake is, on the field that is wrong. Marking the first field invalid
+        // would send the user to correct the value they meant.
+        const invalid = s.document.querySelector('[aria-invalid="true"]')
+        assert.equal(invalid?.getAttribute('id'), 'confirm-password', 'the wrong field is marked')
+
+        // 05:91 again — nothing is cleared, including the two passwords. Clearing them makes the
+        // user retype both to fix one keystroke, which is how a mismatch becomes two mismatches.
+        assert.equal(valueOf(s, 'email'), typed.email, 'the email was cleared')
+        assert.equal(valueOf(s, 'handle'), typed.handle, 'the handle was cleared')
+        assert.equal(valueOf(s, 'new-password'), typed.password, 'the password was cleared')
+        assert.equal(valueOf(s, 'confirm-password'), slip, 'the confirmation was cleared')
+
+        // And it is a gate, not a wall: correcting the second field and pressing again goes
+        // through, with the FIRST field's value — never the one that was typed second.
+        await s.type(labelled(s, 'Confirm password'), typed.password)
+        await s.click(s.byRole('button', 'Create account'))
+        const sent = s.api.matching(`POST ${IDENTITY_ROUTES.register}`)
+        assert.equal(sent.length, 1, 'a corrected registration was not posted exactly once')
+        assert.deepEqual(
+          sent[0]?.json,
+          typed,
+          'the body is not the three fields identity takes — the confirmation must not be sent, ' +
+            'and the password sent must be the one from the first field',
+        )
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-07 ★ T1: a held session shows the account in the bar at first paint, not after a reload', async () => {
+    fresh()
+    // The scenario's own inputs: the handle inside the token, and a DIFFERENT one from identity,
+    // so that "the bar shows a handle" cannot be satisfied by whichever source happened to answer.
+    const inTheToken = 'savvanis'
+    const fromIdentity = 'savvanis-canonical'
+    assert.notEqual(inTheToken, fromIdentity, 'the two sources are the same; this asserts nothing')
+
+    await withScreen(
+      h(MemoryRouter, { initialEntries: ['/'] }, h(AuthProvider, null, h(AppShell))),
+      {
+        url: `${ORIGIN}/`,
+        storage: {
+          'cf.accessToken': unsignedToken({ handle: inTheToken, roles: ['player'] }),
+          'cf.refreshToken': 'held-refresh-token',
+        },
+        routes: {
+          // Slow on purpose. The live estate answers this cross-origin, behind a CORS preflight,
+          // over the tunnel — 308ms for the preflight alone, measured 2026-08-05 — and the whole
+          // defect lives in the window this delay stands in for.
+          'GET /auth/me': { delayMs: 200, body: { user: { id: 'u1', handle: fromIdentity, roles: ['player'] } } },
+        },
+      },
+      async (s) => {
+        // The identity call is IN FLIGHT and has not answered. If this is ever 0, the delay stopped
+        // working and everything below would be asserting the settled state.
+        assert.equal(s.api.matching('GET /auth/me').length, 1, '/auth/me was not called at all')
+
+        // ── THE ASSERTION THAT IS TRUE ONLY WHEN IT GENUINELY WORKS ────────────────────────────
+        // Not "the bar rendered", not "no console error", not "no failed request" — all of those
+        // were true of the defect. A signed-in user must never be offered Sign in.
+        // `=== null` INSIDE the assertion, never `assert.equal(element, null)`. node's assert
+        // inspects `actual` to build the diff, and a happy-dom element is the whole cyclic
+        // document: the failure path takes ninety seconds and abandons every test after it, so
+        // the red result never reaches the reporter. A boolean is what is compared here.
+        assert.ok(
+          s.queryByRole('button', 'Sign in') === null,
+          'the bar offers Sign in to a user who is holding a session — this is the defect: a ' +
+            'working sign-in that looks broken until something forces a re-render',
+        )
+        assert.ok(
+          s.text().includes(inTheToken),
+          `the bar does not carry the account at first paint. It holds ${JSON.stringify(s.text().slice(0, 160))}`,
+        )
+
+        // And identity still wins when it answers. The token is what is shown until then; it is
+        // not a cache that outlives the truth.
+        await s.settle(300)
+        assert.ok(s.text().includes(fromIdentity), 'identity’s answer did not replace the token’s')
+        assert.ok(s.queryByRole('button', 'Sign in') === null, 'the bar fell back to signed-out')
+        s.clean('the bar at first paint')
+      },
+    )
+  })
 })
+
+/**
+ * An access token whose payload says what this scenario needs it to say.
+ *
+ * UNSIGNED, and that is the point rather than a shortcut: `lib/claims.ts` reads these two fields
+ * for DISPLAY and verifies nothing, because every service verifies the token on the request
+ * itself. A test that had to mint a real signature would be asserting that this bundle validates
+ * credentials, which it must not do and does not claim to.
+ *
+ * No credential appears here or anywhere in this suite — the payload is two public display fields
+ * and the signature segment is the literal word `unsigned`.
+ */
+function unsignedToken(payload: Record<string, unknown>): string {
+  const b64url = (value: string): string =>
+    Buffer.from(value, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${b64url(JSON.stringify({ alg: 'none' }))}.${b64url(JSON.stringify(payload))}.unsigned`
+}
 
 /* ── helpers for the sign-in scenarios ──────────────────────────────────────────────────────── */
 

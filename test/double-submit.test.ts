@@ -587,6 +587,10 @@ for (const strict of [false, true]) {
           await s.type(s.byRole('textbox', 'Email'), 'newcomer@example.com')
           await s.type(s.byRole('textbox', 'Handle'), 'newcomer')
           await s.type(passwordField(s), 'a-long-passphrase')
+          // The confirmation, filled to match. This scenario is about the LATCH, not about the
+          // confirmation (BJ-SIGNIN-06 owns that): a form left mismatched here would send zero
+          // requests and pass the "exactly one" assertion for the wrong reason.
+          await s.type(confirmationField(s), 'a-long-passphrase')
           const create = s.byRole('button', 'Create account')
           s.clickNoFlush(create)
           s.clickNoFlush(create)
@@ -729,6 +733,18 @@ const identitySession = (id: string) => ({
  * Not `byRole('textbox')`: a password input has no `textbox` role, which is why the journey suite
  * carries the same helper. Kept local so this file stands on its own.
  */
+/** The second password control, addressed by its own label. `pages/account.tsx` RegisterPage. */
+function confirmationField(s: Screen): Element {
+  const found = [...s.document.querySelectorAll('label')].filter((l) =>
+    (l.textContent ?? '').trim().toLowerCase().startsWith('confirm password'),
+  )
+  assert.equal(found.length, 1, `expected one <label> starting "Confirm password", found ${found.length}`)
+  const id = found[0]?.getAttribute('for')
+  const control = id ? s.document.getElementById(id) : null
+  assert.ok(control, 'the label "Confirm password" points at no control')
+  return control
+}
+
 function passwordField(s: Screen): Element {
   const found = [...s.document.querySelectorAll('label')].filter((l) =>
     (l.textContent ?? '').trim().toLowerCase().startsWith('password'),

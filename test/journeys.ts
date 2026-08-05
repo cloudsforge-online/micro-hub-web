@@ -213,6 +213,38 @@ export const SCENARIOS: readonly Scenario[] = [
     ownedBy: { path: 'identity/src/handoff.ts', grep: 'IDENTITY_HANDOFF_ORIGINS' },
   },
 
+  /* ── The two the owner found by hand on the live estate, 2026-08-05 ───────────────────────── */
+  {
+    id: 'BJ-SIGNIN-06',
+    what: 'two password fields that disagree do not reach identity: nothing is posted, and the second field says why',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    // No `ownedBy`, and that absence is the substance rather than an omission. Every other rule on
+    // this form is identity's; this one CANNOT be, because identity is sent a single password and
+    // a mismatch has no representation in the request. It is the only credential check this
+    // bundle is allowed to hold, and the reason is written at src/pages/account.tsx `submit`.
+    caveat:
+      'This asserts the confirmation and deliberately nothing about strength, because the ' +
+      'strength policy is contextual — it depends on the handle and the email local part — and ' +
+      'lives in @cloudsforge/contracts-auth, which this bundle does not depend on. A copy here ' +
+      'would be a second policy that drifts, and a test of the copy would pass while identity ' +
+      'disagreed. The server sentence is already rendered under the field it names.',
+  },
+  {
+    id: 'BJ-SIGNIN-07',
+    what: 'a held session renders the account in the bar at first paint, before /auth/me has answered and without a reload',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+    caveat:
+      'The T1 half is asserted here: the bar carries the handle while the identity call is still ' +
+      'in flight. What this cannot assert is the LATENCY that made it visible on the live estate ' +
+      '— a CORS preflight and a request over the tunnel, measured at 308ms on 2026-08-05 — ' +
+      'because a stubbed fetch resolves in a tick. The delay is simulated with delayMs, so this ' +
+      'proves the ordering and not the duration; the duration belongs to micro-beacon at T3.',
+  },
+
   /* ══════════════════════════════════════════════════════════════════════════════════════════
      6.2 Group B — wallet and withdrawal. BJ-WAL-08..22 were ⛔ on §8.2, "no UI exists".
      ══════════════════════════════════════════════════════════════════════════════════════ */

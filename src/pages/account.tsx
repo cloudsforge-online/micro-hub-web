@@ -412,8 +412,16 @@ export function RegisterPage() {
   const [email, setEmail] = useState('')
   const [handle, setHandle] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<Refusal | null>(null)
+  /**
+   * Set when the two password fields disagreed on the last press of Create account, cleared the
+   * moment either is edited. It is not computed live from `password !== confirmation`, because
+   * that reads "those do not match" at every keystroke of a field somebody has only started
+   * typing — an error before the user has finished making the mistake.
+   */
+  const [mismatched, setMismatched] = useState(false)
 
   /**
    * `POST /auth/register` carries no idempotency key, and this is the sharpest handler on the
@@ -431,6 +439,36 @@ export function RegisterPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    /*
+     * ── THE ONE RULE THIS PAGE IS ALLOWED TO HOLD ────────────────────────────────────────────
+     *
+     * The header of this file says nothing here decides anything, and that stands. This is not an
+     * exception to it: a confirmation is the one check identity CANNOT make, because identity is
+     * sent one password and a mismatch has no representation in the request at all. There is no
+     * server rule for this to be stricter or looser than, so it cannot teach the user a lie and
+     * cannot drift.
+     *
+     * ── AND WHY THERE IS STILL NO STRENGTH RULE HERE ─────────────────────────────────────────
+     *
+     * The policy is `checkPassword` in `@cloudsforge/contracts-auth`
+     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts:1148-1185`): at least
+     * `PASSWORD_MIN_LENGTH` = 8 code points, at most 128, not one character repeated, and not
+     * containing the handle or the email local part. The last two are CONTEXTUAL — they depend on
+     * the other two fields and on `normaliseEmail` — so a copy here would be a second
+     * implementation of a rule with inputs, which is the drift this file was written to avoid.
+     * This bundle does not depend on that package, so importing the real function is not
+     * available either. identity answers a weak password with a `fields` entry and the sentence
+     * appears under this control (`error={refusal?.byField.get('password')}`), which costs one
+     * round trip and is never wrong.
+     *
+     * The submit is refused BEFORE the latch is taken, so a mismatch spends neither an attempt nor
+     * a registration — `POST /auth/register` carries no idempotency key.
+     */
+    if (password !== confirmation) {
+      setMismatched(true)
+      setRefusal(null)
+      return
+    }
     if (!attempt.take()) return
     setBusy(true)
     setRefusal(null)
@@ -505,12 +543,13 @@ export function RegisterPage() {
         {/*
           No strength meter and no inline rules. The policy lives in `@cloudsforge/contracts-auth`
           and is applied by identity; a copy here would be a second policy that drifts, and a
-          browser test of the copy would pass while the real one disagreed.
+          browser test of the copy would pass while the real one disagreed. See `submit` for the
+          rules identity actually applies and why none of them is restated here.
         */}
         <Field
           id="new-password"
           label="Password"
-          hint="CloudsForge will tell you if it is not strong enough."
+          hint="At least 8 characters. CloudsForge will tell you if it is not strong enough."
           error={refusal?.byField.get('password')}
         >
           {(props) => (
@@ -522,7 +561,46 @@ export function RegisterPage() {
               value={password}
               autoComplete="new-password"
               required
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setMismatched(false)
+              }}
+            />
+          )}
+        </Field>
+
+        {/*
+          The confirmation. A second field rather than a strength meter, because a mistyped
+          password is the failure this form actually has: the account is created, the user is
+          signed in by the registration itself, and the credential they think they chose is not
+          the one stored — so they discover it at the next sign-in, on a different machine, with
+          no way to prove the account is theirs.
+
+          `name="confirmPassword"` is on the control for the browser's sake and NOT sent: the
+          request body is built from `{ email, handle, password }` in `submit`, so the second copy
+          of the password never leaves this page. `autoComplete="new-password"` on both fields is
+          what makes a password manager offer to fill the pair rather than treat this one as a
+          sign-in.
+        */}
+        <Field
+          id="confirm-password"
+          label="Confirm password"
+          hint="Type it again, so a slip is caught here rather than at your next sign-in."
+          error={mismatched ? 'Those two passwords are not the same.' : undefined}
+        >
+          {(props) => (
+            <input
+              {...props}
+              className="cf-input"
+              type="password"
+              name="confirmPassword"
+              value={confirmation}
+              autoComplete="new-password"
+              required
+              onChange={(event) => {
+                setConfirmation(event.target.value)
+                setMismatched(false)
+              }}
             />
           )}
         </Field>
