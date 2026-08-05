@@ -88,11 +88,18 @@ function onChainAssets(source: string): readonly string[] {
 
 describe('CHAIN_ASSETS against the estate', () => {
   it('parses both siblings to something, so neither assertion below can be vacuous', () => {
-    // The parsers throw on a shape change, but a regex that matched an empty capture would make
-    // every set comparison trivially true. Asserted first and separately, so a parser that has
+    // The parsers throw on a shape change, but a regex that matched a short capture would make
+    // the set comparisons trivially true. Asserted first and separately, so a parser that has
     // rotted reports itself rather than turning the real checks green.
-    assert.ok(walletMovableAssets(read(SIBLINGS[0])).length >= 5)
-    assert.ok(onChainAssets(read(SIBLINGS[1])).length >= 6)
+    //
+    // The bound is `CHAIN_ASSETS.length` and not a digit, deliberately. A digit here would be a
+    // typed fact about how many assets the estate has TODAY, smuggled into a check whose whole
+    // purpose is to stop typed facts about assets — and it would go stale on the next chain, in a
+    // test file, where a stale number is hardest to see. Both upstream sets must be at least as
+    // large as this list for the assertions below to mean anything, and that is a real invariant
+    // rather than a count.
+    assert.ok(walletMovableAssets(read(SIBLINGS[0])).length >= CHAIN_ASSETS.length)
+    assert.ok(onChainAssets(read(SIBLINGS[1])).length >= CHAIN_ASSETS.length)
   })
 
   it('is exactly the set micro-wallet will move, in both directions', () => {
