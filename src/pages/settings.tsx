@@ -47,12 +47,27 @@ export function SettingsPage() {
           <dt>Roles</dt>
           <dd>{account.roles?.length ? account.roles.join(', ') : 'none'}</dd>
         </dl>
+        {/*
+          ── THIS PARAGRAPH USED TO LINK TO `account.<apex>`, WHICH DOES NOT RESOLVE ───────────
+
+          `resolved.account` is the RESERVED hostname. It is one of exactly two subdomains out of
+          twenty-seven with no DNS record on either network (the other is `worlds-api`), so the
+          link did not 404 — it failed to resolve at all, and the browser showed its own error
+          page rather than anything of ours. The sentence around it was wrong in the same way: it
+          promised a "CloudsForge Account portal", and there is no such surface in the estate.
+          `micro-identity` binds 4001, serves an API and renders no HTML at all
+          (`identity/src/server.ts` §3, asserted at `identity/src/server.test.ts:890`).
+
+          So the link is not repointed, it is retired, and the paragraph now says what is true.
+          Repointing it at `signin` would have been the same defect as the account menu's: sending
+          a reader who is already signed in to the sign-in form. The one destination that exists
+          and does something is Security, which is in-app and already linked below.
+        */}
         <p className="wt-note">
-          Your email address, handle, password and account deletion are held once, at the
-          CloudsForge Account portal — this app has no copy of them to edit.{' '}
-          <a className="wt-link" href={resolved.account}>
-            Open account settings
-          </a>
+          Your email address, handle and password are held once, by the identity service. It is an
+          API and serves no pages, and the estate has no account portal yet — so there is nowhere
+          to send you to change them, and this app deliberately keeps no second copy to edit. The
+          gap is real and is recorded rather than papered over with a link that goes nowhere.
         </p>
         <p className="wt-note">
           {/* A router Link, not an anchor: an in-app address served through a full page load
@@ -96,8 +111,14 @@ export function SettingsPage() {
           <dd>{resolved.wallet}</dd>
           <dt>Nimbus (tokens)</dt>
           <dd>{resolved.nimbus}</dd>
+          {/*
+            `signin`, not `account`. This row is labelled "sign-in" and showed the reserved
+            `account.<apex>` hostname, which has no DNS record — so a reader checking which
+            environment they were on was shown an address that resolves nowhere, on the one panel
+            whose entire purpose is to be trusted for that answer.
+          */}
           <dt>Account (sign-in)</dt>
-          <dd>{resolved.account}</dd>
+          <dd>{resolved.signin}</dd>
           <dt>Lantern (error ingest)</dt>
           <dd>{resolved.lantern}</dd>
           <dt>Reported as</dt>

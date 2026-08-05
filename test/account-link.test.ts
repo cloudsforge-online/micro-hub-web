@@ -39,6 +39,7 @@ import { withScreen } from './dom.ts'
 import { __resetAuth } from '../src/lib/api.ts'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import { AppShell } from '../src/components/shell.tsx'
+import { SettingsPage } from '../src/pages/settings.tsx'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
 
@@ -119,6 +120,66 @@ describe('BJ-SIGNIN — the account menu leads somewhere', () => {
         )
 
         s.clean('the account menu')
+      },
+    )
+  })
+
+  /**
+   * The same defect, one page further in.
+   *
+   * `account.<apex>` is one of exactly TWO subdomains out of twenty-seven with no DNS record on
+   * either network — the other is `worlds-api` — so a link to it does not 404, it fails to resolve
+   * and the browser shows its own error page. Settings linked to it twice: once as "Open account
+   * settings", and once as the value of the row labelled "Account (sign-in)" on the panel whose
+   * whole purpose is to tell a reader which environment they are on.
+   *
+   * The rule is asserted over EVERY anchor and every rendered address on the page rather than over
+   * the two that were known to be wrong, because the next one will be somewhere else.
+   */
+  it('BJ-SIGNIN-10 T1: Settings names no hostname the estate has no DNS record for', async () => {
+    __resetAuth()
+    const handle = 'savvanis'
+
+    await withScreen(
+      h(MemoryRouter, { initialEntries: ['/settings'] }, h(AuthProvider, null, h(SettingsPage))),
+      {
+        url: `${ORIGIN}/settings`,
+        storage: {
+          'cf.accessToken': unsignedToken({ handle, roles: ['player'] }),
+          'cf.refreshToken': 'held-refresh-token',
+        },
+        routes: { 'GET /auth/me': { body: { user: { id: 'u1', handle, roles: ['player'] } } } },
+      },
+      async (s) => {
+        // Named from the registry, not written out, so it stays true on testnet and in dev.
+        const dead = cloudsforgeHosts().account
+        assert.ok(dead.length > 0, 'the registry produced no `account` host; this asserts nothing')
+
+        for (const a of s.allByRole('link')) {
+          const href = a.getAttribute('href') ?? ''
+          assert.ok(
+            !href.startsWith(dead),
+            `Settings links to ${href}. The estate has no DNS record for that hostname, on ` +
+              `either network, so the reader gets the browser's own error page`,
+          )
+        }
+
+        // And it is not merely unlinked — it is not PRINTED either. The "Resolved hosts" panel is
+        // read as the answer to "which environment am I on", so a dead address shown there is
+        // believed even though nothing is clickable.
+        assert.ok(
+          !s.text().includes(dead),
+          `Settings prints ${dead} on the page, and nothing serves it`,
+        )
+
+        // The sign-in row still has to name the address that IS served, or this test would pass
+        // just as well against a page that dropped the row instead of correcting it.
+        assert.ok(
+          s.text().includes(cloudsforgeHosts().signin),
+          'Settings no longer names the sign-in address at all',
+        )
+
+        s.clean('the settings page')
       },
     )
   })
