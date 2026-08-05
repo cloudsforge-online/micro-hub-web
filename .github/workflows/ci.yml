@@ -90,6 +90,32 @@ jobs:
           # dies before install. Same wiring as the service repos' runtime checkout.
           token: ${{ secrets.ESTATE_READ_TOKEN }}
 
+      # ──────────────────────────────────────────────────────────────────────────────────────
+      # NOT TEMPORARY, AND NOT FOR INSTALL. These two are never installed and never bundled —
+      # `test/wallet-assets.test.ts` READS them, and would otherwise be a check that turns
+      # itself off in the one environment that matters.
+      #
+      # `src/lib/money.ts` carries the list of assets `micro-wallet` will move, because a
+      # browser bundle cannot import a service's source. Every other test in this repository
+      # answers its own requests from a stand-in, so a Send menu offering an asset the service
+      # refuses is green here and broken in production — which is what happened with SHARD.
+      # The test parses `CHAIN_FOR_ASSET` out of wallet and asserts set equality, and it FAILS
+      # rather than skips when the checkout is missing. `micro-site` does the same thing with
+      # micro-contracts for the numbers it publishes.
+      #
+      # No token: the estate's active repositories are public. Add
+      # `token: ${{ secrets.ESTATE_READ_TOKEN }}` if either is ever made private again.
+      # ──────────────────────────────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-wallet
+          path: wallet
+
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-contracts
+          path: contracts
+
       # Pinned, because the checkout lives at hub-web/ and the action looks for the
       # packageManager field in the workspace root, where there is no package.json.
       - uses: pnpm/action-setup@v4
