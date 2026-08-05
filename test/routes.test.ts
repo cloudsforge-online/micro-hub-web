@@ -188,7 +188,7 @@ describe('the session gate', () => {
 
   it('keeps the public set to the sign-in surface and nothing else', () => {
     // The list is a list of EXEMPTIONS. Anything added to it stops being checked by the test
-    // above, so the set itself is pinned: a FIFTH entry is a decision somebody has to make here.
+    // above, so the set itself is pinned: a SEVENTH entry is a decision somebody has to make here.
     //
     // `account/verify` is the fourth, added 2026-08-05, and the decision is recorded rather than
     // assumed. It is where the link in a verification email lands, and the reader following it has
@@ -196,9 +196,27 @@ describe('the session gate', () => {
     // them to a sign-in they cannot complete, so the link would fail for exactly the person it was
     // addressed to. It shows nothing: it reads a token out of `location.hash`, posts it, and
     // either navigates or says the link did not work.
+    //
+    // `account/forgot` and `account/reset` are the fifth and sixth, added 2026-08-06 with the
+    // password-reset flow, and the decision is the same one twice over. A reader on either is
+    // signed out BY DEFINITION: `forgot` is what somebody opens because they cannot sign in, and
+    // `reset` is where the mailed link lands — after which identity revokes every session on the
+    // account anyway (SD-04). A gate on either is a redirect loop around the one repair for the
+    // thing that is broken. `reset` has a second reason: notify refuses to send a message whose
+    // link cannot be built, so until this address was routed AND served by nginx, the reset email
+    // could not be sent at all. Neither shows anything — one is an email field whose answer is a
+    // fixed sentence, the other two password fields — and neither ever renders the token, which
+    // arrives in the fragment and lives in a ref.
     assert.deepEqual(
       PUBLIC_ROUTES.map((r) => r.path),
-      ['account/login', 'account/register', 'account/verify', 'account/logout'],
+      [
+        'account/login',
+        'account/register',
+        'account/verify',
+        'account/forgot',
+        'account/reset',
+        'account/logout',
+      ],
     )
     for (const route of PUBLIC_ROUTES) {
       assert.ok(route.because.length > 20, `${route.path} is exempt for no stated reason`)

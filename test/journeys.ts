@@ -39,9 +39,11 @@
  *
  * ── Locally-minted ids ────────────────────────────────────────────────────────────────────────
  *
- * Five properties of the sign-in surface have no doc 22 row at all, because doc 22 was written
- * when the surface did not exist and could only describe it from the outside. They carry the
- * `BJ-SIGNIN-` prefix rather than a `BJ-ACC-` number, deliberately: doc 22 owns the `BJ-ACC`
+ * Several properties of the sign-in surface have no doc 22 row at all, because doc 22 was written
+ * when the surface did not exist and could only describe it from the outside. The count is not
+ * written down here on purpose — it was "five" while there were ten, which is how a comment starts
+ * lying — and `SCENARIOS` is the list. They carry the `BJ-SIGNIN-` prefix rather than a
+ * `BJ-ACC-` number, deliberately: doc 22 owns the `BJ-ACC`
  * sequence and will extend it, and minting into somebody else's sequence is how two scenarios end
  * up sharing an id. `market-web/test/journeys.ts` sets the precedent with `BJ-MARKET-404`.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -264,6 +266,64 @@ export const SCENARIOS: readonly Scenario[] = [
     tier: 'T1',
     gate: true,
     ownedBy: { path: 'identity/src/server.ts', grep: 'verificationRequired' },
+  },
+  {
+    id: 'BJ-SIGNIN-11',
+    what: 'the reset link lets a new password be chosen, and its token is never in the address bar, the DOM or storage once the form is on screen',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'identity/src/passwordReset.ts', grep: 'used_at' },
+    caveat:
+      'The client half only, and the boundary is worth writing down. That the token is ' +
+      'single-use, expires in thirty minutes, is stored as a hash and revokes every session when ' +
+      'it is spent is identity’s to enforce and cannot be asserted from a browser at all — a ' +
+      'client that posted the same token twice would still be answered once. What is asserted ' +
+      'here is where the token IS: read from the fragment, stripped from the address bar before ' +
+      'the reader is shown anything, absent from the rendered document and from storage, and sent ' +
+      'in one POST body.',
+  },
+  {
+    id: 'BJ-SIGNIN-12',
+    what: 'the reset address a mail scanner pre-fetches carries no token, so opening it posts nothing and offers a new link instead',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    caveat:
+      'A pre-fetch is modelled as what it is on the wire — a GET of the path with no fragment, ' +
+      'because a browser never transmits one — rather than by driving a mail scanner. That is the ' +
+      'whole claim: this bundle issues no request when there is nothing after the #, which is ' +
+      'what makes corporate mail security harmless to a single-use link.',
+  },
+  {
+    id: 'BJ-SIGNIN-13',
+    what: 'asking for a reset shows identity’s own sentence, and the same screen whatever identity answered and whatever address was typed',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'identity/src/passwordReset.ts', grep: 'RESET_REQUEST_STATUS' },
+    caveat:
+      'The screen, not the timing. identity answers this route before it does any work precisely ' +
+      'so the RESPONSE TIME cannot say what the status and body do not — 10ms for an unknown ' +
+      'address against 6015ms for a known one, before that change — and a stubbed fetch resolves ' +
+      'in a tick, so no browser-side assertion can reach the property that actually closes the ' +
+      'oracle. What is asserted is that this bundle adds no distinction of its own: it renders ' +
+      'the server’s sentence, sends a malformed address rather than judging it, and ends on one ' +
+      'screen for every answer.',
+  },
+  {
+    id: 'BJ-SIGNIN-14',
+    what: 'a new password identity rejects: every sentence it sent appears under the field it named, and nothing typed is cleared',
+    asserts: 'presentation',
+    tier: 'T1',
+    ownedBy: { path: 'identity/src/server.ts', grep: 'checkPassword' },
+    caveat:
+      'What the policy IS is not asserted anywhere, and cannot be from here — it lives in ' +
+      '@cloudsforge/contracts-auth, two of its rules depend on the account’s own handle and ' +
+      'email, and this bundle does not depend on that package. The scenario stubs two sentences ' +
+      'of its own and looks for both, so what it proves is that this page renders ALL of what the ' +
+      'server said rather than the last of it — the shape that used to drop every refusal but one ' +
+      'and cost the reader a round trip per rule.',
   },
   {
     id: 'BJ-SIGNIN-07',

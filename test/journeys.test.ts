@@ -60,7 +60,14 @@ import { ReceivePanel } from '../src/components/receive.tsx'
 import { KeyExportPanel } from '../src/components/keyexport.tsx'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import { AppShell } from '../src/components/shell.tsx'
-import { RegisterPage, SignInPage, SignOutPage, VerifyEmailPage } from '../src/pages/account.tsx'
+import {
+  ForgotPasswordPage,
+  RegisterPage,
+  ResetPasswordPage,
+  SignInPage,
+  SignOutPage,
+  VerifyEmailPage,
+} from '../src/pages/account.tsx'
 import { WalletPage } from '../src/pages/wallet.tsx'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
@@ -721,6 +728,274 @@ describe('BJ-SIGNIN — proving the address', () => {
         // arrives" and a person cannot check a value they can no longer see.
         assert.ok(s.text().includes(typed.email), 'the address the link was sent to is not shown')
         assert.ok(s.queryByRole('status', /link to/) !== null, 'the outcome is not announced')
+      },
+    )
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   The password reset. identity serves both halves (`identity/src/server.ts:1260` and `:1288`) and
+   the mail could not be sent at all until this bundle served a page at `/account/reset`, because
+   notify refuses to send a message whose link cannot be built.
+
+   The token in that link is a PASSWORD-EQUIVALENT: it changes the credential and revokes every
+   session on the account. So the three scenarios below are about where it is allowed to be, and
+   the one route that must answer identically for every address in the world.
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+describe('BJ-SIGNIN — the password reset', () => {
+  /**
+   * A token-shaped string that is not a token, built from a fixed pattern.
+   *
+   * Sixty-four hex characters, because that is what identity mints. Written here rather than read
+   * off the code, so that what the assertions prove is that THIS EXACT STRING made — or did not
+   * make — each journey. Deliberately not the constant the verification scenarios use: two
+   * scenarios sharing a literal is how a copy-paste in the implementation goes unnoticed.
+   */
+  const LINK_TOKEN = 'facefeed'.repeat(8)
+
+  /** identity's two password routes, as literals. See the header, hazard 1. */
+  const RESET_ROUTES = { forgot: '/auth/password/forgot', reset: '/auth/password/reset' } as const
+
+  it('BJ-SIGNIN-11 ★ T1: the reset link is spent from a form, and its token is never in the address bar, the document or storage', async () => {
+    fresh()
+    const chosen = 'a-brand-new-passphrase'
+
+    /*
+     * THE ADDRESS BAR AT THE INSTANT THE CREDENTIAL WENT OUT, sampled from inside the stub.
+     *
+     * Read afterwards it would be equally true of a bundle that stripped the hash in the `.then`,
+     * which is the mutant BJ-SIGNIN-08's first version passed against. Here the window between
+     * landing and posting is not a round trip but however long a human takes to choose a password
+     * and type it twice, so an "after" version would leave a live credential in the address bar,
+     * the history and any screen share for that entire time.
+     */
+    let urlWhenSent = '(the request was never made)'
+
+    await withScreen(
+      page(h(ResetPasswordPage), '/account/reset'),
+      {
+        url: `${ORIGIN}/account/reset#token=${LINK_TOKEN}`,
+        // MOUNTED THE WAY main.tsx MOUNTS: every effect runs twice. The second run reads a hash the
+        // first has already stripped, and an unguarded page would replace this form with "that link
+        // is incomplete" — a working link reported as broken, on the one page that works once.
+        strict: true,
+        routes: {
+          [`POST ${RESET_ROUTES.reset}`]: () => {
+            urlWhenSent = globalThis.location.href
+            return { status: 204 }
+          },
+        },
+      },
+      async (s) => {
+        await s.settle(20)
+
+        // ── BEFORE ANYTHING IS TYPED: the token is already gone from everywhere a reader,
+        // a screenshot, an extension or the next referrer could pick it up.
+        assert.ok(
+          !s.window.location.href.includes(LINK_TOKEN),
+          'the token is still in the address bar while the reader chooses a password',
+        )
+        assert.ok(
+          !s.document.documentElement.outerHTML.includes(LINK_TOKEN),
+          'the token is somewhere in the rendered document — a hidden input carrying it is in the ' +
+            'page source, in a copied selection and in the accessibility tree',
+        )
+
+        await s.type(labelled(s, 'New password'), chosen)
+        await s.type(labelled(s, 'Confirm new password'), chosen)
+        await s.click(s.byRole('button', 'Set new password'))
+        await s.settle(20)
+
+        // ── It was spent exactly once, with the token from the fragment and the password typed.
+        const sent = s.api.matching(`POST ${RESET_ROUTES.reset}`)
+        assert.equal(sent.length, 1, 'the reset was not submitted exactly once')
+        assert.deepEqual(
+          sent[0]?.json,
+          { token: LINK_TOKEN, newPassword: chosen },
+          'the body is not the token from the fragment and the password that was typed',
+        )
+        assert.ok(
+          !urlWhenSent.includes(LINK_TOKEN),
+          `the token was still in the address bar when the reset went out: ${urlWhenSent}`,
+        )
+        assert.ok(!s.storageSnapshot().includes(LINK_TOKEN), 'the link token was persisted')
+        assert.ok(
+          !s.document.documentElement.outerHTML.includes(LINK_TOKEN),
+          'the token reached the document on the way to being spent',
+        )
+
+        // ── And the reader is told the consequence they would otherwise discover on three
+        // devices: identity revokes every refresh family on a reset (SD-04).
+        assert.match(s.text(), /signed out/i, 'the screen does not say the other sessions ended')
+        s.byRole('link', 'Sign in')
+        s.clean('the password reset')
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-12 ★ T1: the reset address a mail scanner pre-fetches spends nothing and offers a new link', async () => {
+    fresh()
+    // A pre-fetch is a GET of the path with NO fragment — browsers do not transmit one, which is
+    // the entire reason the token lives there. This is that request, modelled exactly.
+    await withScreen(
+      page(h(ResetPasswordPage), '/account/reset'),
+      {
+        url: `${ORIGIN}/account/reset`,
+        // Routes that WOULD answer, so a bundle that posted something cannot pass by rendering a
+        // failure it caused itself.
+        routes: {
+          [`POST ${RESET_ROUTES.reset}`]: { status: 204 },
+          [`POST ${RESET_ROUTES.forgot}`]: { status: 202, body: { status: 'unused here' } },
+        },
+      },
+      async (s) => {
+        await s.settle(20)
+        assert.equal(
+          s.api.matching(`POST ${RESET_ROUTES.reset}`).length,
+          0,
+          'opening the link without a fragment posted something — corporate mail security opens ' +
+            'every link in every message, and this is where a single-use credential would be ' +
+            'spent before the person it was sent to ever clicked it',
+        )
+        assert.equal(s.navigations.length, 0, 'a pre-fetch navigated somewhere')
+        // And it is not a dead end: the form that asks for another link is on the page, because
+        // this route answers identically for every address and therefore may be offered publicly.
+        s.byRole('button', 'Send a reset link')
+        s.clean('the reset pre-fetch')
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-14 T1: a refused new password shows every sentence identity sent, under the field it named', async () => {
+    fresh()
+    /*
+     * TWO sentences, both under one field name, which is what identity actually sends: its
+     * `fields` array carries one entry per failing rule and `checkPassword` names them all
+     * `newPassword`. They are the scenario's own strings — nothing here knows or asserts what the
+     * policy is, only that what the server said is what the reader is shown.
+     */
+    const FIRST = 'That one is far too short for this account.'
+    const SECOND = 'That one repeats part of your address back at you.'
+    const typed = 'short'
+
+    await withScreen(
+      page(h(ResetPasswordPage), '/account/reset'),
+      {
+        url: `${ORIGIN}/account/reset#token=${LINK_TOKEN}`,
+        routes: {
+          [`POST ${RESET_ROUTES.reset}`]: {
+            status: 400,
+            body: {
+              error: {
+                code: 'bad_request',
+                message: 'that password is not acceptable',
+                requestId: 'req-stub-0001',
+                fields: [
+                  { field: 'newPassword', code: 'one', message: FIRST },
+                  { field: 'newPassword', code: 'two', message: SECOND },
+                ],
+              },
+            },
+          },
+        },
+      },
+      async (s) => {
+        await s.settle(20)
+        await s.type(labelled(s, 'New password'), typed)
+        await s.type(labelled(s, 'Confirm new password'), typed)
+        await s.click(s.byRole('button', 'Set new password'))
+        await s.settle(20)
+
+        // BOTH, not the last one. A Map built from pairs keeps only the final entry for a repeated
+        // key, and that shape told the reader one rule at a time out of a response that had
+        // already listed them all — at the cost, on this page, of a fresh mailed link per round.
+        const shown = s.text()
+        assert.ok(shown.includes(FIRST), 'the first sentence identity sent is not on screen')
+        assert.ok(shown.includes(SECOND), 'the second sentence identity sent is not on screen')
+
+        // And nothing was cleared. 05:91, and it matters more here than on any other form in the
+        // estate: this reader cannot simply try again, because a fresh attempt needs a fresh link.
+        assert.equal(valueOf(s, 'reset-password'), typed, 'the password field was cleared')
+        assert.equal(valueOf(s, 'reset-confirm'), typed, 'the confirmation field was cleared')
+        assert.ok(
+          !s.document.documentElement.outerHTML.includes(LINK_TOKEN),
+          'a refusal put the token into the document',
+        )
+        s.clean('a refused new password')
+      },
+    )
+  })
+
+  it('BJ-SIGNIN-13 ★ T1: asking for a reset renders identity’s sentence, and ends on the same screen whatever came back', async () => {
+    fresh()
+    /*
+     * The scenario's own inputs, both of them.
+     *
+     * `SENTENCE` is written here and stubbed as the response, then looked for on the page — two
+     * observations of one value in opposite directions, never a constant imported from `src/`.
+     * `TYPED` is deliberately not an address: what is being proved is that this bundle sends it
+     * anyway. A client-side "that is not an email" would answer instantly for a malformed address
+     * and after a round trip for a real one, which is a timing oracle built in the one place it is
+     * easiest to measure.
+     */
+    const SENTENCE = 'If that account exists, something has been recorded. It expires and works once.'
+    const TYPED = 'not-an-address'
+
+    await withScreen(
+      page(h(ForgotPasswordPage), '/account/forgot'),
+      {
+        url: `${ORIGIN}/account/forgot`,
+        routes: { [`POST ${RESET_ROUTES.forgot}`]: { status: 202, body: { status: SENTENCE } } },
+      },
+      async (s) => {
+        await s.type(s.byRole('textbox', 'Email'), TYPED)
+        await s.click(s.byRole('button', 'Send a reset link'))
+        await s.settle(20)
+
+        const asked = s.api.matching(`POST ${RESET_ROUTES.forgot}`)
+        assert.equal(asked.length, 1, 'the request was not made exactly once')
+        assert.deepEqual(
+          asked[0]?.json,
+          { email: TYPED },
+          'the address was judged in the browser instead of being sent for identity to decide',
+        )
+        assert.ok(s.text().includes(SENTENCE), 'identity’s own sentence is not what is on screen')
+        s.clean('the reset request')
+      },
+    )
+
+    // ── THE SECOND HALF: a completely different answer, and the same screen.
+    //
+    // identity answers 202 for every input, so any other status is a fact about the SERVICE and
+    // never about the address — and a screen that reported it would be a screen whose shape
+    // depends on something, which is the whole property this route is built not to have.
+    fresh()
+    await withScreen(
+      page(h(ForgotPasswordPage), '/account/forgot'),
+      {
+        url: `${ORIGIN}/account/forgot`,
+        routes: {
+          [`POST ${RESET_ROUTES.forgot}`]: {
+            status: 500,
+            body: { error: { code: 'internal', message: 'the mailer fell over' } },
+          },
+        },
+      },
+      async (s) => {
+        await s.type(s.byRole('textbox', 'Email'), 'someone@example.com')
+        await s.click(s.byRole('button', 'Send a reset link'))
+        await s.settle(20)
+
+        assert.ok(
+          s.queryByRole('button', 'Send a reset link') === null,
+          'the form is still on screen, so this answer and a 202 do not look the same',
+        )
+        assert.ok(
+          !s.text().includes('the mailer fell over'),
+          'the service’s own failure was rendered, which is a difference a prober can measure',
+        )
+        assert.ok(s.queryByRole('status', /account exists/) !== null, 'no confirmation was reached')
       },
     )
   })

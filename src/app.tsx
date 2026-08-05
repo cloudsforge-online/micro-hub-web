@@ -16,9 +16,11 @@
  * verifies the token and the scope on the request itself; this exists so a signed-out reader is
  * sent to sign in rather than shown a screen made entirely of failures.
  *
- * The exceptions are `account/login`, `account/register` and `account/logout`: the estate's
- * sign-in surface, which lives here because nothing else in the estate served one at all
- * (docs/ecosystem/22 §8.1). They are declared in `lib/routes.ts` as PUBLIC_ROUTES and
+ * The exceptions are the `account/*` addresses of the estate's sign-in surface — `login`,
+ * `register`, `verify`, `forgot`, `reset` and `logout` — which live here because nothing else in
+ * the estate served one at all (docs/ecosystem/22 §8.1). Each of them either shows nothing or is
+ * the landing page for a link in an email, and the reader of a mailed link has no session by
+ * definition. They are declared in `lib/routes.ts` as PUBLIC_ROUTES and
  * `test/routes.test.ts` reads that list — an ungated route that is not on it fails the build, and
  * so does a listed route that is gated. The list is not a comment; it is what the test compares
  * against.
@@ -26,7 +28,14 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/shell.tsx'
 import { AuthProvider, ProtectedRoute } from './lib/auth.tsx'
-import { RegisterPage, SignInPage, SignOutPage, VerifyEmailPage } from './pages/account.tsx'
+import {
+  ForgotPasswordPage,
+  RegisterPage,
+  ResetPasswordPage,
+  SignInPage,
+  SignOutPage,
+  VerifyEmailPage,
+} from './pages/account.tsx'
 import { ActivityPage } from './pages/activity.tsx'
 import { EntitlementsPage } from './pages/entitlements.tsx'
 import { NotFoundPage } from './pages/not-found.tsx'
@@ -130,7 +139,7 @@ export function App() {
               than a page that does not exist.
             */}
             {/*
-              THE FOUR ADDRESSES THAT MUST NOT BE GATED, and the only ones in this app.
+              THE SIX ADDRESSES THAT MUST NOT BE GATED, and the only ones in this app.
 
               `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so `signInRedirect()`
               in every product in the estate sends its signed-out visitors to `/account/login` and
@@ -148,12 +157,20 @@ export function App() {
             <Route path="account/register" element={<RegisterPage />} />
             <Route path="account/logout" element={<SignOutPage />} />
             {/*
-              The fourth ungated address, and the one that MUST be ungated: it is where the link in
-              a verification email lands, and the reader following it has no session — proving the
-              address is what creates one. A gate here would bounce them to a sign-in they cannot
-              complete, which is the loop this whole group exists outside of.
+              The last three, and the ones that MUST be ungated: they are where the links in
+              CloudsForge's mail land, and the reader following one has no session BY DEFINITION —
+              proving the address is what creates a session, and a reader asking for a password
+              reset is a reader who cannot sign in at all. A gate on any of them bounces the reader
+              to a sign-in they cannot complete, so the mailed link fails for exactly the person it
+              was addressed to. That is the loop this whole group exists outside of.
+
+              `account/reset` is also the address `micro-identity` needs to exist before it will
+              send the mail at all: `notify` refuses to send when no link can be built, so until
+              this route was routed and served, the reset email could not go out.
             */}
             <Route path="account/verify" element={<VerifyEmailPage />} />
+            <Route path="account/forgot" element={<ForgotPasswordPage />} />
+            <Route path="account/reset" element={<ResetPasswordPage />} />
             <Route
               path="account/*"
               element={

@@ -40,7 +40,9 @@ import {
   completeSignIn,
   readReturnTo,
   registerAccount,
+  requestPasswordReset,
   resendVerification,
+  resetPassword,
   revokeRefreshToken,
   signInWithPassword,
   verifyEmail,
@@ -56,17 +58,32 @@ import { pageOrigin } from '../lib/hosts.ts'
 interface Refusal {
   readonly message: string
   readonly requestId: string | undefined
-  /** field name → the server's sentence for it. */
+  /** field name → EVERY sentence the server sent for it, joined. */
   readonly byField: ReadonlyMap<string, string>
 }
 
 function refusalFrom(err: unknown): Refusal {
   if (err instanceof ApiError) {
-    return {
-      message: err.message,
-      requestId: err.requestId,
-      byField: new Map(err.fields.map((f) => [f.field, f.message])),
+    /*
+     * GROUPED BY FIELD, NOT LAST-WINS.
+     *
+     * This was `new Map(err.fields.map(…))`, and a Map built from pairs keeps the LAST entry for a
+     * repeated key. identity sends one entry PER FAILING RULE under ONE field name: `checkPassword`
+     * pushes up to five, every one of them `field: 'newPassword'`
+     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts:1148-1185` — too short, too
+     * long, one character repeated, contains the handle, contains the email local part).
+     *
+     * So the old shape showed the reader the last rule they broke and silently dropped the rest.
+     * They fix that one, submit, and are told about the next — one round trip per rule, from a
+     * response that already listed all of them. It is worst on the reset form, where the answer to
+     * a 400 costs the reader another mailed link.
+     */
+    const byField = new Map<string, string>()
+    for (const field of err.fields) {
+      const already = byField.get(field.field)
+      byField.set(field.field, already ? `${already} ${field.message}` : field.message)
     }
+    return { message: err.message, requestId: err.requestId, byField }
   }
   return {
     message:
@@ -444,6 +461,16 @@ export function SignInPage() {
           </button>
           <Link className="wt-link" to={`/account/register?return=${encodeURIComponent(returnTo)}`}>
             Create an account
+          </Link>
+          {/*
+            The only route to a reset, and it is HERE rather than on a page a stranger can reach
+            from nowhere. Not for secrecy — `/account/forgot` is a public address and has to be —
+            but because this is where the reader already is when they discover they cannot get in.
+            A sign-in form whose refusal offers no way out is the screen people abandon accounts on;
+            doc 22 §8.1 counts the sign-in surface's dead ends among the estate's largest blockers.
+          */}
+          <Link className="wt-link" to={`/account/forgot?return=${encodeURIComponent(returnTo)}`}>
+            Forgot your password?
           </Link>
         </div>
       </form>
@@ -831,6 +858,503 @@ export function VerifyEmailPage() {
           to have another link sent. A link works once and expires 24 hours after it is issued.
         </p>
       </div>
+    </AccountFrame>
+  )
+}
+
+/* ─────────────────────────────── forgot ─────────────────────────────── */
+
+/**
+ * The sentence shown when identity answered without a readable `status`.
+ *
+ * It exists so that a proxy's empty 202, or a body this bundle could not parse, still ends on the
+ * SAME screen a normal answer ends on — the shape of this page must not depend on anything, because
+ * the moment it does the difference is a signal, and a signal about a mailbox is what
+ * `POST /auth/password/forgot` was written to have none of.
+ *
+ * It deliberately restates NO POLICY FIGURE. identity's own sentence carries "30 minutes" and
+ * "works once" (`identity/src/passwordReset.ts:252`); a second copy of those numbers here is a copy
+ * that goes stale the day the expiry changes, and it would be showing a reader a lifetime nothing
+ * had promised them.
+ */
+const RESET_REQUEST_RECORDED = 'If that account exists, a reset is on its way.'
+
+/**
+ * The form that asks identity for a reset link.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── THIS FORM HAS ONE OUTCOME, AND IT IS THE SAME ONE EVERY TIME ──────────────────────────────
+ *
+ * `POST /auth/password/forgot` answers 202 with one fixed body for a known address, an unknown one
+ * and a string that is not an address at all (`identity/src/server.ts:1260-1285`). identity pays
+ * real money for that: the delivery runs in `after`, once the response is on the wire, because
+ * awaiting it made the response TIME say what the status and the body were so carefully written not
+ * to — 10ms for an unknown address against 6015ms for a known one, measured.
+ *
+ * A UI that branched would hand all of that back. So:
+ *
+ *   - there is no success/failure distinction on this screen, because there is none in the answer;
+ *   - the address is NOT validated here. A client-side "that is not an email" would answer
+ *     instantly for a malformed address and after a round trip for a well-formed one, which is a
+ *     timing oracle this page would have built for itself, in the browser, where it is easiest to
+ *     measure. `type="email"` is on the control as a keyboard hint, and `noValidate` on the form is
+ *     what stops the browser turning it into a gate;
+ *   - identity's own sentence is rendered, not one written here. This page makes no claim about
+ *     whether anything was sent, because it cannot know and must not appear to.
+ *
+ * ── THE ONE BRANCH, AND WHY IT CANNOT BE AN ORACLE ────────────────────────────────────────────
+ *
+ * `ApiError.status === 0` is `lib/api.ts:353`: `fetch` itself threw, so the request reached no
+ * server at all. Nothing that never arrived can depend on the address in it, so reporting it leaks
+ * nothing — and the alternative is worse than a leak: telling a reader with no connection to go and
+ * check their email is a claim about an action that did not happen, and they would wait for a mail
+ * nobody was ever asked to send. Every answered response, including a 429 and a 500, ends on the
+ * confirmation, because those are facts about the service and the reader can act on none of them.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+function ForgotPasswordForm({ signInHref }: { signInHref: string }) {
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  /** identity's own sentence, once it has answered. `null` means it has not been asked yet. */
+  const [status, setStatus] = useState<string | null>(null)
+  /** The request never left. See the header: the one failure that cannot be about the address. */
+  const [unreachable, setUnreachable] = useState<Refusal | null>(null)
+
+  /**
+   * `POST /auth/password/forgot` carries no idempotency key and costs an email.
+   *
+   * identity rate-limits it at 5 (`identity/src/server.ts:448`) precisely because "it costs an
+   * email, and an uncapped one is a mailbox somebody else has to read". Two same-tick presses of
+   * one button spend two of a reader's five on one intention — and `disabled={busy}` cannot stop
+   * them, because the attribute is not on the node until the render commits and the second event
+   * was dispatched before it was.
+   */
+  const attempt = useLatch()
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!attempt.take()) return
+    setBusy(true)
+    setUnreachable(null)
+    requestPasswordReset(email)
+      .then((sentence) => setStatus(sentence || RESET_REQUEST_RECORDED))
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 0) {
+          setUnreachable(refusalFrom(err))
+          return
+        }
+        setStatus(RESET_REQUEST_RECORDED)
+      })
+      .finally(() => {
+        setBusy(false)
+        attempt.release()
+      })
+  }
+
+  if (status !== null) {
+    return (
+      <div className="wt-state" role="status" aria-live="polite">
+        <p className="wt-state__title">{status}</p>
+        {/*
+          The address is echoed, and the sentence around it is chosen with care. Registration says
+          "we have sent a link to X" because there the account definitely exists; here that phrasing
+          would be a claim identity refused to make. "You asked about X" is a statement about what
+          the READER typed — it depends on nothing the server knows — and it is worth showing
+          because a typo is the commonest reason a reset "never arrives" and nobody can check a
+          value they can no longer see.
+        */}
+        <p className="wt-note">
+          You asked about <strong>{email.trim()}</strong>. Check that spelling and your spam folder.
+          This page cannot tell you whether that address has an account, and that is deliberate —
+          the answer would be the same for anyone else who typed it in.
+        </p>
+        <p className="wt-note">
+          Open the link on any device; it lands on a page that asks for a new password. Then{' '}
+          <Link className="wt-link" to={signInHref}>
+            sign in
+          </Link>{' '}
+          with it.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <form className="wt-form" onSubmit={submit} noValidate>
+      {unreachable && <RefusalNotice refusal={unreachable} />}
+      <Field
+        id="forgot-email"
+        label="Email"
+        hint="The address on the account. Nothing else is needed."
+      >
+        {(props) => (
+          <input
+            {...props}
+            className="cf-input"
+            type="email"
+            name="email"
+            value={email}
+            autoComplete="email"
+            autoFocus
+            required
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        )}
+      </Field>
+      <div className="wt-form__actions">
+        <button type="submit" className="cf-btn cf-btn--ember" disabled={busy}>
+          {busy ? 'Sending…' : 'Send a reset link'}
+        </button>
+        <Link className="wt-link" to={signInHref}>
+          Back to sign in
+        </Link>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * `/account/forgot` — where the sign-in page's "Forgot your password?" goes.
+ *
+ * Public by definition, and declared so in `lib/routes.ts`: a reader who cannot sign in cannot be
+ * asked to sign in first. The whole of the interesting reasoning is on `ForgotPasswordForm`, which
+ * the dead-end states of `ResetPasswordPage` render too — one form, so there is one behaviour to
+ * get right rather than two that drift.
+ */
+export function ForgotPasswordPage() {
+  const returnTo = useReturnTo()
+  return (
+    <AccountFrame title="Reset your password">
+      <ForgotPasswordForm signInHref={`/account/login?return=${encodeURIComponent(returnTo)}`} />
+    </AccountFrame>
+  )
+}
+
+/* ─────────────────────────────── reset ─────────────────────────────── */
+
+/**
+ * The page the reset link lands on: `https://hub.<apex>/account/reset#token=<64 hex>`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── THE TOKEN IS IN THE FRAGMENT, AND HERE IT IS A PASSWORD-EQUIVALENT ────────────────────────
+ *
+ * Everything in `VerifyEmailPage`'s header applies, and applies harder: this token does not merely
+ * prove an address, it CHANGES THE CREDENTIAL and revokes every session on the account. The three
+ * defences are the same three —
+ *
+ *   1. **A fragment is not sent to a server.** It is not in the request line, so it reaches no
+ *      access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts:99-116` is the
+ *      incident: Nimbus used `?token=`, its own request log wrote the live credential to stdout on
+ *      the request that spent it, and Lantern lifted it into an indexed column and every backup.
+ *   2. **A mail scanner's pre-fetch consumes nothing.** Corporate mail security opens every link in
+ *      every message. Because the fragment is never transmitted, that pre-fetch is
+ *      `GET /account/reset` with no token at all: it loads this bundle, which posts nothing and
+ *      renders the "ask for another link" screen. With the token in the query string it would spend
+ *      a single-use credential before the human ever saw the message.
+ *   3. **The mutation is a POST**, which no link-follower issues.
+ *
+ * ── AND FOUR RULES ABOUT WHERE THE TOKEN MAY EXIST IN THIS PAGE ───────────────────────────────
+ *
+ * It lives in a `useRef` and goes into one request body. It is NEVER:
+ *
+ *   - **in the DOM.** Not as text, not as a hidden input, not as an attribute. A hidden input is the
+ *     obvious way to carry a value from a link to a submit and it is the wrong one: the value is in
+ *     the page source, in "view source", in a copied selection, in an accessibility tree and in
+ *     whatever a browser extension reads. A ref is visible to this component and to nothing else.
+ *   - **in a query string.** Not on this address, not on the one it navigates to afterwards.
+ *   - **in a log line.** No `report()` on this path carries it, and `refusalFrom` never sees it.
+ *   - **in a rendered error.** Every sentence on this screen is identity's own or is written here;
+ *     none of them interpolates the token, which is why a failure cannot put it back on screen.
+ *
+ * The hash is stripped with `replaceState` BEFORE anything else happens, the token having been
+ * captured in a local first — the same ordering as `VerifyEmailPage` and `consumeAuthCallback`. It
+ * matters more here, because this page then WAITS for a human to type two passwords: an "after the
+ * request resolves" version would leave a credential in the address bar for as long as somebody
+ * takes to choose a password, in the history, in the referrer of anything the page loads next, and
+ * in any screenshot or screen share taken meanwhile.
+ *
+ * ── IT RUNS ONCE, AND THE REF IS WHY ──────────────────────────────────────────────────────────
+ *
+ * `main.tsx` mounts under StrictMode, which runs every effect twice. The second run would read a
+ * hash the first one has already stripped, find nothing, and replace a working form with "this link
+ * was incomplete" — a working link reported as broken, on a page whose whole job is to work once.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+type ResetStage =
+  /** Before the effect has read the fragment. One tick, and never a screen anybody reads. */
+  | { readonly at: 'reading' }
+  /** No token in the hash — which is also exactly what a mail scanner's pre-fetch produces. */
+  | { readonly at: 'no-token' }
+  | { readonly at: 'choosing' }
+  /** identity answered 401: spent, expired, or never real. It will not say which, deliberately. */
+  | { readonly at: 'expired'; readonly refusal: Refusal }
+  | { readonly at: 'done' }
+
+export function ResetPasswordPage() {
+  const returnTo = useReturnTo()
+  const signInHref = `/account/login?return=${encodeURIComponent(returnTo)}`
+
+  const [stage, setStage] = useState<ResetStage>({ at: 'reading' })
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [mismatched, setMismatched] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<Refusal | null>(null)
+
+  /**
+   * The credential from the link, and the only copy of it in this page.
+   *
+   * A ref rather than state because state is rendered by definition — every re-render of a
+   * component holding it is an opportunity for it to reach the DOM — and because nothing on this
+   * screen changes when it does. `null` after it has been spent or refused: a token that can never
+   * work again has no reason to outlive the request that proved it.
+   */
+  const token = useRef<string | null>(null)
+  const started = useRef(false)
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+
+    const raw = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash
+    const found = new URLSearchParams(raw).get('token')
+    if (!found) {
+      // A mail scanner's pre-fetch, or somebody who copied the address out of a client that
+      // dropped the fragment. NOTHING IS SPENT: there is no request on this path at all.
+      setStage({ at: 'no-token' })
+      return
+    }
+
+    // Capture, THEN strip, and only then is there a form. The token is already in the ref, so the
+    // address bar is clean from the first moment there is anything on screen to read it from.
+    token.current = found
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    setStage({ at: 'choosing' })
+  }, [])
+
+  /**
+   * One reset per press.
+   *
+   * `POST /auth/password/reset` carries no idempotency key and identity marks the token used before
+   * it validates the password (`identity/src/server.ts:1294-1303`). Two same-tick submits therefore
+   * present the same token twice: the first spends it, the second is answered 401, and the refusal
+   * resolves LAST — so a reader whose password was in fact changed is shown "that reset link is
+   * invalid or has expired" and goes off to ask for another link they do not need.
+   */
+  const attempt = useLatch()
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const held = token.current
+    if (!held) return
+    /*
+     * The one rule this page is allowed to hold, for the reason `RegisterPage.submit` gives at
+     * length: a confirmation is the check identity CANNOT make, because it is sent one password and
+     * a mismatch has no representation in the request. There is no server rule for it to be
+     * stricter or looser than, so it cannot teach the reader a lie and cannot drift.
+     *
+     * It is checked BEFORE the latch is taken, so a mismatch spends neither an attempt nor — much
+     * more expensively here — the single-use token.
+     */
+    if (password !== confirmation) {
+      setMismatched(true)
+      setRefusal(null)
+      return
+    }
+    if (!attempt.take()) return
+    setBusy(true)
+    setRefusal(null)
+    resetPassword(held, password)
+      .then(() => {
+        token.current = null
+        /*
+         * IDENTITY HAS JUST REVOKED EVERY REFRESH FAMILY ON THIS ACCOUNT (SD-04,
+         * `identity/src/server.ts:1310`) — including this browser's, if it happened to hold one.
+         * Clearing them here is not tidiness: leaving them makes the rest of this bundle believe it
+         * has a session, render a dashboard against it, and collect a 401 per panel before the
+         * refresh fails and signs the reader out. The tokens are already dead; the only question is
+         * whether anybody finds out politely.
+         */
+        clearTokens()
+        setStage({ at: 'done' })
+        setBusy(false)
+      })
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
+          // Spent, expired, or never real. identity will not say which — "separating them would say
+          // whether a guessed token had ever existed" — so neither does this screen. The form goes
+          // with it: there is nothing left to submit, and a live form over a dead token is an
+          // invitation to type a password twice more for nothing.
+          token.current = null
+          setStage({ at: 'expired', refusal: refusalFrom(err) })
+          setBusy(false)
+          return
+        }
+        /*
+         * Everything else keeps the form and every character in it — 05:91, and it costs more here
+         * than anywhere: this reader cannot simply try again, because a fresh attempt needs a fresh
+         * mailed link.
+         *
+         * A 400 is the password policy, and its sentences arrive in `fields` under `newPassword`
+         * (`identity/src/server.ts:1305`), which is what `error=` reads below. NOTE, for whoever
+         * reads this next: identity marks the token used BEFORE it checks the password
+         * (`identity/src/server.ts:1294-1303`), so the retry this screen invites is answered 401 by
+         * a service that has already consumed the link. That is identity's ordering to fix and not
+         * this page's to hide — showing the reader the rules they broke is still strictly better
+         * than swallowing them, and inventing a "your link is probably gone too" sentence would be
+         * this bundle guessing at a service's internals on screen.
+         */
+        setRefusal(refusalFrom(err))
+        setBusy(false)
+      })
+      .finally(() => attempt.release())
+  }
+
+  if (stage.at === 'reading') {
+    return (
+      <AccountFrame title="Reset your password">
+        <div className="wt-state wt-state--loading" role="status" aria-live="polite">
+          <span className="wt-spinner" aria-hidden="true" />
+          <p className="wt-state__title">Reading your link</p>
+        </div>
+      </AccountFrame>
+    )
+  }
+
+  if (stage.at === 'done') {
+    return (
+      <AccountFrame title="Your password is changed">
+        <div className="wt-state" role="status" aria-live="polite">
+          <p className="wt-state__title">
+            Sign in with your new password. Everything else was signed out.
+          </p>
+          {/*
+            Said plainly, because it is a consequence the reader has to know about rather than
+            discover: identity revokes every refresh family on a reset (SD-04) — "whoever forced the
+            reset must not survive it". Their phone and their other laptop will ask for the new
+            password, and somebody who has just been told their password changed and is then
+            silently signed out on three devices concludes they have been attacked.
+
+            There is NO TIMED REDIRECT. This sentence is the only place that consequence is stated,
+            and a screen that leaves on its own is a screen nobody finished reading. The button
+            below is the same navigation, taken when the reader is ready.
+          */}
+          <p className="wt-note">
+            Every other device that was signed in to this account has been signed out — that is what
+            a reset does, so that whoever prompted it cannot outlive it. You will be asked for the
+            new password on each of them.
+          </p>
+          <div className="wt-form__actions">
+            <Link className="cf-btn cf-btn--ember" to={signInHref}>
+              Sign in
+            </Link>
+          </div>
+        </div>
+      </AccountFrame>
+    )
+  }
+
+  if (stage.at === 'no-token' || stage.at === 'expired') {
+    return (
+      <AccountFrame title={stage.at === 'no-token' ? 'That link is incomplete' : 'That link did not work'}>
+        <div className="wt-state">
+          {stage.at === 'no-token' ? (
+            <p className="wt-state__title" role="status">
+              This address needs the link from your email, and the part that matters is after the #
+              — some mail clients drop it when you copy the address out. Open the message and follow
+              the link itself, or ask for a new one here.
+            </p>
+          ) : (
+            <RefusalNotice refusal={stage.refusal} />
+          )}
+          {/*
+            The form is rendered HERE, rather than a link to it, and unlike `VerifyEmailPage` that
+            is safe: `POST /auth/password/forgot` answers 202 with one fixed sentence for every
+            input, so an address typed into this form cannot tell anybody whether it has an account.
+            The verify page has no equivalent route to offer and sends the reader to sign-in
+            instead. One less dead end on the surface doc 22 §8.1 counts the estate's dead ends on.
+          */}
+          <ForgotPasswordForm signInHref={signInHref} />
+        </div>
+      </AccountFrame>
+    )
+  }
+
+  return (
+    <AccountFrame title="Choose a new password">
+      <form className="wt-form" onSubmit={submit} noValidate>
+        {refusal && <RefusalNotice refusal={refusal} />}
+
+        {/*
+          No strength meter and no inline rules, for the reason `RegisterPage` gives: the policy is
+          `checkPassword` in `@cloudsforge/contracts-auth`, two of its rules are CONTEXTUAL — a
+          password may not contain the handle or the email local part — and this bundle does not
+          depend on that package. A copy here would be a second implementation of a rule with
+          inputs, and it would be the copy a browser test proved. identity's sentences arrive in
+          `fields` under `newPassword` and are rendered under this control, all of them.
+
+          THE TOKEN IS NOT IN THIS FORM. There is no hidden input carrying it; `submit` reads it out
+          of a ref and puts it in the request body. See the header, rule 1.
+        */}
+        <Field
+          id="reset-password"
+          label="New password"
+          hint="At least 8 characters. CloudsForge will tell you if it is not strong enough."
+          error={refusal?.byField.get('newPassword')}
+        >
+          {(props) => (
+            <input
+              {...props}
+              className="cf-input"
+              type="password"
+              name="newPassword"
+              value={password}
+              autoComplete="new-password"
+              autoFocus
+              required
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setMismatched(false)
+              }}
+            />
+          )}
+        </Field>
+
+        <Field
+          id="reset-confirm"
+          label="Confirm new password"
+          hint="Type it again, so a slip is caught here rather than at your next sign-in."
+          error={mismatched ? 'Those two passwords are not the same.' : undefined}
+        >
+          {(props) => (
+            <input
+              {...props}
+              className="cf-input"
+              type="password"
+              name="confirmPassword"
+              value={confirmation}
+              autoComplete="new-password"
+              required
+              onChange={(event) => {
+                setConfirmation(event.target.value)
+                setMismatched(false)
+              }}
+            />
+          )}
+        </Field>
+
+        <div className="wt-form__actions">
+          <button type="submit" className="cf-btn cf-btn--ember" disabled={busy}>
+            {busy ? 'Saving…' : 'Set new password'}
+          </button>
+        </div>
+        <p className="wt-note">
+          Setting a new password signs out every other device on this account, and this link stops
+          working the moment it is used.
+        </p>
+      </form>
     </AccountFrame>
   )
 }

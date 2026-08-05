@@ -14,6 +14,8 @@
  *   POST /auth/email/verify                   → { accessToken, refreshToken, expiresIn, user }
  *   POST /auth/email/verify/resend            → 202, one fixed sentence for every input
  *   POST /auth/mfa            server.ts:826   → { accessToken, refreshToken, expiresIn, user }
+ *   POST /auth/password/forgot server.ts:1260 → 202 { status }, the same one for every input
+ *   POST /auth/password/reset  server.ts:1288 → 204, or 401 spent/expired, or 400 with `fields`
  *   POST /auth/logout         server.ts:926   → 204
  *   POST /auth/handoff        server.ts:1076  → { code, expiresInSeconds }   (via @cloudsforge/ui)
  *   POST /auth/handoff/redeem server.ts:1084  → tokens                       (via @cloudsforge/ui)
@@ -280,6 +282,73 @@ export const resendVerification = (identifier: string): Promise<void> =>
     method: 'POST',
     auth: false,
     body: { identifier: identifier.trim() },
+  })
+
+/* ─────────────────────────────── password reset ─────────────────────────────── */
+
+/**
+ * `POST /auth/password/forgot` — `identity/src/server.ts:1260`.
+ *
+ * ── IT ANSWERS 202 FOR EVERY INPUT, AND THAT IS THE FEATURE ───────────────────────────────────
+ *
+ * A known address, an address nobody has ever registered and a string that is not an address at
+ * all all get status 202 and the same body, `{ status: RESET_REQUEST_STATUS }`
+ * (`identity/src/passwordReset.ts:252`). identity goes further than the status line: the delivery
+ * runs in `after`, once the response is already on the wire, because awaiting it made the RESPONSE
+ * TIME say what the status code and the body were written not to — measured at 10ms for an unknown
+ * address against 6015ms for a known one.
+ *
+ * So THERE IS NOTHING HERE TO BRANCH ON, and a caller that invented a branch would hand back the
+ * enumeration oracle identity spent that much care removing. This function returns the server's own
+ * sentence — never a boolean, never a "sent"/"not sent" — and the page renders it verbatim.
+ *
+ * `auth: false` for the reason sign-in gives: a stale access token in storage must not turn a
+ * failure on this route into a refresh attempt that signs the reader out of a session they were not
+ * using.
+ *
+ * The address is trimmed of surrounding space and NOT otherwise touched. identity normalises it
+ * (`normaliseEmail`) and decides whether it is well-formed; a check here would be a second copy of
+ * a rule with inputs, and — worse on this route than on any other — a client-side "that is not an
+ * email" would answer instantly for a malformed address and after a round trip for a real one,
+ * which is a timing oracle this page built for itself.
+ */
+export const requestPasswordReset = (email: string): Promise<string> =>
+  nimbus<unknown>('/auth/password/forgot', {
+    method: 'POST',
+    auth: false,
+    body: { email: email.trim() },
+  }).then((body) =>
+    typeof body === 'object' && body !== null
+      ? asString(body as Record<string, unknown>, 'status')
+      : '',
+  )
+
+/**
+ * `POST /auth/password/reset` — `identity/src/server.ts:1288`. Spend the token from the link.
+ *
+ * A POST carrying the token in the BODY, for the same two reasons `verifyEmail` is:
+ *
+ *   - the token reached this page in the fragment, which a browser never transmits, so the address
+ *     a corporate mail scanner pre-fetches is `GET /account/reset` with no credential in it at all
+ *     — it loads a static bundle and spends nothing;
+ *   - the mutation is a POST, which no link-follower issues.
+ *
+ * Three answers, and the caller has to tell them apart: 204 done, 401 for a token that is spent,
+ * expired or was never real (identity refuses to say which — "separating them would say whether a
+ * guessed token had ever existed"), and 400 with a `fields` array for a password the policy
+ * refuses. `ApiError.status` carries the first two and `ApiError.fields` the third.
+ *
+ * `auth: false` is load-bearing HERE IN PARTICULAR. A reader whose session expired weeks ago still
+ * has two `cf.*` keys in storage; without this flag the 401 of a spent reset link would be taken
+ * for an expired access token, `request()` would refresh, the refresh would fail, and the reader
+ * would be signed out of the browser by the act of following a link that told them their link had
+ * expired.
+ */
+export const resetPassword = (token: string, newPassword: string): Promise<void> =>
+  nimbus<void>('/auth/password/reset', {
+    method: 'POST',
+    auth: false,
+    body: { token, newPassword },
   })
 
 /**

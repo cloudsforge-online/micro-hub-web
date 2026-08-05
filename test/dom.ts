@@ -559,7 +559,22 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
     }
     const status = reply.status ?? 200
     if (status < 200 || status > 299) failed.push(call)
-    return new Response(reply.body === undefined ? '' : JSON.stringify(reply.body), {
+    /*
+     * A NULL-BODY STATUS TAKES `null`, NOT `''`.
+     *
+     * `new Response('', { status: 204 })` throws `TypeError: Response constructor: Invalid
+     * response status code 204` — the Fetch standard forbids a body on 204, 205 and 304, and an
+     * empty string is a body. The throw happened INSIDE the stubbed `fetch`, so it arrived at
+     * `lib/api.ts:342` as a request that never landed and every scenario stubbing a 204 was
+     * silently testing a network outage instead: the page under test rendered "Cannot reach the
+     * server", which is a perfectly plausible screen and passes any assertion loose enough.
+     *
+     * Four routes this bundle calls answer 204 — `POST /auth/logout`, `POST /auth/password/reset`,
+     * and hub-api's two dismissals — so this was not a corner. It was found by the reset scenario,
+     * which is the first to stub one.
+     */
+    const nullBody = status === 204 || status === 205 || status === 304
+    return new Response(nullBody ? null : reply.body === undefined ? '' : JSON.stringify(reply.body), {
       status,
       headers: {
         'content-type': 'application/json',

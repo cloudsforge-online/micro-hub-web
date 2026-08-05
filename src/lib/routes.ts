@@ -39,8 +39,11 @@ export interface HubRoute {
  *
  * It did not, and could not: "Forge Hub has no public page: every route reads an authenticated
  * composition of somebody's money, sessions and entitlements." That is still true of every page
- * that shows anything. These three show nothing — they are the estate's SIGN-IN SURFACE, and a
- * sign-in page behind a session gate is a redirect loop.
+ * that shows anything. These six show nothing — they are the estate's SIGN-IN SURFACE, and a
+ * sign-in page behind a session gate is a redirect loop. Three of them are the landing pages for
+ * links CloudsForge puts in email, where "the reader has no session" is not a preference but the
+ * definition of the situation: proving an address is what creates a session, and asking for a
+ * password reset is what a reader does when they have none and cannot get one.
  *
  * They live here because nothing else in the estate could serve them. `signInRedirect()` sent
  * every product's signed-out visitor to `${accountUrl()}/login`, which resolved
@@ -76,6 +79,26 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
       'the landing page for the link in a verification email; the reader has no session yet — ' +
       'proving the address is what creates one — so a gate here is the redirect loop that would ' +
       'make the link useless to the person it was sent to',
+  },
+  {
+    path: 'account/forgot',
+    because:
+      'the form that asks identity for a password-reset link; the reader is signed out by ' +
+      'definition — not being able to sign in is the reason they are here — so a session gate is ' +
+      'a redirect loop that puts the only route to a reset behind the thing it exists to repair. ' +
+      'It shows nothing: identity answers `POST /auth/password/forgot` with one fixed sentence ' +
+      'for a known address, an unknown one and a malformed one alike, and that sentence is the ' +
+      'whole of the screen',
+  },
+  {
+    path: 'account/reset',
+    because:
+      'the landing page for the link in a password-reset email; the reader has no session — a ' +
+      'reset revokes every session on the account, and they could not sign in before it either — ' +
+      'so a gate here is the redirect loop that makes the mailed link useless to the person it ' +
+      'was sent to. It also has to EXIST before the mail can be sent: notify refuses to send a ' +
+      'message whose link cannot be built. It shows nothing until a token is typed into no field ' +
+      'at all: the token arrives in the fragment, is held in a ref, and goes into one POST body',
   },
   {
     path: 'account/logout',
