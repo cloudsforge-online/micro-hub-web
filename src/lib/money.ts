@@ -256,6 +256,32 @@ export const loadDepositAddresses = (
  * about."* Asking without it returns the existing active assignment, which is why this is safe to
  * call from a button the user presses to reveal an address.
  */
+/** One asset's deposit availability, as `wallet/src/deposits.ts:depositableAssets` reports it. */
+export interface DepositableAsset {
+  readonly assetCode: string
+  readonly chain: string
+  readonly depositable: boolean
+  /** `null` when depositable. Otherwise `not_followed` or `unknown` — different facts. */
+  readonly reason: string | null
+}
+
+/**
+ * What this deployment can take a deposit in, asked of the service rather than guessed.
+ *
+ * Receive used to build its menu from the caller's HOLDINGS, and the comment above that line said
+ * why it must not: "a receive screen that only offers what you already have cannot be used for the
+ * first deposit". The code did it anyway, so a person holding only EMBER was offered only EMBER
+ * for ever, and Litecoin was unreachable through the interface however completely the estate
+ * supported it.
+ *
+ * A static list in the bundle was the other option and is worse: it drifts, and it offers assets
+ * the service then refuses. This asks whatever `assignDepositAddress` itself would decide.
+ */
+export const depositableAssets = (): Promise<{
+  assets: readonly DepositableAsset[]
+  network: string
+}> => wallet<{ assets: readonly DepositableAsset[]; network: string }>('/v1/deposits/assets')
+
 export const assignDepositAddress = (
   assetCode: string,
   rotate = false,

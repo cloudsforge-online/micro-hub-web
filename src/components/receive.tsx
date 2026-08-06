@@ -30,11 +30,16 @@
  * (`hub-api/src/nextactions.ts:146-148`) — and `micro-wallet` serves no route that states one. A
  * number invented here would be the denominator hub-api refused to invent.
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { noticeFor, type ErrorNotice } from '../lib/api.ts'
 import { utcDateTime } from '../lib/format.ts'
 import { useLatch } from '../lib/latch.ts'
-import { assignDepositAddress, settlesOnChain, type DepositAssignment } from '../lib/money.ts'
+import {
+  assignDepositAddress,
+  depositableAssets,
+  settlesOnChain,
+  type DepositAssignment,
+} from '../lib/money.ts'
 import type { Holding } from '../lib/hub.ts'
 
 export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
@@ -45,7 +50,32 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
   // this menu offered a Shard deposit address and `wallet/src/deposits.ts:163-172` refuses it with
   // `not_depositable` — "a Shard deposit address would be an address on no chain". Confirmed
   // against the running service, not against a stub.
-  const assets = holdings.map((h) => h.assetCode).filter((code) => settlesOnChain(code))
+  // ASKED, NOT DERIVED. The comment above is right and the code under it was not: building this
+  // from `holdings` made a first deposit impossible, because you could only receive an asset you
+  // already held. `GET /v1/deposits/assets` reports what `assignDepositAddress` itself would
+  // accept, so the menu cannot offer something the service then refuses — and cannot omit
+  // something it would have taken.
+  //
+  // `holdings` is still the fallback while the request is in flight, so the panel renders
+  // immediately rather than flashing empty.
+  const [offered, setOffered] = useState<readonly string[] | null>(null)
+  useEffect(() => {
+    let live = true
+    depositableAssets()
+      .then((r) => {
+        if (live) setOffered(r.assets.filter((a) => a.depositable).map((a) => a.assetCode))
+      })
+      .catch(() => {
+        // A failed lookup must not empty the menu — it falls through to the holdings-derived list
+        // below, which is the old behaviour and strictly better than an unusable screen.
+        if (live) setOffered(null)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+  const assets =
+    offered ?? holdings.map((h) => h.assetCode).filter((code) => settlesOnChain(code))
   const [assetCode, setAssetCode] = useState(assets[0] ?? 'EMBER')
   const [assignment, setAssignment] = useState<DepositAssignment | null>(null)
   const [busy, setBusy] = useState(false)
