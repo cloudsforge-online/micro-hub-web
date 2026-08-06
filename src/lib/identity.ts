@@ -9,16 +9,16 @@
  * to `/auth/exchange`, which identity has never served. So each function below carries the
  * `identity/src/server.ts` line its path and its response shape were verified against.
  *
- *   POST /auth/register       server.ts:688   → 202 { verificationRequired: true, email }
- *   POST /auth/login          server.ts:732   → tokens, OR { mfaRequired, challenge, factors }
+ *   POST /auth/register       server.ts   → 202 { verificationRequired: true, email }
+ *   POST /auth/login          server.ts   → tokens, OR { mfaRequired, challenge, factors }
  *   POST /auth/email/verify                   → { accessToken, refreshToken, expiresIn, user }
  *   POST /auth/email/verify/resend            → 202, one fixed sentence for every input
- *   POST /auth/mfa            server.ts:826   → { accessToken, refreshToken, expiresIn, user }
- *   POST /auth/password/forgot server.ts:1260 → 202 { status }, the same one for every input
- *   POST /auth/password/reset  server.ts:1288 → 204, or 401 spent/expired, or 400 with `fields`
- *   POST /auth/logout         server.ts:926   → 204
- *   POST /auth/handoff        server.ts:1076  → { code, expiresInSeconds }   (via @cloudsforge/ui)
- *   POST /auth/handoff/redeem server.ts:1084  → tokens                       (via @cloudsforge/ui)
+ *   POST /auth/mfa            server.ts   → { accessToken, refreshToken, expiresIn, user }
+ *   POST /auth/password/forgot server.ts → 202 { status }, the same one for every input
+ *   POST /auth/password/reset  server.ts → 204, or 401 spent/expired, or 400 with `fields`
+ *   POST /auth/logout         server.ts   → 204
+ *   POST /auth/handoff        server.ts  → { code, expiresInSeconds }   (via @cloudsforge/ui)
+ *   POST /auth/handoff/redeem server.ts  → tokens                       (via @cloudsforge/ui)
  *
  * The two hand-off routes are NOT re-implemented here. They are the protocol, and the protocol
  * lives in `@cloudsforge/ui` beside `consumeAuthCallback`, which is the other end of it — a second
@@ -28,7 +28,7 @@
  *
  * No password policy, no handle pattern, no "that email looks wrong", no lock-out arithmetic.
  * Every one of those is enforced in `@cloudsforge/contracts-auth` and applied by identity, which
- * answers with a `fields` array naming what it refused and why (`identity/src/server.ts:434-445`).
+ * answers with a `fields` array naming what it refused and why (`identity/src/server.ts`).
  * The form renders those sentences. 14 §11 records the reason a client must not hold the rule: a
  * game client once withheld four SKUs from its UI while the payment routes stayed live and
  * chargeable, and a client-side test of the hidden catalogue would have passed against it.
@@ -41,7 +41,7 @@
 import { handoffReturnUrl, mintHandoffCode } from '@cloudsforge/ui'
 import { nimbus, setTokens, type AuthTokens } from './api.ts'
 
-/** What identity puts in `user`, built by `toPublicUser` (`identity/src/users.ts:52-63`). */
+/** What identity puts in `user`, built by `toPublicUser` (`identity/src/users.ts`). */
 export interface PublicUser {
   readonly id: string
   readonly handle: string
@@ -49,7 +49,7 @@ export interface PublicUser {
   readonly roles?: readonly string[]
 }
 
-/** A completed sign-in: `identity/src/server.ts:810-819`. */
+/** A completed sign-in: `identity/src/server.ts`. */
 export interface SessionGranted {
   readonly kind: 'session'
   readonly accessToken: string
@@ -61,7 +61,7 @@ export interface SessionGranted {
 }
 
 /**
- * A password accepted and NOTHING ELSE established: `identity/src/server.ts:789-798`.
+ * A password accepted and NOTHING ELSE established: `identity/src/server.ts`.
  *
  * No session, no token, nothing to rotate — "a challenge that mints nothing until a factor
  * answers". The challenge is spent by the next call whether or not the code is right, so a wrong
@@ -149,7 +149,7 @@ function required(outcome: SignInOutcome | null): SignInOutcome {
 /* ─────────────────────────────── the calls ─────────────────────────────── */
 
 /**
- * `POST /auth/login` — `identity/src/server.ts:732`.
+ * `POST /auth/login` — `identity/src/server.ts`.
  *
  * `auth: false`: this request must never carry a bearer token. A stale token on a sign-in would
  * make `request()` attempt a refresh on the 401 that a wrong password produces, and a refresh
@@ -168,7 +168,7 @@ export const signInWithPassword = (identifier: string, password: string): Promis
   }).then((body) => required(readSignInOutcome(body)))
 
 /**
- * `POST /auth/mfa` — `identity/src/server.ts:826`.
+ * `POST /auth/mfa` — `identity/src/server.ts`.
  *
  * Always returns a session on success: identity does not chain a second challenge.
  */
@@ -287,13 +287,13 @@ export const resendVerification = (identifier: string): Promise<void> =>
 /* ─────────────────────────────── password reset ─────────────────────────────── */
 
 /**
- * `POST /auth/password/forgot` — `identity/src/server.ts:1260`.
+ * `POST /auth/password/forgot` — `identity/src/server.ts`.
  *
  * ── IT ANSWERS 202 FOR EVERY INPUT, AND THAT IS THE FEATURE ───────────────────────────────────
  *
  * A known address, an address nobody has ever registered and a string that is not an address at
  * all all get status 202 and the same body, `{ status: RESET_REQUEST_STATUS }`
- * (`identity/src/passwordReset.ts:252`). identity goes further than the status line: the delivery
+ * (`identity/src/passwordReset.ts`). identity goes further than the status line: the delivery
  * runs in `after`, once the response is already on the wire, because awaiting it made the RESPONSE
  * TIME say what the status code and the body were written not to — measured at 10ms for an unknown
  * address against 6015ms for a known one.
@@ -324,7 +324,7 @@ export const requestPasswordReset = (email: string): Promise<string> =>
   )
 
 /**
- * `POST /auth/password/reset` — `identity/src/server.ts:1288`. Spend the token from the link.
+ * `POST /auth/password/reset` — `identity/src/server.ts`. Spend the token from the link.
  *
  * A POST carrying the token in the BODY, for the same two reasons `verifyEmail` is:
  *
@@ -352,7 +352,7 @@ export const resetPassword = (token: string, newPassword: string): Promise<void>
   })
 
 /**
- * `POST /auth/logout` — `identity/src/server.ts:926`. Revokes the presented refresh token.
+ * `POST /auth/logout` — `identity/src/server.ts`. Revokes the presented refresh token.
  *
  * Answers 204 whether or not the token was live, so there is nothing to read and nothing a
  * failure would tell the user. The caller clears local storage either way: a sign-out that leaves
@@ -385,7 +385,7 @@ export type Completion =
  * `@cloudsforge/ui` beside `consumeAuthCallback`, which is what reads it at the other end.
  *
  * A refusal is its own case rather than a silent fall-back to Hub. identity refuses an origin that
- * is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts:31-47`), and that is a
+ * is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts`), and that is a
  * misconfiguration somebody has to fix — sending the user to a dashboard they did not ask for
  * would hide it and look like the surface they came from is broken.
  */
@@ -414,7 +414,7 @@ export async function completeSignIn(
   // `?return=` is attacker-controllable — it is a query parameter on a public page. This app does
   // not hold a list of surfaces it will hand a session to, and must not: a second list is a list
   // that drifts, and the estate has already paid for that with CORS_ORIGINS. identity refuses to
-  // MINT for an origin that is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts:31-47`),
+  // MINT for an origin that is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts`),
   // so a code for somebody else's page is never issued, and the redirect below only ever happens
   // to an origin the platform has already agreed to hand tokens to.
   const code = await mintHandoffCode(granted.accessToken, target.origin)

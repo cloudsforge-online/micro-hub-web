@@ -216,7 +216,7 @@ describe('auth callback', () => {
    * This test used to assert `trace[1].includes('/auth/exchange')` — a string lifted out of the
    * implementation and compared with itself, green for every possible value, including the wrong
    * one it was pinning. **identity has never served `/auth/exchange`**; it serves
-   * `POST /auth/handoff/redeem` (`identity/src/server.ts:1084`), so the SSO callback 404'd in
+   * `POST /auth/handoff/redeem` (`identity/src/server.ts`), so the SSO callback 404'd in
    * every surface in the estate and this line stayed green throughout.
    *
    * Now a wrong path gets a 404 from the stub, `consumeAuthCallback` returns null,

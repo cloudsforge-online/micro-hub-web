@@ -68,16 +68,16 @@ inside this repository.
 
 1. **`pay.<apex>` and `vault.<apex>` need gateway routers.** There is none for either in
    `deploy/gateway/dynamic/`. The routers that exist for `micro-wallet` are on the API host
-   (`public-api.yml:118-124`).
+   (`public-api.yml`).
 2. **Those routers need the `cf-cors` middleware, and the API host's routers deliberately do not
    have it** — "The API host is not a browser origin for a first-party app… so it gets the
-   security headers without the app CORS allowlist" (`public-api.yml:66-69`). A first-party
+   security headers without the app CORS allowlist" (`public-api.yml`). A first-party
    browser calling `api.<apex>` would be refused by CORS with nothing logged server-side, which is
    the failure mode `policy.yml` already records twice: "an allowlist that omits an origin fails
    closed and silently."
 
 `hosts().keyvault` is pinned to custody in the registry and checked by
-`ui/packages/ui/src/surfaces.test.ts:196`. `hosts().pay` is **not** pinned, because `micro-wallet`
+`ui/packages/ui/src/surfaces.test.ts`. `hosts().pay` is **not** pinned, because `micro-wallet`
 binds the service-template default `PORT=4000` and is separated from its neighbours by compose —
 so there is no distinctive port to pin it against, and the registry's 4003 is an allocation rather
 than a fact. `emberkin-web` already resolves the billing half of the payments API through the same
@@ -118,7 +118,7 @@ from hub-api.
 `signInRedirect()` in `@cloudsforge/ui` sends every signed-out visitor of all thirteen frontends
 here, and until they existed it sent them to `account.<apex>` — a hostname no repository in the
 estate serves. identity binds the port behind it and renders no HTML at all; its own
-`server.test.ts:890` asserts that `/`, `/portal` and `/dashboard` 404. docs/ecosystem/22 §8.1
+`server.test.ts` asserts that `/`, `/portal` and `/dashboard` 404. docs/ecosystem/22 §8.1
 records it as the catalogue's largest blocker, with 86 of 318 browser scenarios starting at a
 sign-in that had no page.
 
@@ -135,7 +135,7 @@ is not on that list.
   refuses to mint a code for an origin off `IDENTITY_HANDOFF_ORIGINS`, and that refusal is shown
   as a refusal rather than being turned into a redirect to the dashboard.
 - **`IDENTITY_HANDOFF_ORIGINS` must name every frontend origin**, or SSO from that surface stops
-  at "CloudsForge will not hand a session to …". It is empty in `identity/.env.example:65`.
+  at "CloudsForge will not hand a session to …". It is empty in `identity/.env.example`.
 - Nothing on these pages holds a credential rule. identity answers a refusal with a `fields`
   array; the form renders those sentences and clears nothing else.
 
@@ -266,7 +266,7 @@ Both are recorded rather than worked around, in the spirit of hub-api's own gap 
 
 1. **`src/lib/api.ts` read the error envelope as flat, and the estate's is nested.** Every service
    answers a failure with `{ "error": { "code", "message", "requestId" } }` —
-   `hub-api/src/server.ts:589`, `identity/src/server.ts:1431`, `service-template/src/server.ts:342`.
+   `hub-api/src/server.ts`, `identity/src/server.ts`, `service-template/src/server.ts`.
    The web template's client read `data.error` as a *string* and assigned it straight into the
    message, so against any real service every server-side failure would have rendered on screen as
    `[object Object]`, with the message, the code and the request id all present in the response and

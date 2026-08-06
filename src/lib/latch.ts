@@ -68,7 +68,7 @@ export interface Latch {
 export function useLatch(): Latch {
   // Not `useState`: the whole point is a value written and read in the same tick.
   //
-  // Under `<StrictMode>` (src/main.tsx:33) React double-invokes the component function on mount,
+  // Under `<StrictMode>` (src/main.tsx) React double-invokes the component function on mount,
   // so this initialiser runs twice and one of the two refs is discarded. That is harmless — both
   // start `false`, and from the first commit onwards there is exactly one ref, which is the one
   // both clicks of a double click read. `test/double-submit.test.ts` proves every scenario in

@@ -24,7 +24,7 @@ const token = (payload: unknown): string =>
 
 describe('readTokenClaims', () => {
   it('reads the two claims identity puts in an access token', () => {
-    // The shape is `identity/src/tokens.ts:39-40,58-64`: `handle` and `roles` at the top level of
+    // The shape is `identity/src/tokens.ts,58-64`: `handle` and `roles` at the top level of
     // the payload, beside `sub`, `sid`, `amr`, `iss`, `aud`, `jti`, `iat` and `exp`.
     const claims = readTokenClaims(
       token({ typ: 'user', sub: 'user-1', sid: 's-1', handle: 'savvanis', roles: ['player', 'admin'] }),

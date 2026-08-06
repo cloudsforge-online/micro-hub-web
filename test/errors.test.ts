@@ -7,8 +7,8 @@
  *
  *     return { status, body: { error: { code, message, requestId } } }
  *
- * `hub-api/src/server.ts:589-591`, `identity/src/server.ts:1431-1433`, and
- * `service-template/src/server.ts:342`, which every other service is generated from.
+ * `hub-api/src/server.ts`, `identity/src/server.ts`, and
+ * `service-template/src/server.ts`, which every other service is generated from.
  *
  * The version of `src/lib/api.ts` carried over from the web template read that body as FLAT —
  * `{ error?: string }` — and assigned `data.error` straight into the message. Against any real
@@ -81,7 +81,7 @@ describe('readErrorBody', () => {
 describe('end to end, against hub-api’s actual error body', () => {
   it('shows the service’s sentence and the request id, not "[object Object]"', async () => {
     setTokens({ accessToken: 'a1', refreshToken: 'r1' })
-    // Byte-for-byte the shape of hub-api/src/server.ts:589-591.
+    // Byte-for-byte the shape of hub-api/src/server.ts.
     stub = installFetch(
       () =>
         new Response(

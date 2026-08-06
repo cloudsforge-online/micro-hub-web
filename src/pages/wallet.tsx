@@ -18,12 +18,12 @@
  *
  * It also costs nothing worth having: hub-api caches the wallet registry for 60s and the two
  * in-flight lists for 5s, keyed per user, and the dashboard load a moment ago warmed all three
- * (`hub-api/src/upstreams.ts:87-99`).
+ * (`hub-api/src/upstreams.ts`).
  *
  * ── Two of these lists are filtered upstream, and the page says so ─────────────────────────────
  *
  * `deposits` holds only credits that have NOT yet been credited, and `withdrawals` only those in a
- * non-terminal state (`dashboard.ts:294-316`). A page that presented either as "your deposits" or
+ * non-terminal state (`dashboard.ts`). A page that presented either as "your deposits" or
  * "your withdrawals" would be describing a filtered list as a complete one. They are labelled by
  * what they actually are: what is in flight. The settled history is the Activity page.
  */
@@ -74,7 +74,7 @@ export function WalletPage() {
         /*
           WHY THE ABSENCE TRAVELS WITH THE LIST. `hasAnswer(t) ? t.data : []` collapses "the
           ledger did not answer" and "you hold nothing" into one empty array, and the panel then
-          said "There is no balance to send" for both — the rule in lib/tile.ts:22-28 broken by
+          said "There is no balance to send" for both — the rule in lib/tile.ts broken by
           the screen that can least afford it. The list is still empty; what goes with it now is
           why.
         */
@@ -138,7 +138,7 @@ export function WalletPage() {
 
       {/*
         Transfers and conversions are real operations — wallet serves `POST /v1/transfers` and
-        `POST /v1/conversions` (wallet/src/server.ts:734, 761), both idempotency-keyed — but
+        `POST /v1/conversions` (wallet/src/server.ts, 761), both idempotency-keyed — but
         neither has a READ route anywhere in the estate: hub-api composes neither and wallet lists
         neither, so a form for them could submit but the result would vanish from the screen the
         moment it was made. A money-moving control whose outcome the user cannot then see is worse
@@ -160,7 +160,7 @@ export function WalletPage() {
       {/*
         05 journey 6. The flow is: `POST /v1/wallets` with `origin: external` issues a challenge
         nonce, the OWNER SIGNS IT with the external wallet's key, and `POST /v1/wallets/verify`
-        submits the signature (wallet/src/server.ts:463, 528). The middle step is the whole flow,
+        submits the signature (wallet/src/server.ts, 528). The middle step is the whole flow,
         and it needs a signer — a browser extension, a hardware device, a mobile deep link. This
         bundle has none, no dependency provides one, and a form that asked a user to paste a
         signature they produced somewhere else is not journey 6; it is a way to make people move
@@ -233,7 +233,7 @@ export function WalletRow({
  *
  * The confirmation count is the authoritative field and the fraction is a display aid — hub-api
  * omits the denominator entirely for a chain whose depth policy this build does not know, because
- * "41/0 is worse than 41 confirmations" (nextactions.ts:146-148). This mirrors that rather than
+ * "41/0 is worse than 41 confirmations" (nextactions.ts). This mirrors that rather than
  * substituting a guess.
  */
 function DepositRow({ credit }: { credit: DepositCredit }) {
@@ -266,7 +266,7 @@ function DepositRow({ credit }: { credit: DepositCredit }) {
  * `stuck` is called out because it is the only non-terminal failure state in wallet's machine: the
  * reservation is held and the payment's fate is unknown. "It is the single most important thing
  * this dashboard can tell a user, because the money is neither theirs nor gone"
- * (nextactions.ts:168-171).
+ * (nextactions.ts).
  */
 function WithdrawalRow({ withdrawal }: { withdrawal: WithdrawalRecord }) {
   const stuck = withdrawal.state === 'stuck'

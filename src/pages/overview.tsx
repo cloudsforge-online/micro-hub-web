@@ -3,7 +3,7 @@
  *
  * ── Why this page renders even when half of it failed ──────────────────────────────────────────
  *
- * `GET /v1/dashboard` answers 200 with holes, never 500 (`hub-api/src/dashboard.ts:4-11`), and the
+ * `GET /v1/dashboard` answers 200 with holes, never 500 (`hub-api/src/dashboard.ts`), and the
  * arithmetic behind that is why: seven upstreams at 99.9% composed with a shared failure mode give
  * a page at 99.3%, which is three hours a month of downtime on the estate's most visible surface
  * caused entirely by how it was assembled. hub-api's seven degradation tests are the exit
@@ -139,7 +139,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
           </ul>
         )}
         {/*
-          A card that cannot load is ABSENT, not broken (nextactions.ts:11-17), and the reason is
+          A card that cannot load is ABSENT, not broken (nextactions.ts), and the reason is
           reported for the operator rather than dressed up for the user. Naming it here is the
           difference between "you have nothing pending" and "we could not ask".
         */}
@@ -202,7 +202,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
  * Every card carries a VERB and a destination, because "2FA is not enabled" is an observation and
  * "Enable →" is an action — a card a user cannot act on from here is a worry with no outlet.
  * `href` is relative and stays relative: hub-api emits deep links without an origin because "the
- * SPA owns its own origin" (nextactions.ts:83-84).
+ * SPA owns its own origin" (nextactions.ts).
  */
 function ActionCard({ action }: { action: NextAction }) {
   return (

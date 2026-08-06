@@ -15,8 +15,8 @@ import { readTokenClaims, type TokenClaims } from './claims.ts'
  * What identity answers at `/auth/me`.
  *
  * The profile is **nested under `user`** — the body is
- * `{ user, session, organisations }` (`identity/src/server.ts:891-903`), and `user` is built by
- * `toPublicUser` (`identity/src/users.ts:52-63`). This interface used to declare `handle` and
+ * `{ user, session, organisations }` (`identity/src/server.ts`), and `user` is built by
+ * `toPublicUser` (`identity/src/users.ts`). This interface used to declare `handle` and
  * `roles` at the TOP level, where identity has never put them: `roles` was therefore always
  * `undefined`, `isAdmin` was always false, and the switcher hid admin, lantern and beacon from
  * every signed-in operator. Nothing failed — the menu was simply, silently, short.

@@ -69,7 +69,7 @@ afterEach(() => {
  * route — so a client pointed at a route that does not exist fails its own test.
  */
 const SERVED: Record<string, (call: FetchCall) => Response> = {
-  // wallet/src/server.ts:645. Refuses without an Idempotency-Key (idempotency.ts:65).
+  // wallet/src/server.ts. Refuses without an Idempotency-Key (idempotency.ts).
   'POST https://pay.cloudsforge.online/v1/withdrawals': (call) => {
     if (!call.headers['idempotency-key']) {
       return json(400, {
@@ -99,7 +99,7 @@ const SERVED: Record<string, (call: FetchCall) => Response> = {
       replayed: false,
     })
   },
-  // wallet/src/server.ts:604.
+  // wallet/src/server.ts.
   'POST https://pay.cloudsforge.online/v1/deposits': (call) => {
     const body = JSON.parse(call.body ?? '{}') as { assetCode: string; rotate?: boolean }
     return json(201, {
@@ -116,7 +116,7 @@ const SERVED: Record<string, (call: FetchCall) => Response> = {
       },
     })
   },
-  // custody/src/server.ts:497, :474, :518, :534, :554.
+  // custody/src/server.ts — the export routes below, all four of them.
   'GET https://vault.cloudsforge.online/v1/exports': () => json(200, { exports: [] }),
   'POST https://vault.cloudsforge.online/v1/exports': (call) => {
     const body = JSON.parse(call.body ?? '{}') as { address: string; format: string }
@@ -189,7 +189,7 @@ describe('scaleOf', () => {
 
   it('says nothing rather than guessing where the pair cannot establish it', () => {
     // Zero is reproduced by every scale; a TOKEN: asset has no formatted form at all
-    // (hub-api/src/portfolio.ts:43). Both fall back to smallest units in the form.
+    // (hub-api/src/portfolio.ts). Both fall back to smallest units in the form.
     assert.equal(scaleOf('0', '0'), null)
     assert.equal(scaleOf('1000', null), null)
     assert.equal(scaleOf(null, '1'), null)
@@ -254,7 +254,7 @@ describe('requestWithdrawal', () => {
   })
 
   it('carries the Idempotency-Key the service requires', async () => {
-    // Without it the stand-in answers 400, exactly as `wallet/src/idempotency.ts:65` does:
+    // Without it the stand-in answers 400, exactly as `wallet/src/idempotency.ts` does:
     // "without one a retry moves money twice".
     stub = installServices()
     await requestWithdrawal({ assetCode: 'EMBER', destination: '0xabc', amount: '1' }, 'withdraw:k1')
@@ -314,10 +314,10 @@ describe('settlesOnChain', () => {
    *
    * The evidence is `micro-wallet`'s source and the running estate, in that order:
    *
-   *   wallet/src/addresses.ts:66-73     CHAIN_FOR_ASSET — EMBER, ETH, BTC, SOL, XRP, and its own
+   *   wallet/src/addresses.ts     CHAIN_FOR_ASSET — EMBER, ETH, BTC, SOL, XRP, and its own
    *                                     comment on why SHARD is absent
-   *   wallet/src/withdrawals.ts:283-290 `chainForAsset(...) === null` → `not_withdrawable`
-   *   wallet/src/deposits.ts:163-172    the same, → `not_depositable`
+   *   wallet/src/withdrawals.ts `chainForAsset(...) === null` → `not_withdrawable`
+   *   wallet/src/deposits.ts    the same, → `not_depositable`
    *
    * and then confirmed by driving `POST /v1/withdrawals` through the real gateway against the
    * live estate, once per code — SHARD, USD and TOKEN:… came back 422 `not_withdrawable`, while
@@ -342,7 +342,7 @@ describe('settlesOnChain', () => {
    */
   it('accepts exactly the six assets micro-wallet maps to a chain', () => {
     // LTC joined on 2026-08-05, and it joined the way the block above says it must: `wallet-
-    // assets.test.ts` went red first, naming `wallet/src/addresses.ts:99` as the source, and
+    // assets.test.ts` went red first, naming `wallet/src/addresses.ts` as the source, and
     // `CHAIN_ASSETS` and this literal moved together in that change. Nobody edited this line to
     // make a red test green.
     assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'LTC', 'SOL', 'XRP'])
@@ -359,7 +359,7 @@ describe('settlesOnChain', () => {
     // red first with the reason, and this line is deleted as part of the same change."
     //
     // That is exactly what happened. `micro-wallet` added `ltc` to `ChainId` and `LTC: 'ltc'` to
-    // `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:90,99`, commit 87f2251) and this repository did
+    // `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts,99`, commit 87f2251) and this repository did
     // not follow, so for a while wallet would move an asset Send did not offer — a capability the
     // user has and cannot reach. Nothing broke and nobody noticed; the derived check found it.
     //

@@ -5,7 +5,7 @@
  * ── WHY THIS BUNDLE TALKS TO THEM DIRECTLY, AND NOT THROUGH hub-api ───────────────────────────
  *
  * hub-api serves five routes and every one of them is a read: `/v1/dashboard`, `/v1/portfolio`,
- * `/v1/activity`, `/v1/search`, `/v1/next-actions` (`hub-api/src/server.ts:285-421`). **It
+ * `/v1/activity`, `/v1/search`, `/v1/next-actions` (`hub-api/src/server.ts`). **It
  * composes no mutation of any kind.** So a Send button routed through the BFF would need a sixth
  * hub-api route that does not exist, and inventing a client for a route nobody serves is exactly
  * how `wallet/src/pricingclient.ts` came to call a `/v1/quotes` that has never existed.
@@ -21,22 +21,22 @@
  * ── THE TWO HOSTS, AND WHERE THEY COME FROM ───────────────────────────────────────────────────
  *
  * `hosts().keyvault` → custody. VERIFIED: the registry pins that row's dev port to
- * `custody/src/env.ts:188` and `ui/packages/ui/src/surfaces.test.ts:196` fails if the two
- * disagree. `custody/.env.example:60` says `PORT=4005`, which is the value in the registry.
+ * `custody/src/env.ts` and `ui/packages/ui/src/surfaces.test.ts` fails if the two
+ * disagree. `custody/.env.example` says `PORT=4005`, which is the value in the registry.
  *
  * `hosts().pay` → the wallet service. NOT pinned, and the honest statement of why: `micro-wallet`
- * binds the service-template default `PORT=4000` (`wallet/.env.example:50`) and is separated from
+ * binds the service-template default `PORT=4000` (`wallet/.env.example`) and is separated from
  * its neighbours by compose, so the registry's 4003 is an allocation rather than a fact and there
  * is nothing to pin it against. `pay` is the estate's row for the payments API family —
- * `emberkin-web/src/lib/hosts.ts:108-114` already resolves billing through it — and the gateway
- * routes wallet's resources by path prefix (`deploy/gateway/dynamic/public-api.yml:118-124`), so
+ * `emberkin-web/src/lib/hosts.ts` already resolves billing through it — and the gateway
+ * routes wallet's resources by path prefix (`deploy/gateway/dynamic/public-api.yml`), so
  * one host serving both by prefix is consistent with how the public surface is already laid out.
  *
  * **TWO THINGS IN `micro-deploy` HAVE TO BE TRUE BEFORE THIS WORKS IN A BROWSER, AND ARE NOT.**
  * There is no gateway router for `pay.<apex>` or `vault.<apex>` in the working tree, and the
  * routers that do exist for wallet are on the API host, which deliberately carries the security
  * headers WITHOUT the app CORS allowlist ("The API host is not a browser origin for a first-party
- * app", public-api.yml:66-69). A first-party browser therefore needs those two hostnames routed
+ * app", public-api.yml). A first-party browser therefore needs those two hostnames routed
  * with the `cf-cors` middleware. That is a deploy change, it is recorded in this repository's
  * README, and it is not something this bundle can paper over with a different URL.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -67,14 +67,14 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * refuses. The code disagreed with its own documentation, and the documentation was right.
  *
  * The regex was not pointless — it excluded the `TOKEN:<urn>` codes that hub-api also serves as
- * holdings (`hub-api/src/portfolio.ts:43`). It simply was not the question. The question is
+ * holdings (`hub-api/src/portfolio.ts`). It simply was not the question. The question is
  * whether an asset settles on a chain, and only one component in the estate answers it.
  *
  * ── ESTABLISHED AGAINST THE RUNNING SERVICE, NOT AGAINST A STUB ───────────────────────────────
  *
- * `wallet/src/withdrawals.ts:283-290` calls `chainForAsset` and throws `not_withdrawable` for
- * `null`; `wallet/src/deposits.ts:163-172` does the same with `not_depositable`. The map behind
- * both is `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:66-73`), and its file says why SHARD is
+ * `wallet/src/withdrawals.ts` calls `chainForAsset` and throws `not_withdrawable` for
+ * `null`; `wallet/src/deposits.ts` does the same with `not_depositable`. The map behind
+ * both is `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts`), and its file says why SHARD is
  * absent: "Shards are a platform unit with no chain, so asking for their deposit address must
  * fail rather than fall through to a default."
  *
@@ -108,7 +108,7 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  *
  * The obvious fix was to derive this from `contracts-chain`'s `ON_CHAIN_ASSETS` and stop
  * maintaining it. That would be a defect, and Litecoin was the live proof of it: LTC joined
- * `ON_CHAIN_ASSETS` on 2026-08-05 (`contracts/packages/chain/src/index.ts:360`) while
+ * `ON_CHAIN_ASSETS` on 2026-08-05 (`contracts/packages/chain/src/index.ts`) while
  * `micro-wallet` still had no `'ltc'` in `ChainId` and no `LTC` in `CHAIN_FOR_ASSET`, so
  * `chainForAsset('LTC')` was null and both gates refused: `not_withdrawable` at 422
  * (`wallet/src/withdrawals.ts`) and `not_depositable` at 400 (`wallet/src/deposits.ts`).
@@ -117,7 +117,7 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * removing a hardcoded list.
  *
  * **LTC IS ON THE LIST NOW, AND HOW IT GOT THERE IS THE POINT.** `micro-wallet` added `ltc` to
- * `ChainId` and `LTC: 'ltc'` to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts:90,99`, commit
+ * `ChainId` and `LTC: 'ltc'` to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts,99`, commit
  * 87f2251 "a Litecoin address is a Litecoin address, not a Bitcoin one wearing its name"). This
  * array did not move with it, and for a while wallet would move an asset Send did not offer — a
  * capability the user has and cannot reach. **Nobody noticed and nothing broke; the failing check
@@ -152,7 +152,7 @@ export const CHAIN_ASSETS: readonly string[] = Object.freeze([
  * Whether `micro-wallet` will move this asset on a chain — the only assets Send and Receive may
  * offer.
  *
- * Case-sensitive on purpose. `wallet/src/withdrawals.ts:283` upper-cases before it looks the code
+ * Case-sensitive on purpose. `wallet/src/withdrawals.ts` upper-cases before it looks the code
  * up, so `ember` would in fact be accepted; but every code hub-api serves is already upper-case,
  * and quietly accepting a second spelling here would hide a real disagreement between the two
  * services rather than surface it.
@@ -163,7 +163,7 @@ export function settlesOnChain(assetCode: string): boolean {
 
 /* ══════════════════════════════ withdrawals ══════════════════════════════ */
 
-/** Mirrors `WithdrawalRecord`, `wallet/src/withdrawals.ts:114-133`. */
+/** Mirrors `WithdrawalRecord`, `wallet/src/withdrawals.ts`. */
 export interface Withdrawal {
   readonly id: string
   readonly chain: string
@@ -182,7 +182,7 @@ export interface Withdrawal {
   readonly requestedAt: string
 }
 
-/** `wallet/src/server.ts:676` — 201 fresh, 200 with `replayed: true` for a repeat of one key. */
+/** `wallet/src/server.ts` — 201 fresh, 200 with `replayed: true` for a repeat of one key. */
 export interface WithdrawalOutcome {
   readonly withdrawal: Withdrawal
   readonly replayed: boolean
@@ -192,12 +192,12 @@ export interface WithdrawalOutcome {
 export interface SendIntent {
   readonly assetCode: string
   readonly destination: string
-  /** SMALLEST UNITS, as a decimal string. `wallet/src/server.ts:1014-1020` accepts nothing else. */
+  /** SMALLEST UNITS, as a decimal string. `wallet/src/server.ts` accepts nothing else. */
   readonly amount: string
 }
 
 /**
- * `POST /v1/withdrawals` — `wallet/src/server.ts:645`.
+ * `POST /v1/withdrawals` — `wallet/src/server.ts`.
  *
  * ── THE DESTINATION SUBMITTED IS THE DESTINATION THAT WAS CONFIRMED ───────────────────────────
  *
@@ -224,7 +224,7 @@ export const requestWithdrawal = (
 
 /* ══════════════════════════════ deposits ══════════════════════════════ */
 
-/** Mirrors `AssignmentRecord`, `wallet/src/deposits.ts:76-91`. */
+/** Mirrors `AssignmentRecord`, `wallet/src/deposits.ts`. */
 export interface DepositAssignment {
   readonly id: string
   readonly assetCode: string
@@ -242,14 +242,14 @@ export interface DepositAssignment {
   readonly watchedAt: string | null
 }
 
-/** `GET /v1/deposits` — `wallet/src/server.ts:624`. Every assignment this account holds. */
+/** `GET /v1/deposits` — `wallet/src/server.ts`. Every assignment this account holds. */
 export const loadDepositAddresses = (
   signal: AbortSignal,
 ): Promise<{ assignments: readonly DepositAssignment[] }> =>
   wallet<{ assignments: readonly DepositAssignment[] }>('/v1/deposits', { signal })
 
 /**
- * `POST /v1/deposits` — `wallet/src/server.ts:604`.
+ * `POST /v1/deposits` — `wallet/src/server.ts`.
  *
  * `rotate` is an explicit ask and defaults to false, mirroring the service: *"Defaulting to it
  * would mint a new address on every page load and leave a trail of addresses nobody was told
@@ -294,7 +294,7 @@ export const assignDepositAddress = (
 /* ══════════════════════════════ the export ceremony ══════════════════════════════ */
 
 /**
- * Mirrors `ExportRecord`, `custody/src/exports.ts:90-104`.
+ * Mirrors `ExportRecord`, `custody/src/exports.ts`.
  *
  * `status` is the stage: `requested` → `cooling_off` → `challenged` → `redeemed`, or `cancelled`
  * or `denied`. It is a string rather than a union on purpose — a status this build has not heard
@@ -318,16 +318,16 @@ export interface KeyExport {
   readonly policyReasons: readonly string[]
 }
 
-/** The formats custody will produce. `custody/src/exports.ts:62-64`. */
+/** The formats custody will produce. `custody/src/exports.ts`. */
 export const EXPORT_FORMATS = ['keystore', 'mnemonic', 'raw', 'wif', 'xrp_seed'] as const
 export type ExportFormat = (typeof EXPORT_FORMATS)[number]
 
-/** `GET /v1/exports` — `custody/src/server.ts:497`. */
+/** `GET /v1/exports` — `custody/src/server.ts`. */
 export const loadKeyExports = (signal: AbortSignal): Promise<{ exports: readonly KeyExport[] }> =>
   custody<{ exports: readonly KeyExport[] }>('/v1/exports', { signal })
 
 /**
- * `POST /v1/exports` — `custody/src/server.ts:474`. Stage 1, and it starts a 24-hour clock.
+ * `POST /v1/exports` — `custody/src/server.ts`. Stage 1, and it starts a 24-hour clock.
  *
  * custody refuses unless the token's `amr` carries BOTH `pwd` and `mfa`
  * (`custody/src/exports.ts`, the `reauthentication_required` and `mfa_required` refusals), and it
@@ -343,7 +343,7 @@ export const requestKeyExport = (
   custody<{ export: KeyExport }>('/v1/exports', { method: 'POST', body: { address, format } })
 
 /**
- * `POST /v1/exports/:id/cancel` — `custody/src/server.ts:518`.
+ * `POST /v1/exports/:id/cancel` — `custody/src/server.ts`.
  *
  * Needs no second factor and is available at every point in the window (05:296). That is the
  * whole point of the cooling-off: the person who did NOT start this has 24 hours to stop it, and
@@ -353,7 +353,7 @@ export const cancelKeyExport = (id: string): Promise<{ export: KeyExport }> =>
   custody<{ export: KeyExport }>(`/v1/exports/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 
 /**
- * `POST /v1/exports/:id/challenge` — `custody/src/server.ts:534`. Returns the reveal token ONCE.
+ * `POST /v1/exports/:id/challenge` — `custody/src/server.ts`. Returns the reveal token ONCE.
  *
  * Gate 6: the second factor must have been answered *just now* — custody compares the token's
  * `auth_time` against its own token TTL and refuses a session that presented a factor a day ago.
@@ -384,7 +384,7 @@ export interface RevealedKey {
 }
 
 /**
- * `POST /v1/exports/:id/redeem` — `custody/src/server.ts:554`. **The one route that returns a key.**
+ * `POST /v1/exports/:id/redeem` — `custody/src/server.ts`. **The one route that returns a key.**
  *
  * Single-use by construction: the redemption spends the token and moves the wallet to `exported`
  * in one transaction, so a replay updates no row and returns nothing. Nothing in this app may

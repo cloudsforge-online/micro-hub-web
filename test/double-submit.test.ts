@@ -16,7 +16,7 @@
  *
  * Because on Send the NET EFFECT was already correct, and for a reason that has nothing to do
  * with the guard. One intent mints one `Idempotency-Key` (`lib/idempotency.ts`), both requests
- * carry it, and `wallet/src/server.ts:674-676` replays the second — so no money ever moved twice.
+ * carry it, and `wallet/src/server.ts` replays the second — so no money ever moved twice.
  *
  * That is the service cleaning up after this client, and it is not a guard. It says nothing about
  * the routes on this surface that carry NO key, and there are several:
@@ -49,7 +49,7 @@
  *
  * ── AND BOTH WAYS ROUND ───────────────────────────────────────────────────────────────────────
  *
- * `src/main.tsx:33` renders under `<StrictMode>`; this harness mounted without it until this file
+ * `src/main.tsx` renders under `<StrictMode>`; this harness mounted without it until this file
  * added `strict`. A ref latch is CREATED TWICE on a StrictMode mount, so a guard proven only in
  * the plain mode has never been run the way the app runs it. Every proof below runs twice.
  *
@@ -78,7 +78,7 @@ import { SecurityPage } from '../src/pages/security.tsx'
 const ORIGIN = 'https://hub.cloudsforge.online'
 const fresh = (): void => __resetAuth()
 
-/** The two shared token keys, for a scenario that starts signed in. `lib/api.ts:27-28`. */
+/** The two shared token keys, for a scenario that starts signed in. `lib/api.ts`. */
 const SIGNED_IN = { 'cf.accessToken': 'held-access-token', 'cf.refreshToken': 'held-refresh-token' }
 
 /** A page under a router at `path`. */
@@ -699,7 +699,7 @@ for (const strict of [false, true]) {
 
 /* ── fixtures and helpers used above ─────────────────────────────────────────────────────────── */
 
-/** A deposit assignment, shaped as `wallet/src/deposits.ts:76-91` serves one. */
+/** A deposit assignment, shaped as `wallet/src/deposits.ts` serves one. */
 const depositAssignment = {
   id: 'dep-1',
   assetCode: 'EMBER',
@@ -712,7 +712,7 @@ const depositAssignment = {
   watchedAt: '2026-08-03T09:00:01.000Z',
 }
 
-/** One session, shaped as `identity/src/server.ts:1077-1080` serves them. */
+/** One session, shaped as `identity/src/server.ts` serves them. */
 const identitySession = (id: string) => ({
   id,
   userId: fx.USER_ID,

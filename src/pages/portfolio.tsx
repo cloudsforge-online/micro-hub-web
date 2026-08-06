@@ -18,8 +18,8 @@
  * numbers: the summary carries `pricedAt`, which hub-api computes as the OLDEST contributing
  * observation, and each row carries its own `quotedAt`.
  *
- * Reads `GET /v1/portfolio` — hub-api/src/server.ts:310-343. The body is `{ portfolio: <tile> }`,
- * a single key with the tile beneath it (server.ts:338), not the tile at the top level.
+ * Reads `GET /v1/portfolio` — hub-api/src/server.ts. The body is `{ portfolio: <tile> }`,
+ * a single key with the tile beneath it (server.ts), not the tile at the top level.
  */
 import { useCallback } from 'react'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
@@ -67,7 +67,7 @@ export function PortfolioPage() {
           The summary stamp, in the head, where the reference layout puts it. It is the OLDEST
           contributing observation — hub-api computes it that way on purpose, because "a portfolio
           valued from a BTC quote taken two seconds ago and an XRP quote taken four minutes ago is,
-          as a single number, four minutes old" (hub-api/src/portfolio.ts:8-11).
+          as a single number, four minutes old" (hub-api/src/portfolio.ts).
         */}
         {stamp && <p className="wt-page__meta cf-num">{stamp}</p>}
       </header>
@@ -121,7 +121,7 @@ export function PortfolioPage() {
  * A table rather than a list: these are five comparable columns, and a table is the accessible,
  * copyable and printable form of them. `available` and `reserved` are both shown because "why can
  * I not spend it" is the question the reserved column exists to answer
- * (hub-api/src/portfolio.ts:46-48).
+ * (hub-api/src/portfolio.ts).
  */
 function HoldingsTable({ view }: { view: PortfolioView }) {
   return (

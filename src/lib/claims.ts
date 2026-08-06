@@ -19,17 +19,17 @@
  * the retry make it four round trips before the handle appears.
  *
  * Clicking `Sign in` then "fixed" it because it is a full navigation to `/account/login`, whose
- * effect hands an existing session straight back (`pages/account.tsx:220-236`) and navigates
+ * effect hands an existing session straight back (`pages/account.tsx`) and navigates
  * again — by which time the tokens are fresh and `/auth/me` answers sooner. The user's own
  * description, "it refreshed and then proceeded to account name", is that sequence exactly.
  *
  * ── WHY THE ANSWER IS THE TOKEN AND NOT A CACHE ───────────────────────────────────────────────
  *
  * The estate has NO COOKIES. A session is `cf.accessToken` / `cf.refreshToken` in `localStorage`
- * (`lib/api.ts:27-28`), which is per-origin and synchronous. So at the moment of first paint the
+ * (`lib/api.ts`), which is per-origin and synchronous. So at the moment of first paint the
  * bundle already holds the answer — it was asking the network for something it had in hand.
  *
- * And the token itself carries the display fields. `identity/src/tokens.ts:39-40,58-64` puts
+ * And the token itself carries the display fields. `identity/src/tokens.ts,58-64` puts
  * `handle` and `roles` in the claims, and its own comment records why `handle` is there at all:
  * without it "twenty-two services [get] a principal whose handle is silently `''`". Reading them
  * here costs nothing, cannot fail open, and is exactly as fresh as the credential the next request
@@ -40,7 +40,7 @@
  * Nothing below checks a signature, an issuer, an audience or an expiry, and nothing below may
  * ever be used to decide whether an action is permitted. The security boundary is unchanged and is
  * where it has always been: every service verifies the token and the scope on the request itself
- * (`lib/auth.tsx:3-6`). A user who edits their own `localStorage` to a forged payload changes the
+ * (`lib/auth.tsx`). A user who edits their own `localStorage` to a forged payload changes the
  * name in their own title bar and nothing else — every request that name is attached to is refused
  * by the service that receives it.
  *
@@ -84,7 +84,7 @@ function decodeSegment(segment: string): string | null {
  *
  * NULL IS THE HONEST ANSWER FOR ANYTHING UNREADABLE, and every caller must treat it as "I do not
  * know yet" rather than as "signed out". A token this function cannot parse is still a token: the
- * suite's own signed-in fixtures are opaque strings (`test/journeys.test.ts:99`), and a build that
+ * suite's own signed-in fixtures are opaque strings (`test/journeys.test.ts`), and a build that
  * signed those scenarios out would have been reporting on a session it invented.
  */
 export function readTokenClaims(token: string | null | undefined): TokenClaims | null {

@@ -70,7 +70,7 @@ export function App() {
             />
             {/*
               `wallet/*`, not `wallet`. hub-api's next-action cards deep-link to
-              `/wallet/deposits/:id` and `/wallet/withdrawals/:id` (nextactions.ts:160, 180), and a
+              `/wallet/deposits/:id` and `/wallet/withdrawals/:id` (nextactions.ts, 180), and a
               card whose button 404s is worse than no card. There is no per-deposit page yet, so
               those addresses land on the wallet page itself, where the deposit is listed — which
               is the honest resolution of a link to a detail view that does not exist.
@@ -126,7 +126,7 @@ export function App() {
             {/*
               hub-api's "needs you" cards deep-link into two prefixes this app does not otherwise
               use: `/account/security` and `/account/restrictions/:id` for the identity and policy
-              cards, and `/billing/subscriptions/:id` for the past-due card (nextactions.ts:200,
+              cards, and `/billing/subscriptions/:id` for the past-due card (nextactions.ts,
               214, 235, 251). Every card "carries a verb and a destination… a card a user cannot
               act on from the dashboard is a worry with no outlet" — and a destination that 404s is
               exactly that. They are honoured here rather than rewritten client-side, because

@@ -106,7 +106,7 @@ export const SCENARIOS: readonly Scenario[] = [
     gate: true,
     unblocks: {
       was: '§8.1 — "sign-in surface (§8.1), identity". The estate served no HTML at account.<apex>.',
-      by: 'src/pages/account.tsx RegisterPage, routed at src/app.tsx:148 as a PUBLIC route.',
+      by: 'src/pages/account.tsx RegisterPage, routed at src/app.tsx as a PUBLIC route.',
     },
     caveat:
       'Doc 22 puts the second half at T3 — "the account handle rendered in the bar equals the ' +
@@ -123,7 +123,7 @@ export const SCENARIOS: readonly Scenario[] = [
     ownedBy: { path: 'identity/src/server.ts', grep: 'fields' },
     unblocks: {
       was: '§8.1 — "sign-in surface, identity".',
-      by: 'src/pages/account.tsx:409-415, which sets a refusal and clears nothing.',
+      by: 'src/pages/account.tsx, which sets a refusal and clears nothing.',
     },
   },
   {
@@ -145,7 +145,7 @@ export const SCENARIOS: readonly Scenario[] = [
     gate: true,
     unblocks: {
       was: '§8.1 — "sign-in surface, identity, worlds".',
-      by: 'src/pages/account.tsx:219-235, the handedOff ref.',
+      by: 'src/pages/account.tsx, the handedOff ref.',
     },
     caveat:
       'Doc 22’s row ends "Worlds renders /player without a second credential prompt". Mounting ' +
@@ -361,7 +361,7 @@ export const SCENARIOS: readonly Scenario[] = [
     caveat:
       'The other half of doc 22’s row — "the fee is shown BEFORE confirmation, never after ' +
       '(05:269)" — is not asserted and cannot be. `micro-wallet` quotes the network fee inside ' +
-      '`POST /v1/withdrawals` (`wallet/src/withdrawals.ts:298-303`) and serves no route that ' +
+      '`POST /v1/withdrawals` (`wallet/src/withdrawals.ts`) and serves no route that ' +
       'quotes one: there is no `GET /v1/fees` and no fee on any read route. The confirmation step ' +
       'therefore says the fee is not yet known and that the amount entered is the gross, and the ' +
       'receipt states it where it becomes known. Asserting a fee before confirmation would ' +
@@ -387,7 +387,7 @@ export const SCENARIOS: readonly Scenario[] = [
     asserts: 'presentation',
     tier: 'T1',
     ownedBy: { path: 'wallet/src/withdrawals.ts', grep: 'insufficient' },
-    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/send.tsx:144-153.' },
+    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/send.tsx.' },
   },
   {
     id: 'BJ-WAL-12',
@@ -437,7 +437,7 @@ export const SCENARIOS: readonly Scenario[] = [
       'doc 22 itself puts in admin-web as BJ-ADM-21 and records as having no screen either ' +
       '(§8.4). A retry button here would post a SECOND withdrawal under a new key, which is the ' +
       'opposite of what the scenario asks for. The stuck state is rendered with its reason ' +
-      '(`src/pages/wallet.tsx:260-284`), which is the half that exists.',
+      '(`src/pages/wallet.tsx`), which is the half that exists.',
   },
   {
     id: 'BJ-WAL-16',
@@ -452,7 +452,7 @@ export const SCENARIOS: readonly Scenario[] = [
       'unreadable by eye and looks exactly like a correct one. **The confirmation depth**: ' +
       'nothing in the estate publishes a depth policy, and hub-api omits the denominator from a ' +
       'confirmation count for that exact reason ("41/0 is worse than 41 confirmations", ' +
-      'hub-api/src/nextactions.ts:146-148). A number invented here would be the denominator ' +
+      'hub-api/src/nextactions.ts). A number invented here would be the denominator ' +
       'hub-api refused to invent.',
   },
   {
@@ -460,7 +460,7 @@ export const SCENARIOS: readonly Scenario[] = [
     what: 'Receive: both sentences — managed wallet and deposit address — are in the page at body size, not in a tooltip',
     asserts: 'presentation',
     tier: 'T1',
-    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/receive.tsx:141-151.' },
+    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/receive.tsx.' },
   },
   {
     id: 'BJ-WAL-18',
@@ -473,7 +473,7 @@ export const SCENARIOS: readonly Scenario[] = [
     caveat:
       'Doc 22 says "all ten stages". `custody/src/exports.ts` holds four — requested, ' +
       'cooling_off, challenged, redeemed — plus cancelled and denied as terminals, and ' +
-      '`src/components/keyexport.tsx:55-60` renders exactly those four in order. Ten is doc 22 ' +
+      '`src/components/keyexport.tsx` renders exactly those four in order. Ten is doc 22 ' +
       'counting 05 journey 5’s prose steps rather than the service’s state machine. The scenario ' +
       'is written against the machine, because the machine is what refuses.',
   },
@@ -483,7 +483,7 @@ export const SCENARIOS: readonly Scenario[] = [
     asserts: 'presentation',
     tier: 'T1',
     ownedBy: { path: 'custody/src/server.ts', grep: '/v1/exports/:id/cancel' },
-    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/keyexport.tsx:373-376.' },
+    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/keyexport.tsx.' },
     caveat:
       'Doc 22’s row says "cancel FROM THE NOTIFICATION LINK". The link is in an email, and an ' +
       'email is not a surface this repository serves or can mount. The property that link exists ' +
@@ -496,7 +496,7 @@ export const SCENARIOS: readonly Scenario[] = [
     asserts: 'presentation',
     tier: 'T1',
     ownedBy: { path: 'custody/src/exports.ts', grep: 'mfa_required' },
-    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/keyexport.tsx:424-437, PanelNotice.' },
+    unblocks: { was: '§8.2 — "no UI exists".', by: 'src/components/keyexport.tsx, PanelNotice.' },
   },
   {
     id: 'BJ-WAL-21',
@@ -508,7 +508,7 @@ export const SCENARIOS: readonly Scenario[] = [
       'device or a mobile deep link. This bundle has none and no dependency provides one; a form ' +
       'that asked a user to paste a signature they produced elsewhere is not journey 6, it is a ' +
       'way to make people move their key to a machine that can sign a string. ' +
-      '`src/pages/wallet.tsx:158-166` states the same finding on the page, which is what ' +
+      '`src/pages/wallet.tsx` states the same finding on the page, which is what ' +
       'BJ-WAL-21-ABSENT asserts instead.',
   },
   {
@@ -521,7 +521,7 @@ export const SCENARIOS: readonly Scenario[] = [
       'says the browser asserts the absence of the option RELATIVE TO THE AUTHORISATIONS THE API ' +
       'RETURNED. hub-api’s wallets tile carries no per-wallet authorisation set — ' +
       '`lib/hub.ts` WalletRecord has origin, status and verifiedAt and no grants — so there is no ' +
-      'response for a browser to assert relative to. `components/send.tsx:92-95` records the same ' +
+      'response for a browser to assert relative to. `components/send.tsx` records the same ' +
       'finding and offers the list as a convenience rather than a permission, which is why the ' +
       'destination field is not a closed list.',
   },
@@ -541,7 +541,7 @@ export const SCENARIOS: readonly Scenario[] = [
     asserts: 'client-request',
     tier: 'T1',
     gate: true,
-    unblocks: { was: '§6.19 BJ-ADV-20 ⛔★ "Send — does not exist".', by: 'src/components/send.tsx:120-129.' },
+    unblocks: { was: '§6.19 BJ-ADV-20 ⛔★ "Send — does not exist".', by: 'src/components/send.tsx.' },
   },
   {
     id: 'BJ-ADV-20-H2',
@@ -587,7 +587,7 @@ export const SCENARIOS: readonly Scenario[] = [
     gate: true,
     unblocks: {
       was: 'doc 22 §6.19 put H5 at T3 for every form, because "signInRedirect() into a surface that does not exist".',
-      by: 'the surface exists — src/app.tsx:147 — so the re-authentication path now terminates somewhere.',
+      by: 'the surface exists — src/app.tsx — so the re-authentication path now terminates somewhere.',
     },
   },
   {

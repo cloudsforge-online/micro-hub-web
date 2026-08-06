@@ -24,7 +24,7 @@
  * ── WHAT THIS SCREEN CANNOT SHOW, AND WILL NOT INVENT ─────────────────────────────────────────
  *
  * **The fee, before confirmation.** 05:269 and BJ-WAL-08 both require it. `micro-wallet` quotes
- * the network fee INSIDE `POST /v1/withdrawals` (`wallet/src/withdrawals.ts:298-303`) and serves
+ * the network fee INSIDE `POST /v1/withdrawals` (`wallet/src/withdrawals.ts`) and serves
  * no route that quotes one — there is no `GET /v1/fees`, no fee on any read route, and
  * `WALLET_FEE_QUOTES` is an environment value the service does not publish. So the fee is stated
  * where it becomes known, on the receipt, and the confirmation says plainly that it is not yet
@@ -152,7 +152,7 @@ export function SendPanel({
    * This used to read `if (!armed || busy) return`, and `busy` is state — so two Confirm clicks in
    * one tick both read `busy === false` and both posted. The reason nobody noticed is at the top
    * of this file: one intent mints one `Idempotency-Key`, both requests carried it, and
-   * `wallet/src/server.ts:674-676` replayed the second. No money moved twice, which made this a
+   * `wallet/src/server.ts` replayed the second. No money moved twice, which made this a
    * guard that only worked because the service cleaned up after it. `micro-beacon`'s BJ-WAL-09
    * drives real Chromium and counts what leaves the browser, and it counted two.
    */

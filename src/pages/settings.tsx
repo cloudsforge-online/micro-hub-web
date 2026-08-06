@@ -4,7 +4,7 @@
  * ── What this page deliberately does NOT do ────────────────────────────────────────────────────
  *
  * It does not edit a profile. Identity owns the email, the handle and the password, and
- * `docs/ecosystem/03-repository-responsibilities.md:150` moves the Nimbus `/account` PAGE into
+ * `docs/ecosystem/03-repository-responsibilities.md` moves the Nimbus `/account` PAGE into
  * this repository — not a second copy of the account itself. Duplicating the edit forms here means
  * two validators, two rate limits and two places for a password change to go subtly wrong; the
  * portal is one link away and it is the thing that owns them.
@@ -18,7 +18,7 @@
  * all — not because of a missing token but because `notify` has no entry in the surface registry
  * (`@cloudsforge/ui/surfaces`), so `cloudsforgeHosts()` cannot produce a URL for it, and it is not
  * one of hub-api's seven upstreams either, which is why the `notifications` tile of every
- * dashboard is permanently `unavailable` (hub-api/src/dashboard.ts:581-598). Two things are
+ * dashboard is permanently `unavailable` (hub-api/src/dashboard.ts). Two things are
  * missing, both small, and both named here rather than papered over with a switch that does
  * nothing.
  */
@@ -56,7 +56,7 @@ export function SettingsPage() {
           page rather than anything of ours. The sentence around it was wrong in the same way: it
           promised a "CloudsForge Account portal", and there is no such surface in the estate.
           `micro-identity` binds 4001, serves an API and renders no HTML at all
-          (`identity/src/server.ts` §3, asserted at `identity/src/server.test.ts:890`).
+          (`identity/src/server.ts` §3, asserted at `identity/src/server.test.ts`).
 
           So the link is not repointed, it is retired, and the paragraph now says what is true.
           Repointing it at `signin` would have been the same defect as the account menu's: sending
