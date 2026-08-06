@@ -42,11 +42,11 @@ const alwaysPresent = () => 1
 
 export function WalletPage() {
   const load = useCallback((signal: AbortSignal) => loadDashboard(signal), [])
-  const { state, data, error, reload } = useResource(load, alwaysPresent, 'Could not load your wallets.')
+  const { state, data, error, reload } = useResource(load, alwaysPresent, 'We could not read your wallets.')
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Loading your wallets" />
+  if (state === 'loading' || !data) return <Loading label="Reading your wallets" />
 
   const { wallets, deposits, withdrawals, portfolio } = data.tiles
 
@@ -54,6 +54,20 @@ export function WalletPage() {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Wallet</h1>
+        <p className="wt-page__lede">
+          We hold EMBER, Bitcoin, Ether, Litecoin, Solana and XRP for you, so sending, receiving
+          and spending across CloudsForge take no key handling on your part. Send anything out and
+          the network fee is taken from the amount rather than added to it, and the figure that
+          will actually land is shown before you commit.
+        </p>
+        <p className="wt-note">
+          Money arriving is credited once the chain has buried it deep enough to be safe: one
+          confirmation on XRP, six on Bitcoin, twelve on Ether and Litecoin, thirty-two on Solana
+          and sixty on EMBER. Should a chain reorganise beneath a deposit, crediting halts rather
+          than guesses. If you would rather hold the key yourself, any managed wallet can be
+          exported below — that is deliberate, deliberate enough to take a day, and it cannot be
+          undone.
+        </p>
       </header>
 
       {/*
@@ -89,8 +103,8 @@ export function WalletPage() {
         tile={wallets}
         empty={
           <p className="wt-note">
-            No wallet has been created or connected yet. A managed wallet is provisioned the first
-            time you deposit.
+            No wallet has been created or connected yet. We set up a managed wallet for you the
+            first time something arrives, so there is nothing to do here in advance.
           </p>
         }
       >
@@ -106,7 +120,12 @@ export function WalletPage() {
       <TilePanel
         title="Arriving"
         tile={deposits}
-        empty={<p className="wt-note">No deposit is currently confirming.</p>}
+        empty={
+          <p className="wt-note">
+            No deposit is currently confirming. Anything on its way in appears here with its
+            confirmation count until it is credited.
+          </p>
+        }
       >
         {deposits.data.length === 0 ? null : (
           <ul className="wt-rows">
@@ -120,7 +139,11 @@ export function WalletPage() {
       <TilePanel
         title="Leaving"
         tile={withdrawals}
-        empty={<p className="wt-note">No withdrawal is in flight.</p>}
+        empty={
+          <p className="wt-note">
+            Nothing is on its way out. A payment stays on this list until the chain has taken it.
+          </p>
+        }
       >
         {withdrawals.data.length === 0 ? null : (
           <ul className="wt-rows">
@@ -148,12 +171,11 @@ export function WalletPage() {
       */}
       <NotComposed title="Transfers and conversions">
         <p>
-          Moving value between your own accounts and converting between assets are served by the
-          wallet service as <code>POST /v1/transfers</code> and <code>POST /v1/conversions</code>,
-          each behind an idempotency key. Nothing in the estate lists either afterwards, and
-          transfers are addressed by an internal user id nothing resolves, so Forge Hub does not
-          offer them. It is not that you have made none — it is that Forge Hub could not show you
-          what you had done.
+          Shifting value between your own accounts, and swapping one asset for another, both work
+          at the service level. Neither has anywhere that lists what you did afterwards, and a
+          transfer has to name its recipient by an internal identifier that nothing here can look
+          up. Rather than give you a control whose result then vanishes off the screen, we have
+          left it out and said so.
         </p>
       </NotComposed>
 
@@ -168,11 +190,10 @@ export function WalletPage() {
       */}
       <NotComposed title="Connecting an external wallet">
         <p>
-          Registering a wallet you hold the key for needs your wallet to sign a challenge
-          CloudsForge issues. Forge Hub cannot ask a browser extension or a hardware wallet to sign
-          anything — there is no signer in this application — so the flow has no screen here. The
-          wallet service serves both halves of it, and an external wallet already verified appears
-          in the list above.
+          Bringing in a wallet you already hold the key for means signing a challenge we issue,
+          with that wallet. This page has no way to reach a browser extension or a hardware device
+          and ask it to sign, so there is no form for it. Anything you have connected elsewhere and
+          proved ownership of shows up in the list above, marked as verified.
         </p>
       </NotComposed>
     </>
@@ -283,7 +304,7 @@ function WithdrawalRow({ withdrawal }: { withdrawal: WithdrawalRecord }) {
         </span>
         {stuck && (
           <span className="wt-row__sub wt-row__sub--critical">
-            {withdrawal.failureReason ?? 'awaiting confirmation from the chain'}
+            {withdrawal.failureReason ?? 'the chain has not told us either way yet'}
           </span>
         )}
       </span>

@@ -1149,7 +1149,7 @@ describe('BJ-WAL — Send', () => {
         // fee" — a made-up figure on a confirmation step is worse than an honest absence.
         const confirmFee = factValue(s, 'Network fee')
         assert.ok(!/\d/.test(confirmFee), `the confirmation invented a fee: ${confirmFee}`)
-        assert.match(confirmFee, /quoted|when this is submitted/i, 'the confirmation does not say the fee is not yet known')
+        assert.match(confirmFee, /priced at the moment you confirm|subtracted from the amount/i, 'the confirmation does not say the fee is not yet known')
         // And no quote route was called. `wallet/src/pricingclient.ts` came to call a `/v1/quotes`
         // that has never existed by exactly this route; test/dom.ts would throw on it here.
         assert.equal(s.api.wire.length, 0, 'the confirmation step made a request')
@@ -1258,7 +1258,7 @@ describe('BJ-WAL — Send', () => {
         // hard-coded the heading to "Withdrawal requested" survived it: the alternation let the
         // note cover for the heading, so half the screen could be wrong and the guard still pass.
         assert.match(s.text(), /Already requested/i, 'a replay is titled as a fresh withdrawal')
-        assert.match(s.text(), /does not send twice/i, 'a replay is not explained to the user')
+        assert.match(s.text(), /does not send a second one/i, 'a replay is not explained to the user')
         assert.equal(s.allByRole('alert').length, 0, 'a replay was rendered as an error')
         // The receipt reads back off the SERVICE's record, not off the form.
         assert.ok(s.text().includes(fx.withdrawal().state), 'the receipt does not carry the service’s state')
@@ -1672,7 +1672,7 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
 
         // Cancel is on screen at this stage, and the stage that has not been reached offers no
         // control — the screen renders custody's refusals rather than pre-empting them.
-        assert.ok(s.queryByRole('button', 'Cancel this export'), 'cancel is not offered')
+        assert.ok(s.queryByRole('button', 'Stop this export'), 'cancel is not offered')
         assert.equal(s.queryByRole('button', 'Reveal my key'), null, 'reveal is offered before the challenge')
       },
     )
@@ -1766,7 +1766,7 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
           },
         },
         async (s) => {
-          const cancel = s.byRole('button', 'Cancel this export')
+          const cancel = s.byRole('button', 'Stop this export')
           assert.ok(cancel, `cancel is not offered at stage ${status}`)
           assert.ok(!cancel.hasAttribute('disabled'), `cancel is disabled at stage ${status}`)
           await s.click(cancel)
@@ -2153,8 +2153,8 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
       // notifications tile records why: "a client given no tile at all shows nothing and nobody
       // notices the feature is missing".
       for (const [what, why] of [
-        ['Transfers and conversions', /lists either afterwards|internal user id/i],
-        ['Connecting an external wallet', /no signer in this application/i],
+        ['Transfers and conversions', /lists what you did afterwards|internal identifier/i],
+        ['Connecting an external wallet', /no way to reach a browser extension or a hardware device/i],
       ] as const) {
         assert.ok(body.includes(what), `${what} is not named on the page`)
         assert.match(body, why, `${what} is named without its reason`)
@@ -2279,7 +2279,7 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
         const armedNames = s.tabbables().map((el) => el.textContent ?? '')
         assert.ok(armedNames.some((n) => /Send it/.test(n)), 'the commit is not reachable by keyboard')
         assert.ok(armedNames.some((n) => /Edit/.test(n)), 'the way back is not reachable by keyboard')
-        s.before('not one of your CloudsForge wallets', 'Send it', 'the warning must precede the commit')
+        s.before('We do not recognise this address as one of yours', 'Send it now', 'the warning must precede the commit')
 
         // And it completes by keyboard: focus the commit and press it.
         const commit = s.byRole('button', 'Send it')
@@ -2301,7 +2301,7 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
           routes: { 'GET /v1/exports': { body: { exports: [fx.keyExport({ status })] } } },
         },
         async (s) => {
-          const cancel = s.byRole('button', 'Cancel this export')
+          const cancel = s.byRole('button', 'Stop this export')
           assert.ok(
             s.tabbables().includes(cancel),
             `cancel is not in the tab order at stage ${status} — it is the control a person whose ` +

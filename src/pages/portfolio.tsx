@@ -38,19 +38,19 @@ export function PortfolioPage() {
     // Emptiness is a property of the holdings, not of the response: a 200 carrying a portfolio
     // with no holdings is the empty state, and a 200 carrying an unavailable tile is not.
     (result) => (hasAnswer(result.portfolio) ? result.portfolio.data.holdings.length : 1),
-    'Could not load your portfolio.',
+    'We could not value what you are holding.',
   )
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Valuing your holdings" />
+  if (state === 'loading' || !data) return <Loading label="Working out what it is all worth" />
 
   const tile = data.portfolio
   if (state === 'empty' && hasAnswer(tile)) {
     return (
       <Empty
-        title="Nothing is held on this account yet"
-        hint="Holdings appear here once a deposit is credited or a reward settles."
+        title="You are not holding anything yet"
+        hint="Anything you deposit, earn, or are paid for a sale shows up here the moment it settles."
       />
     )
   }
@@ -63,6 +63,12 @@ export function PortfolioPage() {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Portfolio</h1>
+        <p className="wt-page__lede">
+          Everything you hold across CloudsForge, valued together. Prices are the middle of four
+          independent sources rather than one, and a round where they disagree too widely is thrown
+          away instead of averaged. Anything we have no honest price for is listed with its amount
+          and no value, never as zero, and is left out of the total.
+        </p>
         {/*
           The summary stamp, in the head, where the reference layout puts it. It is the OLDEST
           contributing observation — hub-api computes it that way on purpose, because "a portfolio
@@ -72,7 +78,7 @@ export function PortfolioPage() {
         {stamp && <p className="wt-page__meta cf-num">{stamp}</p>}
       </header>
 
-      <TilePanel title="Held" tile={tile} empty={<p className="wt-note">Nothing held.</p>}>
+      <TilePanel title="Held" tile={tile} empty={<p className="wt-note">You hold nothing yet.</p>}>
         <div className="wt-tiles">
           <StatTile
             label="Total held"
@@ -127,7 +133,7 @@ function HoldingsTable({ view }: { view: PortfolioView }) {
   return (
     <section className="wt-panel">
       <header className="wt-panel__head">
-        <h2 className="wt-panel__title">Holdings</h2>
+        <h2 className="wt-panel__title">Every holding</h2>
       </header>
       <div className="wt-tablewrap">
         <table className="wt-table">
@@ -167,7 +173,7 @@ function HoldingRow({ holding }: { holding: Holding }) {
       */}
       <td className="cf-num">
         {holding.amountFormatted ?? (
-          <span title="smallest units; this asset's decimals are not published">
+          <span title="This is the raw smallest-unit figure. Nothing publishes how many decimal places this asset uses, so we will not pretend to place the point.">
             {holding.amount} <span className="wt-unit">raw</span>
           </span>
         )}
@@ -179,7 +185,7 @@ function HoldingRow({ holding }: { holding: Holding }) {
           // Rule 1. No figure, and pricing's own words for why — never a dash that could be read
           // as nothing, and never a zero.
           <span className="wt-unpriced">
-            not priced
+            no honest price
             {holding.priceReason && <span className="wt-unpriced__why"> — {holding.priceReason}</span>}
           </span>
         ) : (

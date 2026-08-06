@@ -344,12 +344,12 @@ export function SignInPage() {
       <AccountFrame title="One more step">
         <form className="wt-form" onSubmit={submitMfa} noValidate>
           <p className="wt-note">
-            Your password was accepted. Enter the code from your{' '}
+            Password accepted. Now the code from your{' '}
             {stage.factors[0]?.kind === 'totp' ? 'authenticator app' : 'second factor'}, or one of
             your recovery codes.
           </p>
           {refusal && <RefusalNotice refusal={refusal} />}
-          <Field id="mfa-code" label="Code" hint="Six digits, or a recovery code.">
+          <Field id="mfa-code" label="Code" hint="Six digits from the app, or one recovery code.">
             {(props) => (
               <input
                 {...props}
@@ -378,6 +378,10 @@ export function SignInPage() {
   return (
     <AccountFrame title="Sign in to CloudsForge">
       <form className="wt-form" onSubmit={submitPassword} noValidate>
+        <p className="wt-note">
+          One sign-in covers trading, the marketplace, the chain, the worlds and everything else we
+          run. Your balance, your history and your settings are the same wherever you go.
+        </p>
         {refused && (
           <p className="wt-formerror" role="alert">
             You are signed in, but CloudsForge will not hand a session to{' '}
@@ -597,11 +601,12 @@ export function RegisterPage() {
             Your account is created. We have sent a link to <strong>{sent}</strong>.
           </p>
           <p className="wt-note">
-            Open it and you will be signed in — on whichever device you open it on. The link works
-            once and expires in 24 hours. You can close this page.
+            Open it on whatever device suits you and that will sign you in. It works a single
+            time and lapses after 24 hours. Nothing is lost if you close this page now.
           </p>
           <p className="wt-note">
-            Nothing arrived? Check the spelling above and your spam folder, then{' '}
+            If nothing turns up, read the address above back to yourself and look in your spam
+            folder, then{' '}
             <Link className="wt-link" to={`/account/login?return=${encodeURIComponent(returnTo)}`}>
               sign in
             </Link>{' '}
@@ -615,12 +620,17 @@ export function RegisterPage() {
   return (
     <AccountFrame title="Create a CloudsForge account">
       <form className="wt-form" onSubmit={submit} noValidate>
+        <p className="wt-note">
+          This is the only account you will need. It carries one balance across every product,
+          holds EMBER, Bitcoin, Ether, Litecoin, Solana and XRP for you, and keeps a single record
+          of everything you have done. Setting it up costs nothing.
+        </p>
         {refusal && <RefusalNotice refusal={refusal} />}
 
         <Field
           id="email"
           label="Email"
-          hint="Used for sign-in and for security notifications."
+          hint="How you sign in, and where we warn you if something happens to the account."
           error={refusal?.byField.get('email')}
         >
           {(props) => (
@@ -641,7 +651,7 @@ export function RegisterPage() {
         <Field
           id="handle"
           label="Handle"
-          hint="How you appear across CloudsForge."
+          hint="The name other people see on you, everywhere in CloudsForge."
           error={refusal?.byField.get('handle')}
         >
           {(props) => (
@@ -667,7 +677,7 @@ export function RegisterPage() {
         <Field
           id="new-password"
           label="Password"
-          hint="At least 8 characters. CloudsForge will tell you if it is not strong enough."
+          hint="Eight characters at the very least. We will say so if it is too easy to guess."
           error={refusal?.byField.get('password')}
         >
           {(props) => (
@@ -703,7 +713,7 @@ export function RegisterPage() {
         <Field
           id="confirm-password"
           label="Confirm password"
-          hint="Type it again, so a slip is caught here rather than at your next sign-in."
+          hint="Once more, so a mistyped key is caught now rather than the next time you sign in."
           error={mismatched ? 'Those two passwords are not the same.' : undefined}
         >
           {(props) => (
@@ -1242,9 +1252,9 @@ export function ResetPasswordPage() {
             below is the same navigation, taken when the reader is ready.
           */}
           <p className="wt-note">
-            Every other device that was signed in to this account has been signed out — that is what
-            a reset does, so that whoever prompted it cannot outlive it. You will be asked for the
-            new password on each of them.
+            Everywhere else that was signed in has now been signed out. That is the whole point of
+            a reset: whoever made you do it cannot still be inside afterwards. Each of your own
+            devices will ask for the new password next time.
           </p>
           <div className="wt-form__actions">
             <Link className="cf-btn cf-btn--ember" to={signInHref}>
@@ -1301,7 +1311,7 @@ export function ResetPasswordPage() {
         <Field
           id="reset-password"
           label="New password"
-          hint="At least 8 characters. CloudsForge will tell you if it is not strong enough."
+          hint="Eight characters at the very least. We will say so if it is too easy to guess."
           error={refusal?.byField.get('newPassword')}
         >
           {(props) => (
@@ -1325,7 +1335,7 @@ export function ResetPasswordPage() {
         <Field
           id="reset-confirm"
           label="Confirm new password"
-          hint="Type it again, so a slip is caught here rather than at your next sign-in."
+          hint="Once more, so a mistyped key is caught now rather than the next time you sign in."
           error={mismatched ? 'Those two passwords are not the same.' : undefined}
         >
           {(props) => (
@@ -1351,8 +1361,8 @@ export function ResetPasswordPage() {
           </button>
         </div>
         <p className="wt-note">
-          Setting a new password signs out every other device on this account, and this link stops
-          working the moment it is used.
+          Saving this signs out every other device on the account, and burns the link you used to
+          get here.
         </p>
       </form>
     </AccountFrame>

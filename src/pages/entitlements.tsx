@@ -26,11 +26,11 @@ const alwaysPresent = () => 1
 
 export function EntitlementsPage() {
   const load = useCallback((signal: AbortSignal) => loadDashboard(signal), [])
-  const { state, data, error, reload } = useResource(load, alwaysPresent, 'Could not load your access.')
+  const { state, data, error, reload } = useResource(load, alwaysPresent, 'We could not read what this account has access to.')
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Loading your access" />
+  if (state === 'loading' || !data) return <Loading label="Reading what you have access to" />
 
   const tile = data.tiles.entitlements
   const { entitlements, subscriptions } = tile.data
@@ -40,6 +40,11 @@ export function EntitlementsPage() {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Access</h1>
+        <p className="wt-page__lede">
+          What this account is entitled to across CloudsForge, and any subscription paying for it.
+          A grant may cover the whole platform or only one title or community, and the scope column
+          says which.
+        </p>
       </header>
 
       <TilePanel
@@ -47,8 +52,8 @@ export function EntitlementsPage() {
         tile={tile}
         empty={
           <p className="wt-note">
-            Nothing has been granted to this account. Entitlements arrive from a purchase, a
-            subscription or an operator grant.
+            Nothing has been granted to this account so far. Access arrives when you buy
+            something, start a subscription, or somebody on our side grants it to you directly.
           </p>
         }
       >
@@ -78,7 +83,11 @@ export function EntitlementsPage() {
       <TilePanel
         title="Subscriptions"
         tile={tile}
-        empty={<p className="wt-note">No subscription is attached to this account.</p>}
+        empty={
+          <p className="wt-note">
+            Nothing recurring is attached to this account, so nothing here renews or bills.
+          </p>
+        }
       >
         {answered && subscriptions.length > 0 ? (
           <ul className="wt-rows">

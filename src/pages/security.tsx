@@ -67,17 +67,17 @@ export function SecurityPage() {
   const load = useCallback(
     (signal: AbortSignal): Promise<SecurityData> =>
       settleBoth(loadDashboard(signal), loadSessions(signal), {
-        first: 'Could not load your security state.',
-        second: 'Could not load your sessions.',
+        first: 'We could not read how this account is protected.',
+        second: 'We could not read where you are signed in.',
       }).then((settled) => ({ dashboard: settled.first, sessions: settled.second })),
     [],
   )
 
-  const { state, data, error, reload } = useResource(load, alwaysPresent, 'Could not load your security state.')
+  const { state, data, error, reload } = useResource(load, alwaysPresent, 'We could not read how this account is protected.')
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Checking this account" />
+  if (state === 'loading' || !data) return <Loading label="Checking how this account is protected" />
 
   // The one honest page-level failure: neither read arrived, so there is nothing to render but
   // the error.
@@ -129,6 +129,13 @@ export function SecurityPage() {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Security</h1>
+        <p className="wt-page__lede">
+          One account guards everything you have across CloudsForge, so it is worth a second
+          factor. We support an authenticator app and one-use recovery codes, and we deliberately
+          refuse text-message codes — a phone number can be taken off you by a stranger with a
+          convincing story. You can see every place you are currently signed in below, and end any
+          of them, or all of them at once.
+        </p>
       </header>
 
       {dashboard && hasAnswer(dashboard.tiles.alerts) && dashboard.tiles.alerts.data.length > 0 && (
@@ -143,7 +150,12 @@ export function SecurityPage() {
         <TilePanel
           title="This account"
           tile={security}
-          empty={<p className="wt-note">Identity returned no security state for this account.</p>}
+          empty={
+            <p className="wt-note">
+              Nothing came back about how this account is protected, which is unusual and worth
+              telling us about.
+            </p>
+          }
         >
           {view ? <AccountFacts view={view} /> : null}
         </TilePanel>
@@ -153,7 +165,12 @@ export function SecurityPage() {
         <TilePanel
           title="Second factors"
           tile={security}
-          empty={<p className="wt-note">No second factor is enrolled.</p>}
+          empty={
+            <p className="wt-note">
+              Your password is the only thing standing in front of this account. Adding an
+              authenticator app takes a minute and is the single largest improvement available.
+            </p>
+          }
         >
           {view.factors.length === 0 ? null : (
             <ul className="wt-rows">
@@ -194,7 +211,7 @@ export function SecurityPage() {
         <TilePanel
           title="Restrictions"
           tile={dashboard.tiles.restrictions}
-          empty={<p className="wt-note">Nothing on this account is restricted.</p>}
+          empty={<p className="wt-note">Nothing on this account is held back or blocked.</p>}
         >
           {dashboard.tiles.restrictions.data.length === 0 ? null : (
             <ul className="wt-rows">
@@ -223,10 +240,10 @@ export function SecurityPage() {
       */}
       <NotComposed title="Devices">
         <p>
-          Identity records a device per session and this page shows what it knows about each —
-          browser and operating system family — on the sessions above. There is no route that
-          lists devices in their own right, so a device you are no longer signed in on cannot be
-          shown or forgotten from here.
+          Each session above carries what we know of the machine behind it — the browser and the
+          kind of operating system. What does not exist is a list of your devices in their own
+          right, so a laptop you have already signed out of cannot be shown here, and there is
+          nothing to forget it from.
         </p>
       </NotComposed>
     </>
@@ -317,7 +334,9 @@ function SessionsPanel({
       ) : sessions.value && sessions.value.sessions.length === 0 ? (
         // Identity lists ACTIVE sessions only, so an empty list here is genuinely odd — the
         // request that produced it was itself made with a live session.
-        <p className="wt-note">No active session is recorded, which is unexpected for this page.</p>
+        <p className="wt-note">
+          Not one live session is recorded — odd, given you are reading this on one.
+        </p>
       ) : (
         <ul className="wt-rows">
           {(sessions.value?.sessions ?? []).map((session) => {
