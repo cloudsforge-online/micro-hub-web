@@ -113,15 +113,15 @@ export function KeyExportPanel({
    * `busy` is state, so a second press that lands before React has re-rendered reads the value
    * from the same closure as the first and sails through. On the Send form that LOOKED
    * survivable: `POST /v1/withdrawals` requires an `Idempotency-Key`, one key is minted per
-   * intent, and `wallet/src/server.ts:674-676` collapses the duplicates — so the flag was a
+   * intent, and `wallet/src/server.ts` collapses the duplicates — so the flag was a
    * convenience and the key was the contract. That reasoning was right about the money and wrong
    * about the guard, and Send has since taken the same latch this panel already had.
    *
-   * **There is no key on this route.** `custody/src/server.ts:474` requires none and custody
+   * **There is no key on this route.** `custody/src/server.ts` requires none and custody
    * dedupes nothing, so two presses are two ceremonies: two 24-hour clocks, two emails, and two
    * things the user has to cancel. With no server-side collapse to fall back on, the client-side
    * guard has to hold on its own, and a guard that depends on a re-render having happened does
-   * not. `lib/idempotency.ts:70-72` states the same rule for the same reason: "the key lives in a
+   * not. `lib/idempotency.ts` states the same rule for the same reason: "the key lives in a
    * ref, not in state: reading it must never depend on a render having happened, because the
    * submit handler reads it during the click that a re-render would race."
    *
@@ -494,7 +494,7 @@ function PanelNotice({ notice, onEnrol }: { notice: ErrorNotice; onEnrol: boolea
             Check your second factors
           </Link>
           . Enrolling one has no screen in Forge Hub yet — identity serves the routes
-          (`identity/src/server.ts:1156` onward) and nothing renders them.
+          (`identity/src/server.ts` onward) and nothing renders them.
         </>
       )}
       {notice.requestId && (

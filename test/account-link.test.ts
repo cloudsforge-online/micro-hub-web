@@ -4,7 +4,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * THE DEFECT THIS FILE EXISTS FOR — FOUND BY THE OWNER, USING THE PRODUCT
  *
- * `ui/packages/ui/src/index.tsx:827-844` rendered the entry as a `<button>` whose `onClick` was
+ * `ui/packages/ui/src/index.tsx` rendered the entry as a `<button>` whose `onClick` was
  * `onSignIn` — the SAME callback as the `Sign in` button that appears when nobody is signed in. So
  * a signed-in reader who opened the account menu and pressed `Account` was sent to the sign-in
  * page, which then bounced them back to where they started. There was no way to reach the account
@@ -110,7 +110,7 @@ describe('BJ-SIGNIN — the account menu leads somewhere', () => {
         )
 
         // ── AND IT POINTS AT THE PAGE THAT IS ACTUALLY SERVED ─────────────────────────────────
-        // `src/app.tsx:101-108` routes `settings` under the root of this bundle, and this bundle
+        // `src/app.tsx` routes `settings` under the root of this bundle, and this bundle
         // is what `hub.<apex>` serves. Resolved through the registry, so a change of apex or of
         // environment moves it and a hard-coded hostname cannot creep back in.
         assert.equal(

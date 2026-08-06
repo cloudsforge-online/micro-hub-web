@@ -48,8 +48,8 @@ import { hosts, APP_NAME } from './hosts.ts'
 /**
  * The kinds Lantern will store, and the ONLY strings its `kind` column accepts.
  *
- * This is not a convention — it is a CHECK constraint (`lantern/src/migrations.ts:222`, mirrored by
- * `RUM_KINDS` at `lantern/src/rum.ts:25`). A record carrying anything else is dropped at ingest
+ * This is not a convention — it is a CHECK constraint (`lantern/src/migrations.ts`, mirrored by
+ * `RUM_KINDS` at `lantern/src/rum.ts`). A record carrying anything else is dropped at ingest
  * with reason `unknown_kind`, and for months every record this file sent was dropped exactly so.
  */
 export type RumKind =
@@ -86,7 +86,7 @@ export interface ObsEvent {
 }
 
 /**
- * One record exactly as Lantern stores it — `lantern/src/rum.ts:34-44`, one field per column.
+ * One record exactly as Lantern stores it — `lantern/src/rum.ts`, one field per column.
  *
  * The fields a caller supplies that have NO column — `message`, `stack`, `context`, `release`,
  * `userAgent`, and the original `type` — live in `attributes`, which is the `jsonb` column that
@@ -276,7 +276,7 @@ export async function flush(useBeacon = false): Promise<void> {
   const batch = queue
   queue = []
   sends += 1
-  // `samples`, which is the key Lantern reads (`lantern/src/server.ts:480`). It answers a body
+  // `samples`, which is the key Lantern reads (`lantern/src/server.ts`). It answers a body
   // shaped `{"events":[…]}` with an explicit 400 naming this exact mistake, because that is the
   // envelope this file sent for months.
   const body = JSON.stringify({ samples: batch })

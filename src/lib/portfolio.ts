@@ -13,7 +13,7 @@
  *
  * hub-api already honours it: an unpriced holding arrives with `usd: null` and a `priceReason`,
  * and it is EXCLUDED from `totalUsd` rather than counted at nothing, with `pricingComplete: false`
- * to say so (`hub-api/src/portfolio.ts:139-148`).
+ * to say so (`hub-api/src/portfolio.ts`).
  *
  * ── Which leaves exactly one way for the client to break it ────────────────────────────────────
  *
@@ -114,7 +114,7 @@ export function holdingValue(holding: Holding): string | null {
  *      are already integers under 10,000 and lose nothing.
  *
  * Rows are returned in hub-api's order, which is largest first and already folded to "Other" past
- * eight (`portfolio.ts:270-296`). Re-sorting here would be a second opinion about an order that
+ * eight (`portfolio.ts`). Re-sorting here would be a second opinion about an order that
  * has one.
  */
 export function allocationData(view: PortfolioView): { label: string; value: number }[] {

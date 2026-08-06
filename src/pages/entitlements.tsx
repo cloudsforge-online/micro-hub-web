@@ -3,13 +3,13 @@
  *
  * Both lists are one tile of `/v1/dashboard` — hub-api fetches billing's entitlements and
  * subscriptions together and returns them under a single `entitlements` tile
- * (`hub-api/src/dashboard.ts:394-412`), because they are one question from a reader's point of
+ * (`hub-api/src/dashboard.ts`), because they are one question from a reader's point of
  * view and two statuses for one fact would be a panel that could contradict itself.
  *
  * ── `active` and `confersAccess` are billing's decisions, not this page's ──────────────────────
  *
  * Billing "serves `active` and `confersAccess` computed at an explicit instant, so this cache
- * holds a decision rather than a number" (upstreams.ts:127-135). Recomputing either here from
+ * holds a decision rather than a number" (upstreams.ts). Recomputing either here from
  * `expiresAt` and the browser's clock would produce a second answer, from a clock nobody
  * synchronised, that disagrees with the one the platform actually enforces. So the flags are
  * rendered and the dates are shown beside them as context, never as the source.

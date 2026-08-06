@@ -11,7 +11,7 @@
  *
  * ── `watchedAt` is rendered, and it is not decoration ──────────────────────────────────────────
  *
- * `wallet/src/deposits.ts:89-90`: "Null until the indexer has been told to watch it. An unwatched
+ * `wallet/src/deposits.ts`: "Null until the indexer has been told to watch it. An unwatched
  * address produces no events." A deposit to an unwatched address lands on chain and is never
  * credited. Showing the address without that state would be handing somebody a destination that
  * silently swallows a payment.
@@ -27,7 +27,7 @@
  * **The confirmation depth.** BJ-WAL-16 asks for "the confirmation depth shown matches the
  * chain's policy". Nothing publishes a depth policy: hub-api deliberately omits the denominator
  * from a confirmation count for exactly this reason — "41/0 is worse than 41 confirmations"
- * (`hub-api/src/nextactions.ts:146-148`) — and `micro-wallet` serves no route that states one. A
+ * (`hub-api/src/nextactions.ts`) — and `micro-wallet` serves no route that states one. A
  * number invented here would be the denominator hub-api refused to invent.
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -47,7 +47,7 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
   // screen that only offers what you already have cannot be used for the first deposit.
   //
   // The same broken test as Send carried the same defect here: `/^[A-Z]+$/` matches `SHARD`, so
-  // this menu offered a Shard deposit address and `wallet/src/deposits.ts:163-172` refuses it with
+  // this menu offered a Shard deposit address and `wallet/src/deposits.ts` refuses it with
   // `not_depositable` — "a Shard deposit address would be an address on no chain". Confirmed
   // against the running service, not against a stub.
   // ASKED, NOT DERIVED. The comment above is right and the code under it was not: building this

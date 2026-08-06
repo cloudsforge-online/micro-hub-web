@@ -41,12 +41,15 @@ const ESTATE = fileURLToPath(new URL('../..', import.meta.url))
  * `cloudsforge-online/micro-wallet` out INTO a directory called `wallet`.
  */
 const SIBLINGS = [
-  { dir: 'wallet', repo: 'micro-wallet', reads: 'src/addresses.ts' },
-  { dir: 'contracts', repo: 'micro-contracts', reads: 'packages/chain/src/index.ts' },
+  { dir: 'wallet', repo: 'micro-wallet', reads: 'wallet/src/addresses.ts' },
+  { dir: 'contracts', repo: 'micro-contracts', reads: 'contracts/packages/chain/src/index.ts' },
 ] as const
 
 function read(sibling: (typeof SIBLINGS)[number]): string {
-  const path = `${ESTATE}${sibling.dir}/${sibling.reads}`
+  // The path is written estate-relative rather than assembled from `dir` + a repository-relative
+  // tail, so that what appears here is a CITATION the citation sweep can resolve. A half-path is
+  // invisible to it, and an invisible citation is one nobody notices going stale.
+  const path = `${ESTATE}${sibling.reads}`
   if (!existsSync(path)) {
     throw new Error(
       `${path} is missing. Check ${sibling.repo} out as '${sibling.dir}' beside this repository — ` +

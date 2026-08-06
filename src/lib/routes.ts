@@ -48,7 +48,7 @@ export interface HubRoute {
  * They live here because nothing else in the estate could serve them. `signInRedirect()` sent
  * every product's signed-out visitor to `${accountUrl()}/login`, which resolved
  * `account.<apex>` — a hostname no repository serves and identity explicitly refuses to render
- * HTML for (`identity/src/server.ts` §3, `identity/src/server.test.ts:890`). docs/ecosystem/22
+ * HTML for (`identity/src/server.ts` §3, `identity/src/server.test.ts`). docs/ecosystem/22
  * §8.1 records it as the estate's largest blocker: 86 of 318 browser scenarios start by signing
  * in, and none of them could. `@cloudsforge/ui`'s `signin` registry row now resolves to
  * `<hub>/account`, and these are the pages at the other end of it.
@@ -112,7 +112,7 @@ export const ROUTES: readonly HubRoute[] = [
   { path: '', label: 'Overview', wildcard: false },
   { path: 'portfolio', label: 'Portfolio', wildcard: false },
   // Wildcard: hub-api's deposit and withdrawal cards deep-link to `/wallet/deposits/<id>` and
-  // `/wallet/withdrawals/<id>` (hub-api/src/nextactions.ts:160, 180).
+  // `/wallet/withdrawals/<id>` (hub-api/src/nextactions.ts, 180).
   { path: 'wallet', label: 'Wallet', wildcard: true },
   { path: 'activity', label: 'Activity', wildcard: false },
   { path: 'security', label: 'Security', wildcard: false },
@@ -124,7 +124,7 @@ export const ROUTES: readonly HubRoute[] = [
   // `account` carries two unrelated things, and both are addresses somebody else emits.
   //
   //   1. hub-api's "needs you" cards link into `/account/security` and
-  //      `/account/restrictions/<id>` (nextactions.ts:200, 214, 235). A card "carries a verb and a
+  //      `/account/restrictions/<id>` (nextactions.ts, 214, 235). A card "carries a verb and a
   //      destination", and a destination that 404s is a worry with no outlet.
   //   2. `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so every product in the
   //      estate sends its signed-out visitors to `/account/login` and `/account/logout`. Those are

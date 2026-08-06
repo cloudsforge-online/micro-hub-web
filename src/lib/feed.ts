@@ -13,7 +13,7 @@
  *      the cursor just spent, "load more" would fetch the same page until the tab died. It is
  *      treated as the end of the feed, which is the only reading of it that terminates.
  *   3. **A failed page must not erase the good ones.** hub-api answers 200 with
- *      `status: 'unavailable'` when activity is down (server.ts:377-387), and the records already
+ *      `status: 'unavailable'` when activity is down (server.ts), and the records already
  *      on screen are still true. Replacing them with the empty array that arrives alongside that
  *      status would delete a correct answer because a later request failed.
  *   4. **The end of the feed is `nextCursor === null`, not an empty page.** A page can legitimately

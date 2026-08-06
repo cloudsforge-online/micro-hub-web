@@ -8,12 +8,12 @@
  * searching for a transaction from last year will not find it, because the page this searched did
  * not reach that far back — so every group carries `truncated`, and the client shows 'showing
  * matches from your recent history' rather than 'no results', which is a different and false
- * claim" (`hub-api/src/search.ts:9-14`).
+ * claim" (`hub-api/src/search.ts`).
  *
  * Rendering `truncated` is therefore not a nicety. A search that answers "nothing" when it means
  * "nothing in the last hundred records" has told the reader their transaction does not exist.
  *
- * Reads `GET /v1/search?q=` — hub-api/src/server.ts:394-417.
+ * Reads `GET /v1/search?q=` — hub-api/src/server.ts.
  */
 import { useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'

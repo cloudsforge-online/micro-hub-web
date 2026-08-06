@@ -4,8 +4,8 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * **THE HEADER IS REQUIRED, AND A KEY IDENTIFIES AN INTENT — NOT A REQUEST.**
  *
- * `wallet/src/server.ts:649-652, 712, 738, 765` calls `requireIdempotencyKey` on every mutating
- * money route, and `wallet/src/idempotency.ts:65` refuses a request without one: *"without one a
+ * `wallet/src/server.ts, 712, 738, 765` calls `requireIdempotencyKey` on every mutating
+ * money route, and `wallet/src/idempotency.ts` refuses a request without one: *"without one a
  * retry moves money twice"*. The key must be 8 to 200 characters.
  *
  * So a key is minted ONCE, when the user forms the intent — the Send form is opened, the confirm
@@ -16,7 +16,7 @@
  * leaves the browser") and BJ-WAL-10 (the back button does not re-arm a second submit) true.
  *
  * The service answers 200 with `replayed: true` for a repeat under the same key and 201 for a
- * fresh one (`wallet/src/server.ts:674-676`), so a second click reads back the FIRST withdrawal
+ * fresh one (`wallet/src/server.ts`), so a second click reads back the FIRST withdrawal
  * rather than failing — which is why nothing here may translate `replayed` into an error.
  *
  * The same key with a genuinely DIFFERENT body is a distinct refusal, and it is a bug in this
@@ -27,7 +27,7 @@
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useRef, useState } from 'react'
 
-/** The header name, spelled once. `wallet/src/server.ts:946`. */
+/** The header name, spelled once. `wallet/src/server.ts`. */
 export const IDEMPOTENCY_HEADER = 'idempotency-key'
 
 /** wallet's own pattern, restated so a bad key is caught before it costs a round trip. */

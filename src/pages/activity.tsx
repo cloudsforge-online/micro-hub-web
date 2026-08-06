@@ -12,14 +12,14 @@
  * ── The cursor is opaque here too ──────────────────────────────────────────────────────────────
  *
  * It is activity's keyset position. hub-api passes it through byte-for-byte and does not parse it
- * (`hub-api/src/server.ts:348-357`); neither does this page. Nothing here inspects it, decodes it,
+ * (`hub-api/src/server.ts`); neither does this page. Nothing here inspects it, decodes it,
  * or reconstructs one — a second cursor format would have to be kept in step with the first for
  * ever, and it would be this bundle that fell behind.
  *
  * ── An unavailable page is not an empty feed ───────────────────────────────────────────────────
  *
  * `GET /v1/activity` answers 200 with `status: 'unavailable'` and `records: []` when the activity
- * service is down (server.ts:377-387). Rendering that array is how an outage reads as a quiet
+ * service is down (server.ts). Rendering that array is how an outage reads as a quiet
  * week. `appendPage` refuses to fold it in, and the note below the heading says which it was.
  */
 import { useCallback, useEffect, useState } from 'react'

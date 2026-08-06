@@ -111,7 +111,7 @@ export function DegradedBanner({ sentence }: { sentence: string | null }) {
  *
  * The alternative — omitting the region — is worse in the specific way hub-api's own
  * `notifications` tile documents: "a client given no tile at all shows nothing and nobody notices
- * the feature is missing" (dashboard.ts:588-589).
+ * the feature is missing" (dashboard.ts).
  */
 export function NotComposed({ title, children }: { title: string; children: ReactNode }) {
   return (

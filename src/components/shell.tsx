@@ -93,7 +93,7 @@ export function AppShell() {
  * again every time they want to look at it, and the back button — which is how people leave a
  * search — would take them out of the search instead of back into it.
  *
- * `maxLength` mirrors hub-api's own cap (server.ts:130, 403), so an over-long query is refused
+ * `maxLength` mirrors hub-api's own cap (server.ts, 403), so an over-long query is refused
  * where the reader can see it rather than by a 400 they cannot act on.
  */
 function SearchField() {
@@ -120,7 +120,7 @@ function SearchField() {
       onSubmit={(event) => {
         event.preventDefault()
         const trimmed = query.trim()
-        // hub-api answers 400 for an empty `q` (server.ts:400-402). Not sending it is better than
+        // hub-api answers 400 for an empty `q` (server.ts). Not sending it is better than
         // sending it and rendering the refusal.
         if (trimmed.length === 0) return
         navigate(`/search?q=${encodeURIComponent(trimmed)}`)

@@ -80,7 +80,7 @@ const signal = () => new AbortController().signal
 
 /* ──────────────────────────── the five hub-api routes ─────────────────────── */
 
-describe('GET /v1/dashboard — hub-api/src/server.ts:283-308', () => {
+describe('GET /v1/dashboard — hub-api/src/server.ts', () => {
   it('is a bare GET to the composed endpoint, with the bearer attached', async () => {
     stub.restore()
     stub = installFetch(() => body({ tiles: {}, degraded: [] }))
@@ -92,9 +92,9 @@ describe('GET /v1/dashboard — hub-api/src/server.ts:283-308', () => {
   })
 })
 
-describe('GET /v1/portfolio — hub-api/src/server.ts:310-343', () => {
+describe('GET /v1/portfolio — hub-api/src/server.ts', () => {
   it('reads the tile from under the `portfolio` key, not from the top level', async () => {
-    // server.ts:338 returns `{ portfolio: composePortfolioTile(...) }`. A client typed against the
+    // server.ts returns `{ portfolio: composePortfolioTile(...) }`. A client typed against the
     // tile at the top level would compile and then read `undefined.status` at runtime.
     stub.restore()
     stub = installFetch(() =>
@@ -107,9 +107,9 @@ describe('GET /v1/portfolio — hub-api/src/server.ts:310-343', () => {
   })
 })
 
-describe('GET /v1/activity — hub-api/src/server.ts:345-392', () => {
+describe('GET /v1/activity — hub-api/src/server.ts', () => {
   it('OMITS the cursor on the first page, which is the page hub-api caches', async () => {
-    // server.ts:362 and :369 decide cacheability with `searchParams.get('cursor') === null`.
+    // hub-api/src/server.ts decides cacheability with `searchParams.get('cursor') === null`.
     // Sending `cursor=` or `cursor=null` defeats the cache on every first load in the estate.
     await loadActivity(signal(), null)
     const url = new URL(only().url)
@@ -127,7 +127,7 @@ describe('GET /v1/activity — hub-api/src/server.ts:345-392', () => {
   })
 
   it('sends a limit inside hub-api’s accepted range', async () => {
-    // server.ts:570-580 rejects anything that is not a whole number in 1..100 with a 400.
+    // server.ts rejects anything that is not a whole number in 1..100 with a 400.
     assert.ok(Number.isInteger(ACTIVITY_PAGE_SIZE))
     assert.ok(ACTIVITY_PAGE_SIZE >= 1 && ACTIVITY_PAGE_SIZE <= 100)
     await loadActivity(signal(), null, 100)
@@ -135,7 +135,7 @@ describe('GET /v1/activity — hub-api/src/server.ts:345-392', () => {
   })
 
   it('parses the FLAT page shape, not a tile wrapper', async () => {
-    // server.ts:377-387 puts `records`/`nextCursor` beside `status`/`reason`/`cached`/`ageMs` at
+    // server.ts puts `records`/`nextCursor` beside `status`/`reason`/`cached`/`ageMs` at
     // the top level. This is the one hub-api response that is not a `Tile<T>`.
     stub.restore()
     stub = installFetch(() =>
@@ -149,7 +149,7 @@ describe('GET /v1/activity — hub-api/src/server.ts:345-392', () => {
   })
 })
 
-describe('GET /v1/next-actions — hub-api/src/server.ts:419-505', () => {
+describe('GET /v1/next-actions — hub-api/src/server.ts', () => {
   it('uses the hyphenated path', async () => {
     // `/v1/nextActions` and `/v1/next_actions` both look right and both 404.
     await loadNextActions(signal())
@@ -157,7 +157,7 @@ describe('GET /v1/next-actions — hub-api/src/server.ts:419-505', () => {
   })
 })
 
-describe('GET /v1/search — hub-api/src/server.ts:394-417', () => {
+describe('GET /v1/search — hub-api/src/server.ts', () => {
   it('sends the query as `q`', async () => {
     await search(signal(), 'ember1q')
     const url = new URL(only().url)
@@ -166,7 +166,7 @@ describe('GET /v1/search — hub-api/src/server.ts:394-417', () => {
   })
 
   it('agrees with hub-api’s own length cap', async () => {
-    // server.ts:130 and :403. The bar's input carries the same maxLength, so an over-long query is
+    // hub-api/src/server.ts caps `q` at 128. The bar's input carries the same maxLength, so an over-long query is
     // refused where the reader can see it rather than by a 400 they cannot act on.
     assert.equal(MAX_SEARCH_LENGTH, 128)
   })
@@ -196,7 +196,7 @@ describe('identity', () => {
   })
 
   it('signs out everywhere with a DELETE on the collection, not on a member', async () => {
-    // identity/src/server.ts:1082. The difference between this and the route above is one path
+    // identity/src/server.ts. The difference between this and the route above is one path
     // segment and every session the user has.
     stub.restore()
     stub = installFetch(() => body({ revoked: 3 }))
@@ -222,8 +222,8 @@ describe('the request surface', () => {
   it('touches ONLY paths hub-api and identity actually serve', async () => {
     // The guard against the `/v1/quotes` class of defect. Every path this bundle can produce is
     // exercised and compared with the two route tables, read off:
-    //   hub-api/src/server.ts:241, 251, 265, 285, 312, 347, 396, 421
-    //   identity/src/server.ts:1077, 1082, 1092, 1104
+    //   hub-api/src/server.ts, 251, 265, 285, 312, 347, 396, 421
+    //   identity/src/server.ts, 1082, 1092, 1104
     const HUB_ROUTES = new Set(['/v1/dashboard', '/v1/portfolio', '/v1/activity', '/v1/search', '/v1/next-actions'])
     const IDENTITY_ROUTES = new Set(['/sessions', '/mfa/factors', '/auth/me', '/auth/refresh', '/auth/exchange'])
 

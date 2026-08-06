@@ -45,7 +45,7 @@ describe('the envelope', () => {
 
   /**
    * These are the two defects that made every send a silent no-op. They are asserted against the
-   * literal key names because that is the contract — `lantern/src/rum.ts:99` reads `kind` and
+   * literal key names because that is the contract — `lantern/src/rum.ts` reads `kind` and
    * nothing else, and `fromWire` returns null for a record without one, which the sink then
    * reports as `202 {"stored":0}`.
    */
@@ -94,7 +94,7 @@ describe('the envelope', () => {
 
 describe('kindFor', () => {
   it('maps every classifier this bundle emits onto a kind the CHECK constraint accepts', () => {
-    // Mirrors `RUM_KINDS` in lantern/src/rum.ts:25 and the constraint at migrations.ts:222.
+    // Mirrors `RUM_KINDS` in lantern/src/rum.ts and the constraint at migrations.ts.
     const accepted = new Set([
       'page_load',
       'first_contentful_paint',
@@ -142,7 +142,7 @@ describe('the send', () => {
       assert.equal(fetch.calls.length, 1)
       const call = fetch.calls[0]
       assert.ok(call)
-      // The path Lantern serves (`lantern/src/server.ts:442`). `/ingest/browser` is served by
+      // The path Lantern serves (`lantern/src/server.ts`). `/ingest/browser` is served by
       // nothing and 404s without CORS headers, which the page cannot even read.
       assert.equal(new URL(call.url).pathname, '/ingest/client')
 
@@ -214,8 +214,11 @@ describe('the send', () => {
  * THE JOURNEY MOCK MUST INTERCEPT
  THE PATH THE BUNDLE ACTUALLY POSTS TO.
  *
- * `test/journeys/browser.ts` fulfils Lantern's ingest for every scenario so that none of them
- * fails on a connection it did not arrange. It intercepted `/ingest/browser` for exactly as long
+ * The journey harness — `web-template/test/journeys/browser.ts` is the template, and a repository
+ * that has one carries it under its own `test/` — fulfils Lantern's ingest for every scenario so
+ * that none of them fails on a connection it did not arrange. THIS repository has no such harness,
+ * which is why the check below skips rather than passes. Where there is one, it intercepted
+ * `/ingest/browser` for exactly as long
  * as the bundle posted there — and when the bundle moved, the intercept went on matching NOTHING
  * while still reading as coverage. That is this estate's signature defect in miniature: a check
  * that cannot fail. Nothing went red when the two drifted apart, because a mock that matches no

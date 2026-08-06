@@ -214,13 +214,13 @@ export function confirmationLabel(done: number, total: number | null): string {
  * ── Why this is derived and not looked up ──────────────────────────────────────────────────────
  *
  * `micro-wallet` takes an amount in SMALLEST UNITS and nothing else — "amount must be a
- * non-negative integer in smallest units, as a string" (`wallet/src/server.ts:1014-1020`). A
+ * non-negative integer in smallest units, as a string" (`wallet/src/server.ts`). A
  * person types `0.5`. Something has to know that EMBER has eighteen decimals and XRP has six.
  *
  * That table is `@cloudsforge/contracts-chain`, and this bundle cannot have it: adding the
  * dependency means a second sibling checkout in the Docker build and in CI, and this app's CI is
  * not something this change may touch. hub-api knows the answer internally
- * (`hub-api/src/portfolio.ts:256-258`) and publishes it in no response. Writing the table out
+ * (`hub-api/src/portfolio.ts`) and publishes it in no response. Writing the table out
  * here would be a second, unversioned copy of a contract — the exact defect class that has cost
  * this estate three wrong dev ports and a client for a route nobody serves.
  *
@@ -232,7 +232,7 @@ export function confirmationLabel(done: number, total: number | null): string {
  *
  *   - a zero balance, where every scale reproduces `0`. Ambiguous, and unsendable anyway.
  *   - a `TOKEN:` asset, whose `amountFormatted` is null because nothing in the fan-out knows its
- *     decimals either (`hub-api/src/portfolio.ts:43`).
+ *     decimals either (`hub-api/src/portfolio.ts`).
  *
  * A null answer is not a dead end: the form falls back to asking for smallest units, which is
  * what the API takes and is never wrong. It is worse to read and impossible to misinterpret.

@@ -27,7 +27,7 @@
  *
  * Both have already been shipped in this estate and both went green against broken code.
  *
- * 1. **A URL compared with a copy of itself.** `ui/packages/ui/src/index.tsx:219-223`: the test
+ * 1. **A URL compared with a copy of itself.** `ui/packages/ui/src/index.tsx`: the test
  *    guarding the SSO callback asserted `fetched.url === '…/auth/exchange'`, reading the URL out
  *    of the implementation and comparing it to itself, "so it passed for any value" — while
  *    identity had never served that route. Nothing below reads an address off the code under test.
@@ -76,7 +76,7 @@ const at = (p: string) => fileURLToPath(new URL(`../${p}`, import.meta.url))
 /**
  * The three routes `micro-identity` serves for a credential exchange, written out as LITERALS.
  *
- * Transcribed from `src/lib/identity.ts:12-17`, which carries the `identity/src/server.ts` line
+ * Transcribed from `src/lib/identity.ts`, which carries the `identity/src/server.ts` line
  * each was verified against. They are literals rather than an import so that this file and the
  * implementation have one string to disagree about instead of zero — see the header, hazard 1.
  * `IDENTITY_AUTH_ROUTES` from the design system is cross-checked against them in BJ-SIGNIN-02,
@@ -104,7 +104,7 @@ const page = (element: ReactElement, path: string): ReactElement =>
  */
 const fresh = (): void => __resetAuth()
 
-/** The two shared token keys, for a scenario that starts signed in. `lib/api.ts:27-28`. */
+/** The two shared token keys, for a scenario that starts signed in. `lib/api.ts`. */
 const SIGNED_IN = { 'cf.accessToken': 'held-access-token', 'cf.refreshToken': 'held-refresh-token' }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -231,7 +231,7 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
       // every effect TWICE in development, and `main.tsx` renders the app inside <StrictMode>. A
       // scenario mounted without it cannot tell a ref-guarded effect from an unguarded one — the
       // effect runs once either way — and a mutation removing the guard survived until this was
-      // added. It is `pages/account.tsx:216-218`'s own stated reason, exercised.
+      // added. It is `pages/account.tsx`'s own stated reason, exercised.
       h(StrictMode, null, page(h(SignInPage), `/account/login?return=${encodeURIComponent(elsewhere)}`)),
       {
         url: `${ORIGIN}/account/login`,
@@ -248,14 +248,14 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
 
         // NO SECOND CREDENTIAL PROMPT. Asserted as the absence of the controls, which is a
         // presentation fact about this page and not a security claim: doc 22 §3 and
-        // `src/app.tsx:10-17` both record that hiding is never the boundary.
+        // `src/app.tsx` both record that hiding is never the boundary.
         assert.equal(s.queryByRole('button', 'Sign in'), null, 'a held session was asked for a password')
         assert.equal(s.queryByRole('textbox', 'Email or handle'), null, 'the identifier field was offered')
         assert.match(s.text(), /Signing you in|Taking you back/i, 'the hand-off was not announced')
 
         // Exactly one code. The effect is guarded by a ref rather than by a dependency list
         // precisely because StrictMode mounts every effect twice and a second run would spend a
-        // second hand-off code (`pages/account.tsx:216-218`).
+        // second hand-off code (`pages/account.tsx`).
         assert.equal(minted, 1, `the hand-off code was minted ${minted} times, not once`)
 
         // The code travels in the FRAGMENT of the return address, never in the query string.
@@ -350,7 +350,7 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
           'the sign-in surface called an address that is not in identity’s route table',
         )
         // Every one of them went to nimbus and not to this app's own origin: identity is
-        // cross-origin from every surface, always (`lib/api.ts:15`).
+        // cross-origin from every surface, always (`lib/api.ts`).
         for (const call of s.api.wire) {
           assert.notEqual(call.origin, ORIGIN, `${call.path} was posted same-origin, to hub-api`)
           assert.match(call.origin, /^https:\/\/nimbus\./, `${call.path} did not go to identity`)
@@ -734,7 +734,8 @@ describe('BJ-SIGNIN — proving the address', () => {
 })
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
-   The password reset. identity serves both halves (`identity/src/server.ts:1260` and `:1288`) and
+   The password reset. identity serves both halves — `POST /auth/password/forgot` and
+   `POST /auth/password/reset`, both in `identity/src/server.ts` — and
    the mail could not be sent at all until this bundle served a page at `/account/reset`, because
    notify refuses to send a message whose link cannot be built.
 
@@ -1217,9 +1218,9 @@ describe('BJ-WAL — Send', () => {
 
         // ── AND THE KEY, WHICH IS A SEPARATE CONTRACT ─────────────────────────────────────────
         //
-        // One intent, one key, and `wallet/src/server.ts:674-676` collapses duplicates on the
+        // One intent, one key, and `wallet/src/server.ts` collapses duplicates on the
         // strength of it. That is what makes a genuine RETRY safe, and it is orthogonal to the
-        // count: a key minted per fetch — the defect `lib/idempotency.ts:12-16` exists to prevent
+        // count: a key minted per fetch — the defect `lib/idempotency.ts` exists to prevent
         // — makes two requests two withdrawals no matter how well the button guards itself. It is
         // asserted separately so that a regression in either is legible on its own.
         const keys = new Set(posted.map((p) => p.headers['idempotency-key']))
@@ -1246,7 +1247,7 @@ describe('BJ-WAL — Send', () => {
       page(sendPanel(), '/wallet'),
       {
         url: `${ORIGIN}/wallet`,
-        // `wallet/src/server.ts:674-676` answers 200 with the FIRST withdrawal for a repeat of one
+        // `wallet/src/server.ts` answers 200 with the FIRST withdrawal for a repeat of one
         // key. A client that rendered that as a failure would invite the user to send a second.
         routes: { 'POST /v1/withdrawals': { status: 200, body: { withdrawal: fx.withdrawal(), replayed: true } } },
       },
@@ -1377,7 +1378,7 @@ describe('BJ-WAL-07 — an empty strip may be correct rather than broken', () =>
     const reason = 'the wallet service did not answer'
     const { element, options } = walletPageAt({
       // Did not answer. Its `data` is still the empty value, which is the trap: `[]` drawn without
-      // its status reads as "you have no wallets" (`lib/tile.ts:22-28`).
+      // its status reads as "you have no wallets" (`lib/tile.ts`).
       wallets: fx.unavailable([], 'wallet', reason),
       // Answered, with nothing.
       deposits: fx.ok([], 'wallet'),
@@ -1629,7 +1630,7 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
      * began failing on correct code, in CI and everywhere else, for a reason that had nothing to
      * do with the product.
      *
-     * `keyexport.tsx:347` computes `holdOver` against `Date.now()`, and once the hold HAS passed
+     * `keyexport.tsx` computes `holdOver` against `Date.now()`, and once the hold HAS passed
      * the panel deliberately renders "The 24-hour hold has passed" INSTEAD of the date. So a fixed
      * future instant is a fuse: this scenario asserts the date is on screen, and the date is only
      * on screen while the hold is pending.
@@ -1827,7 +1828,7 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
         s.clickNoFlush(start)
         await s.settle(50)
 
-        // Unlike Send, this route carries NO idempotency key — `custody/src/server.ts:474` does not
+        // Unlike Send, this route carries NO idempotency key — `custody/src/server.ts` does not
         // require one — so the count is the only guard there is, and it is worth asserting even
         // though the harness's scheduling is stricter than a browser's here rather than looser:
         // two dispatches inside one act() is the worst case, not the typical one.
@@ -1904,7 +1905,7 @@ describe('BJ-WAL-18..20 / BJ-ADV-21 — the key export ceremony', () => {
       async (s) => {
         await s.click(s.byRole('button', /second factor/i))
 
-        // The re-authentication path, in words. `lib/api.ts:362-367` is where the sentence is set.
+        // The re-authentication path, in words. `lib/api.ts` is where the sentence is set.
         assert.match(s.text(), /session expired|sign in again/i, 're-authentication is not offered in words')
         // And nothing that looks like a key is on the page — a failed challenge yields no token.
         assert.ok(!/KEYMATERIAL/.test(s.text()), 'key material is on the page after a failed challenge')
@@ -1965,7 +1966,7 @@ describe('BJ-ADV-20 — Send, the six hazards', () => {
           new Set(keys).size,
           1,
           `three retries of one intent sent ${new Set(keys).size} keys: ${[...new Set(keys)].join(', ')}. ` +
-            `A key minted per fetch means a retry moves money twice — wallet/src/idempotency.ts:65.`,
+            `A key minted per fetch means a retry moves money twice — wallet/src/idempotency.ts.`,
         )
         assert.match(keys[0] ?? '', /^withdraw:/, 'the key does not name the intent it is for')
 
@@ -2334,7 +2335,7 @@ describe('the catalogue and this file agree', () => {
    * The guards below grep for the shapes a scenario must not have — `allowEmpty`, an
    * address-format rule — and every one of those patterns necessarily appears in the guard that
    * forbids it. Scanning the whole file makes each of them fail on a correct file, which is the
-   * trap `admin-web/test/render.test.ts:26-34` already records ("a guard that fires on its own
+   * trap `admin-web/test/render.test.ts` already records ("a guard that fires on its own
    * explanation trains people to delete the explanation"). The split is by the marker below, so a
    * scenario written after the meta-tests would be outside the scanned region — which is why the
    * marker's uniqueness is itself asserted.

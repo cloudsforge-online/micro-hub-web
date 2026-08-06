@@ -10,7 +10,7 @@
  * (`ui/packages/ui/src/index.tsx`). That resolved `account.<apex>` — a hostname **no repository in
  * the estate serves**. `micro-identity` binds the port behind it and renders no HTML at all: its
  * own header forbids it ("NO PRODUCT FEATURE LIVES HERE… no portal") and
- * `identity/src/server.test.ts:890` asserts that `/`, `/portal` and `/dashboard` 404. There is no
+ * `identity/src/server.test.ts` asserts that `/`, `/portal` and `/dashboard` 404. There is no
  * `account-web` among the 58 repositories. So the platform had no way in from a browser at all —
  * docs/ecosystem/22 §8.1, the largest blocker in the catalogue, blocking 86 of 318 scenarios.
  *
@@ -25,7 +25,7 @@
  *
  * No password policy, no handle rules, no "is that an email", no attempt counter, no decision
  * about who may sign in. identity holds all of it and answers with a `fields` array naming what it
- * refused (`identity/src/server.ts:434-445`); this page renders those sentences beside those
+ * refused (`identity/src/server.ts`); this page renders those sentences beside those
  * inputs and keeps everything else the user typed. 14 §11 is explicit about why a client must not
  * hold the rule, and doc 22 §3.1 forbids a browser scenario from asserting one.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -70,7 +70,7 @@ function refusalFrom(err: unknown): Refusal {
      * This was `new Map(err.fields.map(…))`, and a Map built from pairs keeps the LAST entry for a
      * repeated key. identity sends one entry PER FAILING RULE under ONE field name: `checkPassword`
      * pushes up to five, every one of them `field: 'newPassword'`
-     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts:1148-1185` — too short, too
+     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts` — too short, too
      * long, one character repeated, contains the handle, contains the email local part).
      *
      * So the old shape showed the reader the last rule they broke and silently dropped the rest.
@@ -528,7 +528,7 @@ export function RegisterPage() {
      * ── AND WHY THERE IS STILL NO STRENGTH RULE HERE ─────────────────────────────────────────
      *
      * The policy is `checkPassword` in `@cloudsforge/contracts-auth`
-     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts:1148-1185`): at least
+     * (`identity/node_modules/@cloudsforge/contracts-auth/src/index.ts`): at least
      * `PASSWORD_MIN_LENGTH` = 8 code points, at most 128, not one character repeated, and not
      * containing the handle or the email local part. The last two are CONTEXTUAL — they depend on
      * the other two fields and on `normaliseEmail` — so a copy here would be a second
@@ -750,7 +750,7 @@ export function RegisterPage() {
  * shares. Three defences, and they cover different things:
  *
  *   1. **A fragment is not sent to a server.** It is not in the request line, so the token reaches
- *      no access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts:89-96`
+ *      no access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts`
  *      records what the alternative cost: Nimbus used `?token=`, its own request log wrote the live
  *      credential to stdout on the request that spent it, and Lantern lifted it into an indexed
  *      column and every backup.
@@ -873,7 +873,7 @@ export function VerifyEmailPage() {
  * `POST /auth/password/forgot` was written to have none of.
  *
  * It deliberately restates NO POLICY FIGURE. identity's own sentence carries "30 minutes" and
- * "works once" (`identity/src/passwordReset.ts:252`); a second copy of those numbers here is a copy
+ * "works once" (`identity/src/passwordReset.ts`); a second copy of those numbers here is a copy
  * that goes stale the day the expiry changes, and it would be showing a reader a lifetime nothing
  * had promised them.
  */
@@ -886,7 +886,7 @@ const RESET_REQUEST_RECORDED = 'If that account exists, a reset is on its way.'
  * ── THIS FORM HAS ONE OUTCOME, AND IT IS THE SAME ONE EVERY TIME ──────────────────────────────
  *
  * `POST /auth/password/forgot` answers 202 with one fixed body for a known address, an unknown one
- * and a string that is not an address at all (`identity/src/server.ts:1260-1285`). identity pays
+ * and a string that is not an address at all (`identity/src/server.ts`). identity pays
  * real money for that: the delivery runs in `after`, once the response is on the wire, because
  * awaiting it made the response TIME say what the status and the body were so carefully written not
  * to — 10ms for an unknown address against 6015ms for a known one, measured.
@@ -904,7 +904,7 @@ const RESET_REQUEST_RECORDED = 'If that account exists, a reset is on its way.'
  *
  * ── THE ONE BRANCH, AND WHY IT CANNOT BE AN ORACLE ────────────────────────────────────────────
  *
- * `ApiError.status === 0` is `lib/api.ts:353`: `fetch` itself threw, so the request reached no
+ * `ApiError.status === 0` is `lib/api.ts`: `fetch` itself threw, so the request reached no
  * server at all. Nothing that never arrived can depend on the address in it, so reporting it leaks
  * nothing — and the alternative is worse than a leak: telling a reader with no connection to go and
  * check their email is a claim about an action that did not happen, and they would wait for a mail
@@ -923,7 +923,7 @@ function ForgotPasswordForm({ signInHref }: { signInHref: string }) {
   /**
    * `POST /auth/password/forgot` carries no idempotency key and costs an email.
    *
-   * identity rate-limits it at 5 (`identity/src/server.ts:448`) precisely because "it costs an
+   * identity rate-limits it at 5 (`identity/src/server.ts`) precisely because "it costs an
    * email, and an uncapped one is a mailbox somebody else has to read". Two same-tick presses of
    * one button spend two of a reader's five on one intention — and `disabled={busy}` cannot stop
    * them, because the attribute is not on the node until the render commits and the second event
@@ -1043,7 +1043,7 @@ export function ForgotPasswordPage() {
  * defences are the same three —
  *
  *   1. **A fragment is not sent to a server.** It is not in the request line, so it reaches no
- *      access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts:99-116` is the
+ *      access log, no reverse proxy and no `Referer`. `identity/src/passwordReset.ts` is the
  *      incident: Nimbus used `?token=`, its own request log wrote the live credential to stdout on
  *      the request that spent it, and Lantern lifted it into an indexed column and every backup.
  *   2. **A mail scanner's pre-fetch consumes nothing.** Corporate mail security opens every link in
@@ -1138,7 +1138,7 @@ export function ResetPasswordPage() {
    * One reset per press.
    *
    * `POST /auth/password/reset` carries no idempotency key and identity marks the token used before
-   * it validates the password (`identity/src/server.ts:1294-1303`). Two same-tick submits therefore
+   * it validates the password (`identity/src/server.ts`). Two same-tick submits therefore
    * present the same token twice: the first spends it, the second is answered 401, and the refusal
    * resolves LAST — so a reader whose password was in fact changed is shown "that reset link is
    * invalid or has expired" and goes off to ask for another link they do not need.
@@ -1171,7 +1171,7 @@ export function ResetPasswordPage() {
         token.current = null
         /*
          * IDENTITY HAS JUST REVOKED EVERY REFRESH FAMILY ON THIS ACCOUNT (SD-04,
-         * `identity/src/server.ts:1310`) — including this browser's, if it happened to hold one.
+         * `identity/src/server.ts`) — including this browser's, if it happened to hold one.
          * Clearing them here is not tidiness: leaving them makes the rest of this bundle believe it
          * has a session, render a dashboard against it, and collect a 401 per panel before the
          * refresh fails and signs the reader out. The tokens are already dead; the only question is
@@ -1198,9 +1198,9 @@ export function ResetPasswordPage() {
          * mailed link.
          *
          * A 400 is the password policy, and its sentences arrive in `fields` under `newPassword`
-         * (`identity/src/server.ts:1305`), which is what `error=` reads below. NOTE, for whoever
+         * (`identity/src/server.ts`), which is what `error=` reads below. NOTE, for whoever
          * reads this next: identity marks the token used BEFORE it checks the password
-         * (`identity/src/server.ts:1294-1303`), so the retry this screen invites is answered 401 by
+         * (`identity/src/server.ts`), so the retry this screen invites is answered 401 by
          * a service that has already consumed the link. That is identity's ordering to fix and not
          * this page's to hide — showing the reader the rules they broke is still strictly better
          * than swallowing them, and inventing a "your link is probably gone too" sentence would be

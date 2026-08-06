@@ -5,7 +5,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * WHY THIS FILE EXISTS ALONGSIDE `browser-stubs.ts`, WHICH SAYS THE OPPOSITE
  *
- * `test/browser-stubs.ts:3-8` states the estate's position: "There is no DOM in this suite on
+ * `test/browser-stubs.ts` states the estate's position: "There is no DOM in this suite on
  * purpose: jsdom is a second browser implementation to keep current, it disagrees with real ones
  * in exactly the places that matter, and a test that renders a component in it proves the
  * component renders in jsdom."
@@ -53,7 +53,7 @@
  *
  * ── The failure this harness is built to make impossible ──────────────────────────────────────
  *
- * `stack/infra/beacon/src/journeys/web.js:43-52` records it: "domcontentloaded fires before a SPA
+ * `stack/infra/beacon/src/journeys/web.js` records it: "domcontentloaded fires before a SPA
  * has mounted anything ... A networkidle wait is not enough either — a bundle that 404s leaves the
  * network perfectly idle." Its answer was to assert the rendered body was longer than forty
  * characters and to collect console errors and failed requests.
@@ -176,7 +176,7 @@ export interface MountOptions {
    * `pages/account.tsx` SignOutPage renders thirty-four: "Signing you out" and "Ending your
    * session", and nothing else — it is a spinner and a live region, and by the time it has
    * anything more to say the browser has left. The forty-character rule is a heuristic from
-   * `stack/infra/beacon/src/journeys/web.js:48-52` for "a bundle that 404'd", and a heuristic that
+   * `stack/infra/beacon/src/journeys/web.js` for "a bundle that 404'd", and a heuristic that
    * fails on correct code is one somebody deletes.
    *
    * So it is replaced rather than lowered, and replaced by something STRICTER: a blank page has no
@@ -190,7 +190,7 @@ export interface MountOptions {
   /**
    * What `window.confirm` answers.
    *
-   * `components/receive.tsx:162-169` guards the rotate button with one, deliberately: minting a
+   * `components/receive.tsx` guards the rotate button with one, deliberately: minting a
    * second deposit address is an explicit ask. happy-dom does not implement `confirm`, and a
    * scenario that could not answer it could not press the button at all.
    */
@@ -198,7 +198,7 @@ export interface MountOptions {
   /** Extra properties on `window`, for the things a page reads off it that no API returns. */
   windowExtras?: Record<string, unknown>
   /**
-   * Mount inside `<StrictMode>`, the way `src/main.tsx:33` actually mounts this app.
+   * Mount inside `<StrictMode>`, the way `src/main.tsx` actually mounts this app.
    *
    * Default `false`, because most scenarios do not care and StrictMode doubles every render. It
    * matters for one class: a guard held in a `useRef` is CREATED TWICE on a StrictMode mount, so a
@@ -224,7 +224,7 @@ export interface Screen {
    * ── WHY THIS IS RECORDED RATHER THAN FOLLOWED ────────────────────────────────────────────────
    *
    * A completed sign-in is a FULL navigation in both of its cases —
-   * `pages/account.tsx:160-165` explains why it must be — so "where did the browser end up" is
+   * `pages/account.tsx` explains why it must be — so "where did the browser end up" is
    * this array and nothing else. It is the assertion BJ-ACC-03 and BJ-ACC-04 turn on.
    *
    * It is captured rather than executed because the point of the scenario is the URL, and a
@@ -276,7 +276,7 @@ export interface Screen {
   /**
    * Everything in `localStorage` and `sessionStorage`, as one string.
    *
-   * For the one claim `components/keyexport.tsx:30-35` makes that is a claim about storage: "the
+   * For the one claim `components/keyexport.tsx` makes that is a claim about storage: "the
    * reveal token and the material never touch storage". A search of the rendered page cannot prove
    * it — the material is rendered, on purpose, once — so the assertion has to be made here.
    */
@@ -311,7 +311,7 @@ const squeeze = (s: string): string => s.replace(/\s+/g, ' ').trim()
  * element's own text, then `title`.
  *
  * The `<label>` step is not in `market-web`'s copy and is needed here: every control on the wallet
- * and sign-in forms is labelled with `<label for>` (`pages/account.tsx:117-122`), and without it
+ * and sign-in forms is labelled with `<label for>` (`pages/account.tsx`), and without it
  * an `<input>` has no accessible name at all — so `byRole('textbox', 'Destination address')` would
  * find nothing and the scenario would be addressing controls by index, which is the DOM-path
  * addressing doc 22 §2.4.3 forbids.
@@ -439,8 +439,8 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
 
   /* -- navigation capture -------------------------------------------------------------------- */
 
-  // `location.assign` is the only way this bundle leaves a page (`pages/account.tsx:162-163`,
-  // `lib/api.ts:456`). Recorded rather than followed; see the note on `Screen.navigations`.
+  // `location.assign` is the only way this bundle leaves a page (`pages/account.tsx`,
+  // `lib/api.ts`). Recorded rather than followed; see the note on `Screen.navigations`.
   const navigations: string[] = []
   const location = win.location as unknown as { assign(url: string): void; replace(url: string): void }
   Object.defineProperty(location, 'assign', {
@@ -565,7 +565,7 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
      * `new Response('', { status: 204 })` throws `TypeError: Response constructor: Invalid
      * response status code 204` — the Fetch standard forbids a body on 204, 205 and 304, and an
      * empty string is a body. The throw happened INSIDE the stubbed `fetch`, so it arrived at
-     * `lib/api.ts:342` as a request that never landed and every scenario stubbing a 204 was
+     * `lib/api.ts` as a request that never landed and every scenario stubbing a 204 was
      * silently testing a network outage instead: the page under test rendered "Cannot reach the
      * server", which is a perfectly plausible screen and passes any assertion loose enough.
      *
@@ -775,7 +775,7 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
         noise,
         [],
         `${context} produced console errors, which the legacy harness treated as a failure ` +
-          `(stack/infra/beacon/src/journeys/web.js:53): ${noise.join(' | ')}`,
+          `(stack/infra/beacon/src/journeys/web.js): ${noise.join(' | ')}`,
       )
     },
     async unmount() {
@@ -804,7 +804,7 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
 /**
  * The assertion that makes every scenario worth running.
  *
- * Forty characters, from `stack/infra/beacon/src/journeys/web.js:48-52`, and for the reason given
+ * Forty characters, from `stack/infra/beacon/src/journeys/web.js`, and for the reason given
  * there: a bundle that fails to mount produces an empty body and a perfectly idle network, so a
  * smoke test that waits for the network and then asserts nothing goes green against a blank page.
  */

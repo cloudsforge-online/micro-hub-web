@@ -43,7 +43,7 @@ export const ok = <T,>(data: T, upstream = 'wallet'): Tile<T> => ({
  * A tile that did not answer.
  *
  * `data` still holds the tile's EMPTY value, which is the whole point of hub-api's design and the
- * trap it exists to spring: `src/lib/tile.ts:22-28` — "an `unavailable` wallets tile carries `[]`,
+ * trap it exists to spring: `src/lib/tile.ts` — "an `unavailable` wallets tile carries `[]`,
  * and `[]` drawn without its status reads as 'you have no wallets' — a confident, wrong statement
  * about somebody's money". A fixture that omitted `data` would make that untestable.
  */
@@ -82,7 +82,7 @@ export const MIXED_CASE_ADDRESS = '0xB0b0000000000000000000000000000000CaFe11'
 /**
  * One holding, EMBER, eighteen decimals.
  *
- * `amount` and `amountFormatted` are a matched pair on purpose: `src/lib/format.ts:240-252`
+ * `amount` and `amountFormatted` are a matched pair on purpose: `src/lib/format.ts`
  * RECOVERS the asset's scale by finding the unique `d` for which `parse(amountFormatted, d)`
  * reproduces `amount`. A fixture whose two halves disagreed would make `scaleOf` answer null and
  * silently put every Send scenario onto the smallest-units path — which is a different screen.
@@ -166,7 +166,7 @@ export const withdrawalRecord = (over: Partial<WithdrawalRecord> = {}): Withdraw
   ...over,
 })
 
-/** What `POST /v1/withdrawals` answers. `wallet/src/withdrawals.ts:114-133`. */
+/** What `POST /v1/withdrawals` answers. `wallet/src/withdrawals.ts`. */
 export const withdrawal = (over: Partial<Withdrawal> = {}): Withdrawal => ({
   id: 'wd-0000-0000-0000-000000000009',
   chain: 'hearth',
@@ -264,7 +264,7 @@ export function dashboard(over: Partial<DashboardTiles> = {}): Dashboard {
  *
  * `holdings` and `wallets` are supplied together because the Send form reads both — the holding
  * for what can be sent and its scale, the wallet list for whether a destination is one of this
- * account's own (`components/send.tsx:74, 90`).
+ * account's own (`components/send.tsx, 90`).
  */
 export const sendableDashboard = (over: Partial<DashboardTiles> = {}): Dashboard =>
   dashboard({
@@ -275,7 +275,7 @@ export const sendableDashboard = (over: Partial<DashboardTiles> = {}): Dashboard
 
 /* ══════════════════════════════ identity ══════════════════════════════ */
 
-/** `identity/src/server.ts:810-819` — what a completed sign-in answers. */
+/** `identity/src/server.ts` — what a completed sign-in answers. */
 export const session = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   accessToken: 'access-token-from-identity',
   refreshToken: 'refresh-token-from-identity',
@@ -284,7 +284,7 @@ export const session = (over: Record<string, unknown> = {}): Record<string, unkn
   ...over,
 })
 
-/** `identity/src/server.ts:789-798` — a password accepted and nothing else established. */
+/** `identity/src/server.ts` — a password accepted and nothing else established. */
 export const mfaRequired = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   mfaRequired: true,
   challenge: 'challenge-abc123',
@@ -293,8 +293,8 @@ export const mfaRequired = (over: Record<string, unknown> = {}): Record<string, 
 })
 
 /**
- * The estate's error envelope. `hub-api/src/server.ts:589-591`, `identity/src/server.ts:1431-1433`
- * and `service-template/src/server.ts:342` are the same three lines.
+ * The estate's error envelope. `hub-api/src/server.ts`, `identity/src/server.ts`
+ * and `service-template/src/server.ts` are the same three lines.
  */
 export const errorBody = (
   code: string,

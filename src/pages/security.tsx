@@ -5,7 +5,7 @@
  *
  * The security state, the alerts and the account restrictions are three tiles of `/v1/dashboard`.
  * The SESSION LIST is not composed by hub-api at all — identity serves it at `GET /sessions`
- * (identity/src/server.ts:1077-1080) behind `authenticateUser`, which refuses a service token, so
+ * (identity/src/server.ts) behind `authenticateUser`, which refuses a service token, so
  * there is no credential hub-api could hold that would reach it. This page therefore reads both,
  * concurrently, through `settleBoth`: identity being unwell costs the session list and nothing
  * else. See lib/settled.ts for why `Promise.all` would have been the wrong call.

@@ -85,7 +85,7 @@ export const hasSession = (): boolean => Boolean(getAccessToken() && getRefreshT
 /**
  * One field the server refused, in the shape identity sends it.
  *
- * `identity/src/server.ts:434-445` puts a `fields` array of `{ field, code, message }` inside the
+ * `identity/src/server.ts` puts a `fields` array of `{ field, code, message }` inside the
  * error envelope for every validation failure. Nothing in this app decides what is valid — the
  * rules live in `@cloudsforge/contracts-auth` and are enforced server-side — so a form's job is to
  * put the server's sentence next to the server's field and keep everything else the user typed.
@@ -133,8 +133,8 @@ export class ApiError extends Error {
  *
  *     { "error": { "code": "forbidden", "message": "…", "requestId": "cf-1a2b" } }
  *
- * — `hub-api/src/server.ts:589-591`, `identity/src/server.ts:1431-1433` and
- * `service-template/src/server.ts:342` are the same three lines, and every other service is
+ * — `hub-api/src/server.ts`, `identity/src/server.ts` and
+ * `service-template/src/server.ts` are the same three lines, and every other service is
  * generated from that template. The version of this function carried over from the web template
  * read `data.error` as a STRING. Against a real service `data.error` is an object, so
  * `message = data.error` assigned an object to a string field and every server-side failure in
@@ -296,7 +296,7 @@ export interface RequestOptions {
    * Extra request headers.
    *
    * Exists for exactly one thing: `Idempotency-Key`, which `micro-wallet` REQUIRES on every
-   * money-moving route (`wallet/src/idempotency.ts:65` — "without one a retry moves money
+   * money-moving route (`wallet/src/idempotency.ts` — "without one a retry moves money
    * twice"). It is merged under the three this function sets rather than over them, so nothing
    * passed here can replace the bearer token or the content type.
    */
