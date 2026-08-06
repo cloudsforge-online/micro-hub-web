@@ -30,6 +30,34 @@ export interface HubRoute {
   readonly label: string | null
   /** True when the route owns everything beneath it (`/wallet/deposits/<id>`). */
   readonly wildcard: boolean
+  /**
+   * Whether a crawler should be INVITED to this address — the sitemap, and `<meta name="robots">`.
+   *
+   * "Index" here means a SEARCH index. It has nothing to do with `NON_INDEX_PATHS` at the foot of
+   * this file, which means "not the router's index route"; the two words collide and only one of
+   * them is about crawlers.
+   *
+   * Being SERVED and being ADVERTISED are different questions, and this is the second one. Every
+   * route below is served — a wrong address must answer 404 rather than 200, which is what
+   * `nginx.conf` enumerates them for — and all but one of them is behind `<ProtectedRoute>`, so
+   * what a crawler would actually get is a redirect to a sign-in form. A sitemap entry for that is
+   * a dead link the site handed over about itself, and a crawler that is given dead links by an
+   * index discounts the ones that work.
+   *
+   * SO EXACTLY ONE ADDRESS ON THIS SURFACE IS TRUE: `/`. It is the front door — the address the
+   * estate's own sitemap already advertises (`hub` is in `SITEMAP_SURFACES`,
+   * `ui/packages/ui/src/sitemap.ts:47-49`) and the one `robotsDirective()` derives `index, follow`
+   * for from a registry row carrying `servesUi: true` and no `adminOnly`. What a crawler is served
+   * there is the shell: the product's name and its one sentence, which is what a search for "Forge
+   * Hub" ought to return. That the DATA behind it needs a session is not a reason to hide that the
+   * door exists.
+   *
+   * The six `PUBLIC_ROUTES` below are ungated and are STILL not indexable — they are not in this
+   * table at all, and `noindex, nofollow` is applied to them by path. They are the estate's sign-in,
+   * registration and password-reset forms; indexing a credential form publishes it to anyone
+   * searching, and the two that are landing pages for a mailed link are addressed to one person.
+   */
+  readonly indexable: boolean
 }
 
 /**
@@ -109,18 +137,21 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
 ]
 
 export const ROUTES: readonly HubRoute[] = [
-  { path: '', label: 'Overview', wildcard: false },
-  { path: 'portfolio', label: 'Portfolio', wildcard: false },
+  { path: '', label: 'Overview', wildcard: false, indexable: true },
+  { path: 'portfolio', label: 'Portfolio', wildcard: false, indexable: false },
   // Wildcard: hub-api's deposit and withdrawal cards deep-link to `/wallet/deposits/<id>` and
   // `/wallet/withdrawals/<id>` (hub-api/src/nextactions.ts:160, 180).
-  { path: 'wallet', label: 'Wallet', wildcard: true },
-  { path: 'activity', label: 'Activity', wildcard: false },
-  { path: 'security', label: 'Security', wildcard: false },
-  { path: 'entitlements', label: 'Access', wildcard: false },
-  { path: 'settings', label: 'Settings', wildcard: false },
+  { path: 'wallet', label: 'Wallet', wildcard: true, indexable: false },
+  { path: 'activity', label: 'Activity', wildcard: false, indexable: false },
+  { path: 'security', label: 'Security', wildcard: false, indexable: false },
+  { path: 'entitlements', label: 'Access', wildcard: false, indexable: false },
+  { path: 'settings', label: 'Settings', wildcard: false, indexable: false },
   // Reached from the bar's search field, not from the sub-navigation: a nav entry for a page that
   // is empty until you type into something else is a nav entry that wastes a slot.
-  { path: 'search', label: null, wildcard: false },
+  //
+  // Never indexable, and for a reason of its own beyond the gate: `/search?q=…` is an unbounded
+  // family of addresses whose content is one reader's own wallets and transactions.
+  { path: 'search', label: null, wildcard: false, indexable: false },
   // `account` carries two unrelated things, and both are addresses somebody else emits.
   //
   //   1. hub-api's "needs you" cards link into `/account/security` and
@@ -129,9 +160,28 @@ export const ROUTES: readonly HubRoute[] = [
   //   2. `@cloudsforge/ui`'s `signin` surface resolves to `<hub>/account`, so every product in the
   //      estate sends its signed-out visitors to `/account/login` and `/account/logout`. Those are
   //      in PUBLIC_ROUTES above; everything else under this prefix stays behind the gate.
-  { path: 'account', label: null, wildcard: true },
-  { path: 'billing', label: null, wildcard: true },
+  { path: 'account', label: null, wildcard: true, indexable: false },
+  { path: 'billing', label: null, wildcard: true, indexable: false },
 ]
+
+/**
+ * The addresses of THIS surface a crawler is invited to, with the leading slash a `<loc>` wants.
+ *
+ * Derived, not restated: `nginx.conf`'s sitemap block is checked against this list in both
+ * directions by `test/sitemap.test.ts`, so an address cannot be advertised without being declared
+ * true here and cannot be declared here without being advertised.
+ */
+export const INDEXABLE_PATHS: readonly string[] = ROUTES.filter((r) => r.indexable).map(
+  (r) => `/${r.path}`,
+)
+
+/** Every path on this surface that must carry `noindex, nofollow`, as a predicate. */
+export function isIndexable(pathname: string): boolean {
+  // The first segment decides, because that is the granularity `ROUTES` declares and the
+  // granularity nginx serves. `/wallet/deposits/<id>` is `wallet`.
+  const segment = pathname.split('/')[1] ?? ''
+  return ROUTES.find((route) => route.path === segment)?.indexable === true
+}
 
 /** What the sub-navigation renders, with the leading slash a `NavLink` wants. */
 export const NAV: ReadonlyArray<{ to: string; label: string }> = ROUTES.filter(

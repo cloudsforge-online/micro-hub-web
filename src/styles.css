@@ -22,8 +22,17 @@ body {
   background: var(--cf-bg);
   color: var(--cf-fg);
   font-family: var(--cf-font-sans);
-  /* The bar is dark on every surface; the page follows the substrate. */
-  color-scheme: dark;
+  /*
+   * `color-scheme: dark` WAS HERE, and it had to go with `data-cf-scheme="auto"`.
+   *
+   * `color-scheme` inherits, and a declaration on `body` beats the token layer's per-scheme one on
+   * `<html>` — specificity does not come into it, the element is simply lower down the tree. So a
+   * reader on a light operating system would have been served the light palette by tokens.css and
+   * DARK native controls by this line: a dark `<select>` on the Receive asset menu, a dark
+   * scrollbar, a dark autofill highlight on the sign-in form. The bar is still dark on every
+   * surface, and it stays dark by carrying `cf-dark` and its own `colorScheme: 'dark'` itself
+   * (`ui/packages/ui/src/index.tsx`, `CloudsForgeBar`) rather than by forcing the whole document.
+   */
 }
 
 /* ------------------------- the bar's search ------------------------ */
@@ -57,7 +66,7 @@ body {
 }
 
 .wt-search__hint {
-  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-family: var(--cf-font-mono);
   font-size: 0.7rem;
   color: var(--cf-fg-mute);
   border: 1px solid var(--cf-line-strong);
@@ -227,7 +236,7 @@ body {
 }
 
 .wt-banner__icon {
-  color: var(--cf-warn);
+  color: var(--cf-warn-text);
 }
 
 .wt-note {
@@ -245,7 +254,7 @@ body {
 }
 
 .wt-link {
-  color: var(--cf-accent);
+  color: var(--cf-accent-text);
   font-size: 0.85rem;
 }
 
@@ -266,7 +275,7 @@ body {
 }
 
 .wt-facts--mono dd {
-  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-family: var(--cf-font-mono);
   font-size: 0.82rem;
   word-break: break-all;
 }
@@ -292,7 +301,7 @@ body {
 }
 
 .wt-tilenote--degraded .wt-tilenote__icon {
-  color: var(--cf-warn);
+  color: var(--cf-warn-text);
 }
 
 .wt-tilenote--unavailable {
@@ -408,13 +417,13 @@ body {
 }
 
 .wt-chip--ok {
-  border-color: var(--cf-success, #7fae5c);
-  color: var(--cf-success, #7fae5c);
+  border-color: var(--cf-good);
+  color: var(--cf-good-text);
 }
 
 .wt-chip--warn {
   border-color: var(--cf-warn);
-  color: var(--cf-warn);
+  color: var(--cf-warn-text);
 }
 
 .wt-chip--hole {
@@ -431,7 +440,7 @@ body {
 }
 
 .wt-dot--active {
-  background: var(--cf-success, #7fae5c);
+  background: var(--cf-good);
 }
 
 .wt-dot--pending,
@@ -533,7 +542,7 @@ body {
 }
 
 .wt-alert__icon {
-  color: var(--cf-warn);
+  color: var(--cf-warn-text);
 }
 
 .wt-alert--critical .wt-alert__icon {
@@ -590,7 +599,7 @@ body {
  * marker is on the value cell alone.
  */
 .wt-unpriced {
-  color: var(--cf-warn);
+  color: var(--cf-warn-text);
   font-size: 0.8rem;
 }
 
@@ -684,7 +693,7 @@ body {
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
   background: var(--cf-bg-sunken);
-  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-family: var(--cf-font-mono);
 }
 
 .wt-spinner {
@@ -804,7 +813,7 @@ body {
 .wt-confirm__warn {
   margin: 0;
   padding: var(--cf-space-sm) var(--cf-space-md);
-  border-left: 3px solid var(--cf-warn, #b28e1e);
+  border-left: 3px solid var(--cf-warn);
   color: var(--cf-fg);
   font-size: var(--cf-text-sm);
 }
@@ -833,11 +842,11 @@ body {
 }
 
 .wt-stage.is-done .wt-stage__mark {
-  color: var(--cf-success, #6d9a49);
+  color: var(--cf-good-text);
 }
 
 .wt-stage__mark {
-  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-family: var(--cf-font-mono);
 }
 
 /*
@@ -850,7 +859,7 @@ body {
   border: 1px solid var(--cf-danger);
   border-radius: var(--cf-radius-sm);
   background: var(--cf-bg-sunken);
-  font-family: var(--cf-font-mono, ui-monospace, monospace);
+  font-family: var(--cf-font-mono);
   font-size: var(--cf-text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;

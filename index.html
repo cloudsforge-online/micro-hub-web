@@ -9,35 +9,102 @@
   Design-system rule 1 of section 3: ember is company chrome, and Hub is the container the user is
   already inside rather than a destination in the switcher, so it never has to be told apart from
   anything.
+
+  data-cf-scheme is the third of the three, added with @cloudsforge/ui 1.1. `auto` follows the
+  reader's operating system; `light` and `dark` force one. It is set here, statically, for the same
+  reason the other two are — a theme flash is worse than a theme nobody asked for.
+
+  This surface DID carry a light-mode defect, and `auto` is what exposes it: `src/styles.css`
+  declared `color-scheme: dark` on `body`. `color-scheme` inherits, and a declaration on `body`
+  beats the token layer's per-scheme one on `<html>`, so a reader on a light system would have been
+  served a light page with a dark `<select>`, a dark date picker and dark scrollbars — on the
+  surface that carries the sign-in form and the wallet. It is deleted with this change.
 -->
-<html lang="en-GB" data-cf-product="hub" data-cf-substrate="warm">
+<html lang="en-GB" data-cf-product="hub" data-cf-substrate="warm" data-cf-scheme="auto">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="colour-scheme" content="dark" />
+    <!--
+      `color-scheme`, spelled the way the standard spells it. This was `colour-scheme` — British,
+      correct English, and INERT: no browser has ever read it, so the declaration that was supposed
+      to tell the browser which form controls and scrollbars to draw did nothing at all. On this
+      surface that is not cosmetic — the sign-in form, the registration form, the reset form and
+      every amount field in the wallet are native controls, and they were drawn in the browser's
+      default scheme whatever this said.
+
+      Both schemes are declared rather than only `dark`, because `data-cf-scheme="auto"` above means
+      the token layer now resolves whichever palette the reader's system asks for. Declaring only
+      `dark` here would leave the chrome the browser draws disagreeing with the page around it.
+    -->
+    <meta name="color-scheme" content="dark light" />
     <!--
       The build that produced this bundle. Stamped by the Dockerfile, read by src/lib/obs.ts, and
       the reason an error report can be pinned to the deploy that introduced it. It is an identity
       rather than a configuration: it names the artefact, it does not tell it where it is running.
     -->
     <meta name="cf-release" content="dev" />
+    <!--
+      THE GOOGLE ANALYTICS MEASUREMENT ID, AND NOT THE GOOGLE ANALYTICS TAG.
+      ────────────────────────────────────────────────────────────────────────────────────────
+      There is deliberately no third-party analytics `<script src=…>` anywhere in this file, and
+      there must never be one — the tag's own domain is not even spelled out here, so that a grep
+      for it over this file returns nothing at all and the absence is checkable rather than
+      asserted. The stock snippet fetches that script and sets `_ga` on load — before any banner has
+      been drawn, let alone answered — and under ePrivacy Art. 5(3) an analytics cookie set before
+      consent is a violation that a banner underneath it does not cure.
+
+      It matters more here than on any other surface in the estate: this is the bundle that serves
+      the sign-in, registration and password-reset forms. A third-party script in the document that
+      renders a credential field is a supply-chain question, not only a privacy one.
+      `@cloudsforge/ui/consent` injects the tag from exactly one place: the Accept button in
+      `CookieBanner`. See the header of that module for the whole argument.
+
+      It is a meta tag rather than a build-time environment variable because
+      test/no-build-time-config.test.ts greps for those and fails the build — an artefact with an
+      environment frozen into it is not the artefact that passed CI. (That test greps this file too,
+      which is why the prefix is not spelled out here.) This is the same mechanism `cf-release`
+      above already uses. An absent or empty value means analytics is simply off, which is what a
+      local `pnpm dev` gets.
+    -->
+    <meta name="cf-analytics" content="G-NB8DNLTKZQ" />
 
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192x192.png" />
 
-    <title>Forge Hub</title>
-    <meta name="description" content="Your CloudsForge control centre: portfolio, wallets, activity and security in one place." />
     <!--
+      THE STATIC HEAD, AND IT IS NOT DEAD WEIGHT NOW THAT `DocumentMeta` EXISTS.
+      ────────────────────────────────────────────────────────────────────────────────────────
+      This is what a link-preview fetcher gets. The ones chat and social clients use generally do
+      not execute JavaScript, so they never see `applyHead()`; they see exactly these four lines.
+
+      The strings are BYTE-IDENTICAL to what `surfaceMeta('hub', { path: '/' })` composes from the
+      surface registry, and `test/head.test.ts` asserts that rather than trusting it. That is the
+      one defect this estate has already paid for once: `site/index.html`'s description drifted from
+      its application's, the suite stayed green, and every search result carried a sentence the
+      owner had asked to have removed until somebody opened the served HTML rather than the page.
+      Two copies are unavoidable — one is pre-JavaScript and one is post — so the test is what makes
+      them one string.
+
       The card is an absolute URL in the served page, but this file may not name a hostname — the
-      same bundle is served from localhost, a preview host and the apex. So the path is relative
-      and the crawlers that require an absolute one resolve it against the page they fetched.
+      same bundle is served from localhost, a preview host and the apex. So the path is relative and
+      the crawlers that require an absolute one resolve it against the page they fetched.
     -->
+    <title>Forge Hub</title>
+    <meta name="description" content="Dashboard, portfolio, wallet, activity. Part of CloudsForge: EMBER, the chain it runs on, and every surface built on top of it." />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Forge Hub" />
-    <meta property="og:description" content="Your CloudsForge control centre: portfolio, wallets, activity and security in one place." />
+    <meta property="og:description" content="Dashboard, portfolio, wallet, activity. Part of CloudsForge: EMBER, the chain it runs on, and every surface built on top of it." />
     <meta property="og:image" content="/og-1200x630.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <!--
+      `index, follow` in the SHELL, and only in the shell. It is the honest answer for `/`, which is
+      the address a fetcher of this file has almost always asked for and the only indexable one on
+      this surface. Every other address — every gated page, and all six sign-in, registration and
+      password-reset screens — is overridden to `noindex, nofollow` by `DocumentMeta` the moment the
+      bundle runs. See `src/lib/routes.ts`, `HubRoute.indexable`, for which is which and why.
+    -->
+    <meta name="robots" content="index, follow, max-image-preview:large" />
   </head>
   <body>
     <div id="root"></div>

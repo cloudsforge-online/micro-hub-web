@@ -10,11 +10,18 @@
  * not a destination in the list, it is the container the reader is already inside.
  */
 import { useEffect, useRef, useState } from 'react'
-import { CloudsForgeBar, CloudsForgeFooter } from '@cloudsforge/ui'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import {
+  CloudsForgeBar,
+  CloudsForgeFooter,
+  CookieBanner,
+  MainRegion,
+  SkipLink,
+} from '@cloudsforge/ui'
+import { applyHead, surfaceMeta, type SurfaceMeta } from '@cloudsforge/ui/seo'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { PRODUCT } from '../lib/hosts.ts'
 import { MAX_SEARCH_LENGTH } from '../lib/hub.ts'
-import { NAV } from '../lib/routes.ts'
+import { NAV, PUBLIC_ROUTES, ROUTES, isIndexable } from '../lib/routes.ts'
 import { useSession } from '../lib/auth.tsx'
 
 /*
@@ -28,6 +35,19 @@ export function AppShell() {
 
   return (
     <>
+      {/*
+        The skip link is the first focusable thing in the document, and it is the SHARED one — this
+        app had none at all, so a keyboard or screen-reader reader reached the page by tabbing past
+        the logo, the switcher, the search field and the account menu, on every navigation. WCAG 2.2
+        SC 2.4.1 is the criterion and the shared bar is exactly the "block repeated on multiple
+        pages" it is about.
+
+        NOTE the account menu is DELIBERATELY NOT MOVED. Its `accountHref` is left unset so it keeps
+        `@cloudsforge/ui`'s default, `accountSettingsUrl()` — `<hub>/settings`, this bundle's own
+        settings page. It is NOT `accountUrl()`, which resolves the `signin` surface and is the
+        defect `test/account-link.test.ts` exists for.
+      */}
+      <SkipLink>Skip to the page</SkipLink>
       <CloudsForgeBar
         current={PRODUCT}
         account={account}
@@ -64,9 +84,19 @@ export function AppShell() {
           </div>
         </nav>
       )}
-      <main className="wt-main" id="main">
+      <DocumentMeta />
+      {/*
+        `MainRegion` rather than the hand-written `<main id="main">` this file used to carry. A
+        `<main>` is not focusable, so a skip link pointing at one scrolls the page in Chrome and
+        Safari and leaves focus on the link itself; `MainRegion` sets `id={MAIN_ID}` and
+        `tabIndex={-1}` together, which is the pair `SkipLink` needs. The id is `cf-main` now rather
+        than `main` — nothing in this app referenced the old one (checked: no `#main` anchor, no
+        selector, no test), and the shared `SkipLink` composes its href from the same constant, so
+        the two cannot disagree.
+      */}
+      <MainRegion className="wt-main">
         <Outlet />
-      </main>
+      </MainRegion>
 
       {/*
         The company footer, from @cloudsforge/ui. Not written here, and deliberately not
@@ -81,8 +111,98 @@ export function AppShell() {
         operator should be able to reach Admin from any page.
       */}
       <CloudsForgeFooter current={PRODUCT} account={account} />
+
+      {/*
+        Last in the document, and therefore last in the tab order. That is deliberate: the banner is
+        a dialog and is explicitly NOT modal, so a reader who came here to sign in, to read a
+        deposit address or to finish a password reset can do it and answer afterwards. A consent
+        banner that traps focus is the coercion the regulation is about — and on this surface the
+        thing it would trap somebody out of is a credential field.
+
+        It renders nothing at all until it knows the reader has not already answered, and nothing on
+        an origin where analytics would not report anyway — which is every local stack.
+      */}
+      <CookieBanner />
     </>
   )
+}
+
+/**
+ * Keep `document.title`, the description, the Open Graph tags, the canonical link and — the field
+ * that matters most on this surface — the robots directive in step with the address.
+ *
+ * A component in the shell rather than a hook called by each page, because the failure mode of the
+ * second shape is the page that forgets to call it, and the page that forgets is the one added
+ * last. Here that page would be an auth screen with no `noindex` on it.
+ *
+ * ── What this does NOT replace ────────────────────────────────────────────────────────────────
+ *
+ * The static tags in `index.html`. They are what a link-preview fetcher gets — the ones used by
+ * chat and social clients generally do not execute JavaScript — so the shell keeps its own title,
+ * description and card, and this is the layer a browser and the crawlers that do execute JavaScript
+ * see. That trade is inherited rather than introduced; it is written down at the top of
+ * `@cloudsforge/ui/seo`.
+ */
+function DocumentMeta() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    applyHead(headFor(pathname), window.location.origin)
+  }, [pathname])
+
+  return null
+}
+
+/**
+ * The head for one address, as a pure function of it.
+ *
+ * Exported so it can be asserted directly as well as through a rendered document: the robots
+ * directive is the one field on this surface whose failure is silent, invisible in a browser, and
+ * discovered by finding a sign-in form in a search result.
+ *
+ * ── Where the words come from ─────────────────────────────────────────────────────────────────
+ *
+ * The registry, through `surfaceMeta`. Which page you are on is read off `ROUTES` — the same
+ * declaration the navigation, the router and nginx are derived from — rather than typed a fifth
+ * time. The six ungated addresses take their name from the `signin` registry row, because that is
+ * literally what they are: `signin` is a real surface with `basePath: '/account'` that rides on
+ * this bundle, and "Sign in to CloudsForge" is its registered name rather than a string invented
+ * here.
+ *
+ * ── And the robots directive, which is not derived from the registry ──────────────────────────
+ *
+ * `robotsDirective()` answers per SURFACE, and both `hub` and `signin` carry `servesUi: true` with
+ * no `adminOnly`, so the registry's answer for both is `index, follow`. That is right for exactly
+ * one address on this surface and wrong for every other one — see the note on `HubRoute.indexable`.
+ * So it is forced here, per address, and `isIndexable()` is the single declaration of which is
+ * which.
+ */
+export function headFor(pathname: string): SurfaceMeta {
+  const trimmed = pathname.replace(/^\/+/, '')
+  const isAuthPage = PUBLIC_ROUTES.some((route) => route.path === trimmed)
+  const indexable = isIndexable(pathname)
+  const robots = indexable ? undefined : 'noindex, nofollow'
+
+  if (isAuthPage) {
+    // The sign-in surface's own registry row, `basePath: '/account'`. Its name and blurb are the
+    // right ones for these six screens, and `noindex, nofollow` is forced over the registry's
+    // answer: a credential form in a search index is that form published to whoever searches, and
+    // two of the six are landing pages for a link addressed to one person.
+    return surfaceMeta('signin', { path: pathname, robots: 'noindex, nofollow' })
+  }
+
+  const segment = trimmed.split('/')[0] ?? ''
+  // The index route takes the surface name ALONE, not "Overview — Forge Hub". It is the front door
+  // and it is the one address on this surface a stranger reaches from a search result, so the title
+  // there is the product's name — which is also what `index.html` carries statically, and
+  // `test/head.test.ts` asserts the two are the same string rather than two opinions about it.
+  // `surfaceMeta` makes the same choice for `site` and for the same reason.
+  const label = segment === '' ? null : ROUTES.find((route) => route.path === segment)?.label
+  return surfaceMeta(PRODUCT, {
+    ...(label === null || label === undefined ? {} : { title: label }),
+    path: pathname,
+    ...(robots === undefined ? {} : { robots }),
+  })
 }
 
 /**
