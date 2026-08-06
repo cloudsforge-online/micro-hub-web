@@ -150,9 +150,15 @@ describe('every citation names a file that exists', () => {
 
   it('names a file that exists, wherever the repository is checked out', () => {
     const missing = CITATIONS.filter((c) => {
-      const root = siblingRoot(c.path.split('/')[0] ?? '')
+      const head = c.path.split('/')[0] ?? ''
+      const root = siblingRoot(head)
       // A sibling that is not checked out is UNCHECKED, not broken. Reported below.
       if (root !== undefined && !existsSync(root)) return false
+      // And the ESTATE root is absent the same way. CI clones this repository on its own, so
+      // `../docs/` is not there and every ecosystem citation would be reported as naming a file
+      // that does not exist — which is how this went red on correct citations while passing on a
+      // machine with the whole estate checked out. Absent means unmeasured, not wrong.
+      if (ESTATE_ROOTS.includes(head) && !existsSync(join(here, '..', 'docs'))) return false
       return resolve(c.path) === null
     })
     assert.deepEqual(
