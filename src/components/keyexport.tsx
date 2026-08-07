@@ -496,8 +496,10 @@ function PanelNotice({ notice, onEnrol }: { notice: ErrorNotice; onEnrol: boolea
           <Link className="wt-link" to="/security">
             Check your second factors
           </Link>
-          . Enrolling one has no screen in Forge Hub yet — identity serves the routes
-          (`identity/src/server.ts` onward) and nothing renders them.
+          {/* Provenance: the routes exist from `identity/src/server.ts` onward; what is missing
+              is the screen in front of them. Kept here, because the reader wants to know whether
+              they can do the thing, not which file would have to change. */}
+          . Enrolling one cannot be done in Forge Hub yet; the screen for it has not been built.
         </>
       )}
       {notice.requestId && (
