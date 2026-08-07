@@ -38,14 +38,14 @@ export function SearchPage() {
   const { state, data, error, reload } = useResource(
     load,
     (response) => response.total,
-    'Could not run that search.',
+    'That search did not complete.',
   )
 
   if (query.length === 0) {
     return (
       <Empty
-        title="Type something to search for"
-        hint="Wallet addresses, transaction hashes, token names and anything in your recent activity."
+        title="Tell us what to look for"
+        hint="Try a wallet address, a transaction hash, the name of an asset, or anything you remember from your recent activity."
       />
     )
   }
@@ -77,15 +77,16 @@ export function SearchPage() {
       */}
       {anyTruncated && (
         <p className="wt-banner" role="status">
-          These are matches from your recent history. Search here reads a bounded page from each
-          service rather than an index, so an older match may exist and was not looked at.
+          What you can see comes out of your recent history. Each service is asked for one page
+          rather than searched through an index, so something older may well match and simply was
+          not among the records we looked at.
         </p>
       )}
 
       {data.total === 0 && !anyTruncated && (
         <Empty
           title={`Nothing matched ${data.query}`}
-          hint="Every group answered, and none of them held a match."
+          hint="Every source answered us, and not one of them had anything resembling this."
         />
       )}
 

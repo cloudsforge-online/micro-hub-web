@@ -159,7 +159,7 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
             disabled={busy}
             onClick={() => fetchAddress(false)}
           >
-            {busy ? 'Getting your address…' : `Show my ${assetCode} deposit address`}
+            {busy ? 'Fetching it…' : `Show my ${assetCode} deposit address`}
           </button>
         </div>
       ) : (
@@ -179,27 +179,30 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
 
           {assignment.watchedAt === null ? (
             <p className="wt-confirm__warn" role="alert">
-              ▲ CloudsForge is not yet watching this address. A deposit sent now would arrive on
-              chain and would not be credited until watching starts. Reload this panel in a moment.
+              ▲ We are not yet watching this address. Send to it right now and the money will
+              land on chain perfectly well, but would not be credited to you until the watch
+              begins. Give this panel a moment and reload it first.
             </p>
           ) : (
             <p className="wt-note">
               Watched since <span className="cf-num">{utcDateTime(assignment.watchedAt)}</span>.
-              Deposits are credited after the chain confirms them; the Wallet page lists each one
-              while it is confirming.
+              Anything you send appears on the Wallet page as it confirms, with a running count,
+              and is credited once the chain has buried it deep enough that it will not be
+              reversed.
             </p>
           )}
 
           {/* BJ-WAL-17: both sentences, in the page, at body size. */}
           <p className="wt-note wt-note--caveat">
-            This is a <strong>deposit address</strong>, not your wallet. It accepts{' '}
-            {assignment.assetCode} on {assignment.chain} {assignment.network} only, and value sent
-            to it on any other network is lost.
+            What you have above is a <strong>deposit address</strong> rather than your wallet. It
+            takes {assignment.assetCode} on {assignment.chain} {assignment.network} and nothing
+            else — value sent to it on any other network is lost, with nobody able to retrieve
+            it.
           </p>
           <p className="wt-note wt-note--caveat">
-            Your <strong>managed wallet</strong> is the account CloudsForge holds the key for. It is
-            what your balance is in, and it is listed under Addresses above — a deposit address
-            feeds it, and there may be several over time.
+            Your <strong>managed wallet</strong> is the account whose key we look after. That is
+            where your balance actually sits, and it is the one listed under Addresses further up.
+            Deposit addresses feed into it, and you may collect several of them over time.
           </p>
 
           <div className="wt-form__actions">

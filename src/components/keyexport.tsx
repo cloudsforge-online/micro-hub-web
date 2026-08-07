@@ -160,14 +160,15 @@ export function KeyExportPanel({
         </header>
         {walletsAbsent ? (
           <p className="wt-note wt-note--caveat" role="alert">
-            ▲ CloudsForge could not read your wallet list — {walletsAbsent.reason}. That is not the
-            same as having no wallet in custody, and nothing here should be read as saying so.
-            Reload in a moment.
+            ▲ We could not read your list of wallets — {walletsAbsent.reason}. That is a failure
+            to look, not a finding that there is nothing there. Reload in a moment rather than
+            drawing a conclusion from it.
           </p>
         ) : (
           <p className="wt-note">
-            There is no managed wallet to export. CloudsForge only holds keys for wallets it
-            provisioned; a wallet you connected yourself was never in custody here.
+            You have no wallet here whose key we hold, so there is nothing to hand over. We only
+            look after keys for wallets we created for you — anything you connected yourself has
+            always been in your hands alone.
           </p>
         )}
       </section>
@@ -181,9 +182,11 @@ export function KeyExportPanel({
       </header>
 
       <p className="wt-note wt-note--caveat">
-        Exporting hands you the private key and takes the wallet out of CloudsForge custody
-        permanently. It runs over 24 hours, needs your second factor twice, and can be cancelled at
-        any point in that window — including from the email CloudsForge sends you when it starts.
+        Going through with this gives you the private key and ends our custody of that wallet for
+        good — we stop signing for it, and there is no route back. It is spread across 24 hours on
+        purpose and asks for your second factor at both ends. Change your mind at any moment in
+        that window and it stops, including straight from the email we send you the moment it
+        starts.
       </p>
 
       {notice && <PanelNotice notice={notice} onEnrol={notice.message.toLowerCase().includes('factor')} />}
@@ -368,12 +371,12 @@ function Ceremony({
       {record.status === 'cooling_off' && (
         <p className="wt-note">
           {holdOver ? (
-            <>The 24-hour hold has passed. Answer your second factor to continue.</>
+            <>The 24-hour hold has passed. Answer your second factor and the key is yours.</>
           ) : (
             <>
-              Available from{' '}
-              <span className="cf-num">{utcDateTime(record.availableAt)}</span>. Nothing happens
-              until then, and you can stop this at any point before it.
+              Nothing can be revealed before{' '}
+              <span className="cf-num">{utcDateTime(record.availableAt)}</span>. Until then this
+              simply waits, and you can stop this at any point before it.
             </>
           )}
         </p>
@@ -382,9 +385,9 @@ function Ceremony({
       {record.status === 'challenged' && (
         <>
           <p className="wt-note">
-            Reveal window closes{' '}
-            <span className="cf-num">{utcDateTime(record.tokenExpiresAt)}</span>. The key is shown
-            once and CloudsForge keeps no copy of it.
+            You have until{' '}
+            <span className="cf-num">{utcDateTime(record.tokenExpiresAt)}</span>. What appears is
+            shown once, and we keep nothing that could produce it again.
           </p>
           {record.format === 'keystore' && (
             <div className="wt-field">
@@ -428,13 +431,13 @@ function Ceremony({
           // honest thing to say is that this window has to be started again, not to offer a
           // button that would post a token this tab does not have.
           <p className="wt-note">
-            This tab no longer holds the reveal token. Answer your second factor again to get a new
-            reveal window.
+            This tab no longer holds the reveal token — it lives in memory only and a reload
+            clears it. Answer your second factor again and you will get a fresh window.
           </p>
         )}
         {/* Available at EVERY point in the window, and it needs no second factor (05:296). */}
         <button type="button" className="cf-btn" onClick={onCancel} disabled={busy}>
-          Cancel this export
+          Stop this export
         </button>
       </div>
     </div>
@@ -452,8 +455,8 @@ function Revealed({ revealed, onDone }: { revealed: RevealedKey; onDone: () => v
     <div className="wt-confirm" role="alert">
       <h3 className="wt-panel__title">Your private key, shown once</h3>
       <p className="wt-note wt-note--caveat">
-        This wallet has left CloudsForge custody. Store this somewhere only you can reach. It is not
-        shown again and CloudsForge cannot produce it a second time.
+        That wallet is out of our hands now. Put what follows somewhere only you can get to. It
+        is not shown again, and nothing we hold could reproduce it.
       </p>
       <dl className="wt-facts wt-facts--mono">
         <dt>Address</dt>

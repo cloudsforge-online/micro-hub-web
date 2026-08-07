@@ -49,7 +49,7 @@ export function ActivityPage() {
       .catch((err: unknown) => {
         // An abort is this component going away, not a failure.
         if (signal.aborted) return
-        setNotice(noticeFor(err, 'Could not load your activity.'))
+        setNotice(noticeFor(err, 'We could not read your history.'))
         setLoading(false)
       })
   }, [])
@@ -96,12 +96,18 @@ export function ActivityPage() {
       />
     )
   }
-  if (loading && feed.pages === 0) return <Loading label="Loading your activity" />
+  if (loading && feed.pages === 0) return <Loading label="Reading your history" />
 
   return (
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Activity</h1>
+        <p className="wt-page__lede">
+          Everything that has happened on this account, from every product, in one list — money
+          arriving and leaving, trades, sales, rewards, sign-ins and changes you made to your own
+          settings. Nothing here is ever edited: a correction arrives as a further entry, so the
+          record can be trusted as a record.
+        </p>
         <p className="wt-page__meta">{feedSummary(feed)}</p>
       </header>
 
@@ -110,10 +116,10 @@ export function ActivityPage() {
           <span className="wt-banner__icon" aria-hidden="true">
             ▲
           </span>
-          {feed.reason ?? 'The activity service did not answer.'}{' '}
+          {feed.reason ?? 'Nothing came back from the service that keeps your history.'}{' '}
           {feed.records.length > 0
-            ? 'What is listed below arrived before it stopped answering.'
-            : 'Nothing could be loaded, which is not the same as nothing having happened.'}
+            ? 'What you can see below reached us before it went quiet, so treat it as partial.'
+            : 'We could read none of it, which is a different thing entirely from nothing having happened.'}
         </p>
       )}
       {feed.status === 'degraded' && (
@@ -121,18 +127,18 @@ export function ActivityPage() {
           <span className="wt-banner__icon" aria-hidden="true">
             ▲
           </span>
-          {feed.reason ?? 'This feed is not current.'}
+          {feed.reason ?? 'What follows is behind. Something newer may have happened since.'}
         </p>
       )}
       {feed.status === 'ok' && feed.cached && ageLabel(feed.ageMs) && (
-        <p className="wt-note">Served from cache, {ageLabel(feed.ageMs)}.</p>
+        <p className="wt-note">Held over from an earlier read, {ageLabel(feed.ageMs)}.</p>
       )}
 
       {feed.records.length === 0 ? (
         feed.status === 'unavailable' ? null : (
           <Empty
-            title="Nothing has happened on this account yet"
-            hint="Deposits, withdrawals, trades and rewards all appear here as they settle."
+            title="Nothing has been recorded against this account"
+            hint="Money in and out, trades, sales, rewards and security changes all land here as they happen."
           />
         )
       ) : (
@@ -146,11 +152,11 @@ export function ActivityPage() {
       <div className="wt-feed__foot">
         {canLoadMore(feed) && (
           <button type="button" className="cf-btn" onClick={loadMore} disabled={loading}>
-            {loading ? 'Loading…' : 'Load more'}
+            {loading ? 'Fetching…' : 'Show me more'}
           </button>
         )}
         {feed.exhausted && feed.records.length > 0 && (
-          <p className="wt-note">That is the whole history for this account.</p>
+          <p className="wt-note">You have reached the beginning. There is nothing older.</p>
         )}
         {/* A later page that failed: the list stays, the failure is stated under it. */}
         {notice && feed.pages > 0 && (
@@ -159,7 +165,8 @@ export function ActivityPage() {
             {notice.requestId && (
               <>
                 {' '}
-                Quote <code className="cf-num wt-reqid">{notice.requestId}</code> to support.
+                Give support this reference:{' '}
+                <code className="cf-num wt-reqid">{notice.requestId}</code>.
               </>
             )}
           </p>

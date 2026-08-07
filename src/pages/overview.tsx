@@ -43,11 +43,11 @@ const alwaysPresent = () => 1
 
 export function OverviewPage() {
   const load = useCallback((signal: AbortSignal) => loadDashboard(signal), [])
-  const { state, data, error, reload } = useResource(load, alwaysPresent, 'Could not load your dashboard.')
+  const { state, data, error, reload } = useResource(load, alwaysPresent, 'We could not put your dashboard together.')
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Composing your dashboard" />
+  if (state === 'loading' || !data) return <Loading label="Gathering everything into one view" />
 
   return <Overview dashboard={data} />
 }
@@ -62,13 +62,17 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Overview</h1>
+        <p className="wt-page__lede">
+          One sign-in, one balance and one record of what you have done, shared by every CloudsForge
+          product. What you hold is counted once here rather than kept in six separate places.
+        </p>
         {/*
           The composition time, on screen. It is the cheapest possible answer to "is this slow for
           everyone or just me", and hub-api sends `elapsedMs` and `budgetMs` on every response for
           exactly that purpose.
         */}
         <p className="wt-page__meta cf-num">
-          composed in {dashboard.elapsedMs}ms of {dashboard.budgetMs}ms
+          gathered in {dashboard.elapsedMs}ms of the {dashboard.budgetMs}ms allowed
         </p>
       </header>
 
@@ -80,10 +84,10 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         tile={tiles.portfolio}
         action={
           <Link className="wt-link" to="/portfolio">
-            Every holding →
+            See every holding →
           </Link>
         }
-        empty={<p className="wt-note">Nothing is held on this account yet.</p>}
+        empty={<p className="wt-note">You are not holding anything yet.</p>}
       >
         <div className="wt-tiles">
           {/*
@@ -123,13 +127,13 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
       {/* ── 2. "Needs you" — the primary call to action ───────────────────────────────────── */}
       <section className="wt-panel">
         <header className="wt-panel__head">
-          <h2 className="wt-panel__title">Needs you</h2>
+          <h2 className="wt-panel__title">Waiting on you</h2>
         </header>
         {nextActions.actions.length === 0 ? (
           <p className="wt-note">
-            Nothing needs your attention.
+            Nothing is waiting on you.
             {nextActions.missing.length > 0 &&
-              ' Some sources could not be consulted, so a card may be missing — see below.'}
+              ' A few sources went unread, though, so something could be missing from this list — see below.'}
           </p>
         ) : (
           <ul className="wt-cards">
@@ -145,7 +149,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         */}
         {nextActions.missing.length > 0 && (
           <p className="wt-note wt-note--caveat">
-            Not consulted:{' '}
+            We could not ask:{' '}
             {nextActions.missing.map((m) => `${m.source} (${m.reason})`).join('; ')}.
           </p>
         )}
@@ -161,7 +165,12 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
               Manage →
             </Link>
           }
-          empty={<p className="wt-note">No wallet has been created or connected yet.</p>}
+          empty={
+            <p className="wt-note">
+              No wallet has been created or connected yet. One is set up for you the first time
+              something arrives.
+            </p>
+          }
         >
           {tiles.wallets.data.length === 0 ? null : (
             <ul className="wt-rows">
@@ -178,10 +187,10 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
           tile={tiles.activity}
           action={
             <Link className="wt-link" to="/activity">
-              Everything →
+              See everything →
             </Link>
           }
-          empty={<p className="wt-note">Nothing has happened on this account yet.</p>}
+          empty={<p className="wt-note">Nothing has been recorded against this account yet.</p>}
         >
           {tiles.activity.data.length === 0 ? null : (
             <ul className="wt-rows">
@@ -192,6 +201,68 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
           )}
         </TilePanel>
       </div>
+
+      {/*
+        The single-account story, said once on the surface that owns it. Every name below is a real
+        product in the shared surface registry the bar and the footer are also built from, so this
+        list cannot drift out of step with what the account actually reaches.
+      */}
+      <section className="wt-panel">
+        <header className="wt-panel__head">
+          <h2 className="wt-panel__title">What this one account reaches</h2>
+        </header>
+        <p className="wt-note">
+          Signing in here signs you in everywhere. There is no second password to keep, no separate
+          balance to top up, and no reconciling one product against another.
+        </p>
+        <ul className="wt-rows">
+          <li className="wt-row">
+            <span className="wt-row__main">
+              <span className="wt-row__title">Forge Trade</span>
+              <span className="wt-row__sub">
+                Put a trading rule through real price history with fees and slippage charged, then
+                run what survives on paper before anything is at stake.
+              </span>
+            </span>
+          </li>
+          <li className="wt-row">
+            <span className="wt-row__main">
+              <span className="wt-row__title">Forge Market</span>
+              <span className="wt-row__sub">
+                Buy and sell items, tokens and memberships. Escrow, the fee and every creator
+                royalty settle as one balanced entry against this account.
+              </span>
+            </span>
+          </li>
+          <li className="wt-row">
+            <span className="wt-row__main">
+              <span className="wt-row__title">Forge Network</span>
+              <span className="wt-row__sub">
+                The EMBER chain, its explorer and its faucet. It runs a real EVM — Solidity
+                compiles and deploys against it, Hardhat and Foundry work unmodified, and it is
+                held to Ethereum's own published test vectors.
+              </span>
+            </span>
+          </li>
+          <li className="wt-row">
+            <span className="wt-row__main">
+              <span className="wt-row__title">Forge Create, Worlds and Foresight</span>
+              <span className="wt-row__sub">
+                Making things, playing in them, and asking what happens next. Whatever you earn or
+                spend across them lands in the balance above.
+              </span>
+            </span>
+          </li>
+          <li className="wt-row">
+            <span className="wt-row__main">
+              <span className="wt-row__title">Developer Platform</span>
+              <span className="wt-row__sub">
+                API keys and the console, for building against any of it directly.
+              </span>
+            </span>
+          </li>
+        </ul>
+      </section>
     </>
   )
 }

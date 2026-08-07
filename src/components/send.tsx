@@ -199,13 +199,15 @@ export function SendPanel({
           // balance is, and a zero is not the safe guess — it is the one wrong answer nobody
           // questions. `role="alert"`: a user who cannot send today needs to know it is an outage.
           <p className="wt-note wt-note--caveat" role="alert">
-            ▲ CloudsForge could not read your balances — {balanceAbsent.reason}. This is not a
-            statement that you have nothing to send; it is that Forge Hub does not know. Reload in
-            a moment, and do not act on an empty screen.
+            ▲ We could not read your balances — {balanceAbsent.reason}. Read that as ignorance
+            on our part rather than emptiness on yours: this page does not know what you hold.
+            Give it a moment and reload. Do not make decisions off a screen that has told you it
+            is blank for the wrong reason.
           </p>
         ) : (
           <p className="wt-note">
-            There is no balance to send. A managed wallet is provisioned the first time you deposit.
+            There is no balance to send from. We set a wallet up for you the moment anything
+            arrives, so there is nothing to arrange first — deposit, and the form appears.
           </p>
         )}
       </section>
@@ -281,7 +283,8 @@ export function SendPanel({
               ))}
             </datalist>
             <p className="wt-field__hint">
-              CloudsForge checks the address when you send. Nothing here is corrected for you.
+              We check the address against the chain you are sending on before anything leaves.
+              Nothing typed here is quietly tidied up for you, so read it back.
             </p>
           </div>
 
@@ -363,19 +366,23 @@ function ConfirmStep({
           {armed.intent.amount} smallest units
         </dd>
         <dt>Network fee</dt>
-        <dd>Quoted by CloudsForge when this is submitted, and taken from the amount above.</dd>
+        <dd>
+          Priced at the moment you confirm, and subtracted from the amount above rather than added
+          to it — so what leaves your balance is exactly the figure shown.
+        </dd>
       </dl>
 
       {armed.untrusted && (
         <p className="wt-confirm__warn" role="alert">
-          ▲ This is not one of your CloudsForge wallets. A payment to the wrong address cannot be
-          reversed by anyone. Check every character.
+          ▲ We do not recognise this address as one of yours. Nobody on any chain can pull back
+          a payment sent to the wrong place — not us, not the recipient, not anyone. Read every
+          character of it once more before you go on.
         </p>
       )}
 
       <div className="wt-form__actions">
         <button type="button" className="cf-btn cf-btn--ember" onClick={onConfirm} disabled={busy}>
-          {busy ? 'Sending…' : 'Send it'}
+          {busy ? 'Sending…' : 'Send it now'}
         </button>
         <button type="button" className="cf-btn" onClick={onEdit} disabled={busy}>
           Edit
@@ -404,7 +411,8 @@ function Receipt({
         // the FIRST withdrawal, which is the mechanism working — telling the user it failed would
         // invite them to send a second one.
         <p className="wt-note">
-          This is the payment you already asked for. Pressing Send twice does not send twice.
+          You are looking at the payment you already asked for. Pressing the button again does
+          not send a second one.
         </p>
       )}
       <dl className="wt-facts wt-facts--mono">

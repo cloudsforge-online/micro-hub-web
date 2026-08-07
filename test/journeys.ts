@@ -561,7 +561,7 @@ export const SCENARIOS: readonly Scenario[] = [
       'and nothing in this repository can hold two browsers open; the harness in test/dom.ts ' +
       'installs ONE happy-dom window over the process globals. The single-context half is ' +
       'BJ-ADV-20-H1. The REPLAY half, which is what the losing tab would see, is asserted at T1 ' +
-      'by BJ-WAL-09: a 200 with replayed:true renders "Pressing Send twice does not send twice" ' +
+      'by BJ-WAL-09: a 200 with replayed:true renders "Pressing the button again does not send a second one" ' +
       'and not an error.',
   },
   {

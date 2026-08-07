@@ -195,6 +195,16 @@ export interface MountOptions {
    * scenario that could not answer it could not press the button at all.
    */
   confirm?: boolean
+  /**
+   * `<meta name=… content=…>` tags in the head, the way `index.html` declares them.
+   *
+   * The harness document is built from nothing and has an empty head, so a component that reads the
+   * shell reads nothing. Two in this estate do: `@cloudsforge/ui/consent` takes the analytics
+   * measurement ID from `<meta name="cf-analytics">`, and `src/lib/obs.ts` takes the release from
+   * `<meta name="cf-release">`. Both are identities the SHELL supplies, so a scenario that needs
+   * one supplies it here rather than the component defaulting to something no browser would see.
+   */
+  meta?: Record<string, string>
   /** Extra properties on `window`, for the things a page reads off it that no API returns. */
   windowExtras?: Record<string, unknown>
   /**
@@ -582,6 +592,27 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
       },
     })
   }) as typeof fetch
+
+  /* -- what the SHELL declares ---------------------------------------------------------------- */
+
+  /*
+   * `index.html`'s meta tags, seeded into the harness document BEFORE the first render.
+   *
+   * This document is built by happy-dom from nothing, so it has no head at all — and until this
+   * existed, no scenario could reach any component that reads one. `CookieBanner` is exactly that:
+   * it renders `null` unless `analyticsId()` finds `<meta name="cf-analytics">`, so a test that
+   * mounted the shell and looked for a banner found nothing and could only have concluded, wrongly,
+   * that the banner was absent from the tree.
+   *
+   * Seeded before `createRoot`, not after, because the components that read the head read it in a
+   * mount effect and never again.
+   */
+  for (const [name, content] of Object.entries(options.meta ?? {})) {
+    const tag = doc.createElement('meta')
+    tag.setAttribute('name', name)
+    tag.setAttribute('content', content)
+    doc.head.appendChild(tag)
+  }
 
   /* -- render ------------------------------------------------------------------------------- */
 

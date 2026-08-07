@@ -64,19 +64,22 @@ export function SettingsPage() {
           and does something is Security, which is in-app and already linked below.
         */}
         <p className="wt-note">
-          Your email address, handle and password are held once, by the identity service. It is an
-          API and serves no pages, and the estate has no account portal yet — so there is nowhere
-          to send you to change them, and this app deliberately keeps no second copy to edit. The
-          gap is real and is recorded rather than papered over with a link that goes nowhere.
+          Your email address, your handle and your password are stored in exactly one place and
+          shared by every CloudsForge product. That service answers other programs rather than
+          people, and nothing yet puts a page in front of it — so there is nowhere we can send you
+          to edit them. We keep no second copy here to change instead, which would only be a copy
+          that drifts. The gap is real and we would rather name it than give you a link that goes
+          nowhere.
         </p>
         <p className="wt-note">
           {/* A router Link, not an anchor: an in-app address served through a full page load
               throws away the session state and the scroll position for no reason. */}
-          Two-factor authentication, recovery codes and the list of places you are signed in are on{' '}
+          Your second factor, your recovery codes and every place you are currently signed in all
+          live on{' '}
           <Link className="wt-link" to="/security">
             Security
           </Link>
-          , which reads and writes them against the identity service directly.
+          , which reads and changes them at the source rather than through a copy.
         </p>
       </section>
 
@@ -100,9 +103,9 @@ export function SettingsPage() {
           <h2 className="wt-panel__title">Resolved hosts</h2>
         </header>
         <p className="wt-note">
-          Derived from <code>{window.location.hostname}</code> at runtime, on every call. This
-          build contains no environment of its own — the same image serves localhost, a preview
-          deployment and production, which is why it can be promoted rather than rebuilt.
+          Worked out from <code>{window.location.hostname}</code> as each call is made. This build
+          carries no environment inside it: one identical image serves a laptop, a preview and the
+          live site, which is what lets a release be promoted rather than rebuilt for each.
         </p>
         <dl className="wt-facts wt-facts--mono">
           <dt>This surface ({PRODUCT})</dt>
