@@ -311,8 +311,10 @@ jobs:
     needs: [check, rules, image, hygiene]
     # A green push to main and nothing else. An image tag a release manifest pins has to name
     # something that passed, on the branch it will be deployed from.
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' ||
-      startsWith(github.ref, 'refs/heads/design-system/'))
+    if: >-
+      github.event_name == 'push' && (github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/heads/design-system/') ||
+      startsWith(github.ref, 'refs/heads/release/'))
     uses: cloudsforge-online/micro-org/.github/workflows/publish-image.yml@main
     with:
       # `web`, so the producer checks micro-ui out as the `uipkg` named build context the Dockerfile
