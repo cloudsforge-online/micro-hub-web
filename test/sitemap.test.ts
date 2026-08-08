@@ -77,21 +77,68 @@ describe('the sitemap nginx serves', () => {
     assert.ok(locs.length > 0, 'the sitemap lists nothing at all')
     for (const loc of locs) {
       // No subdomain is composed here, unlike the apex's sitemap: `$host` IS this surface.
-      assert.match(loc, /^\$scheme:\/\/\$host(\/|$)/, `a <loc> is not composed: ${loc}`)
+      assert.match(loc, /^\$cf_scheme:\/\/\$host(\/|$)/, `a <loc> is not composed: ${loc}`)
     }
+  })
+
+  it('and names no scheme either, because $scheme inside this container is always http', () => {
+    /*
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * THE TEST THAT USED TO DEFEND THE DEFECT.
+     *
+     * Every address above was built from `$scheme`, and this file asserted that form — so the
+     * suite was green, and what mainnet published as the canonical address of its own front door
+     * was `http://hub.cloudsforge.online`.
+     *
+     * `$scheme` is not lying. This container listens on plain 8080 and TLS terminates at the
+     * gateway, so `$scheme` reports the last hop, which really is HTTP. It is simply not the hop
+     * the reader made, and a sitemap is a claim about the reader's address.
+     *
+     * `$cf_scheme` is a `map` over `X-Forwarded-Proto`, which Traefik force-sets to `https` on
+     * both entrypoints before this container can see it, and which falls back to `$scheme` for
+     * anything else — so a direct `docker run` on localhost and CI's `127.0.0.1:8080` still get
+     * `http`, which is what they are.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     */
+    assert.ok(
+      !servedBody('/sitemap.xml').includes('$scheme://'),
+      'the sitemap publishes $scheme, which is http inside this container on every environment',
+    )
+    assert.ok(
+      !servedBody('/robots.txt').includes('$scheme://'),
+      'robots.txt points at the sitemap over $scheme, which is http on mainnet',
+    )
+  })
+
+  it('derives the scheme from one exact value and falls back to the truth for the rest', () => {
+    /*
+     * The map is pinned rather than trusted for the reason any header-derived value has to be:
+     * `X-Forwarded-Proto` is a header, and a header is client-controllable wherever the edge does
+     * not overwrite it. A `~` regex arm, or a `default https`, would turn a bypassed edge into a
+     * page advertising an address it was never served over. Only the literal `https` promotes;
+     * everything else falls to `$scheme`, whose failure mode is the behaviour that shipped for
+     * months rather than a new one.
+     */
+    const map = /map \$http_x_forwarded_proto \$cf_scheme \{([\s\S]*?)\n\}/.exec(nginx)
+    assert.ok(map, 'nginx.conf has no $cf_scheme map, and $cf_scheme is used below')
+    const arms = (map[1] ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+    assert.deepEqual(arms, ['default $scheme;', 'https   https;'])
   })
 
   it('lists every route this surface declares indexable', () => {
     const xml = servedBody('/sitemap.xml')
     for (const path of INDEXABLE_PATHS) {
-      const address = path === '/' ? '$scheme://$host' : `$scheme://$host${path}`
+      const address = path === '/' ? '$cf_scheme://$host' : `$cf_scheme://$host${path}`
       assert.ok(xml.includes(`<loc>${address}</loc>`), `${path} is missing from the sitemap`)
     }
   })
 
   it('lists nothing else — the other direction, which is the one that matters here', () => {
     const xml = servedBody('/sitemap.xml')
-    const listed = [...xml.matchAll(/<loc>\$scheme:\/\/\$host([^<]*)<\/loc>/g)].map((m) =>
+    const listed = [...xml.matchAll(/<loc>\$cf_scheme:\/\/\$host([^<]*)<\/loc>/g)].map((m) =>
       m[1] === '' ? '/' : (m[1] ?? ''),
     )
     assert.deepEqual([...listed].sort(), [...INDEXABLE_PATHS].sort())
@@ -201,14 +248,14 @@ describe('robots.txt', () => {
     // Sitemap directive.
     assert.equal(
       servedBody('/robots.txt'),
-      robotsTxt({ indexable: true, sitemapUrl: '$scheme://$host/sitemap.xml' }),
+      robotsTxt({ indexable: true, sitemapUrl: '$cf_scheme://$host/sitemap.xml' }),
     )
   })
 
   it('points at the sitemap with an absolute address, composed rather than typed', () => {
     // A relative `Sitemap:` line is invalid per the standard and is ignored; a literal one bakes in
-    // a hostname. `$scheme://$host` is the only form that is both valid and environment-free.
-    assert.match(servedBody('/robots.txt'), /^Sitemap: \$scheme:\/\/\$host\/sitemap\.xml$/m)
+    // a hostname. `$cf_scheme://$host` is the only form that is both valid and environment-free.
+    assert.match(servedBody('/robots.txt'), /^Sitemap: \$cf_scheme:\/\/\$host\/sitemap\.xml$/m)
   })
 
   it('is not a static file, which an exact-match location would have shadowed', () => {

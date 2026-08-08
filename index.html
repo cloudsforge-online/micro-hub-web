@@ -107,7 +107,68 @@
     <meta name="robots" content="index, follow, max-image-preview:large" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!--
+        THE PRE-HYDRATION BLOCK, AND WHY THE ONE INDEXABLE ADDRESS ON THIS SURFACE HAD NOTHING IN IT.
+        ────────────────────────────────────────────────────────────────────────────────────────
+        Measured on 2026-08-07 against the live estate: `GET /` returned `<div id="root"></div>` and
+        nothing else. What a reader got next was a spinner captioned "Taking you to sign in", and
+        then a page this surface's own `<meta name="robots">` forbids indexing. So the single
+        address Forge Hub invites a crawler to — `INDEXABLE_PATHS` is exactly `['/']`, and
+        `sitemap.xml` advertises that one — published an empty body under HTTP 200.
+
+        Three readers get this markup and only this markup:
+
+          * a link-preview fetcher that does not execute JavaScript. It already had the four head
+            tags above; now it has a body to go with them.
+          * a reader whose bundle did not arrive. On the surface that carries the sign-in form,
+            a blank white page under a 200 is indistinguishable from the account system being
+            gone, and it offers nothing to press.
+          * a reader on the far side of `bootstrapSession()`, which `src/main.tsx` AWAITS before it
+            mounts. That await is a network round trip on purpose — it is what stops the bar
+            flashing `Sign in` at somebody who is already signed in — and for its whole duration
+            this is the page.
+
+        IT IS NOT A `<noscript>`, deliberately. `status-web/index.html` uses one and is right to:
+        its floor exists only for the reader who has JavaScript turned off. This block has to serve
+        the third reader above as well, who has JavaScript and is simply still waiting, and a
+        `<noscript>` is invisible to them. React clears it either way — `createRoot(container)`
+        removes the container's existing children on its first commit — so nothing here can survive
+        into a mounted app or be hydrated against.
+
+        THE SENTENCE IS THE ONE FROM THE HEAD, and `test/head.test.ts` asserts all three copies of
+        it are one string: this one, `<meta name="description">` and `og:description`, all bound to
+        `surfaceMeta('hub', { path: '/' }).description`. That is the drift this estate has already
+        paid for once with `site/index.html`, and a third copy nobody checked would be the same
+        defect with more surface area.
+
+        THERE IS NO LINK TO THE APEX HERE, and that is the one thing §3.1 asked for that this file
+        cannot give. A link to "What is CloudsForge?" has to be absolute — the apex is a different
+        origin — and this file may not name a hostname: the same image is served from localhost,
+        from a preview deployment and from mainnet, and `test/no-build-time-config.test.ts` is the
+        rule. The estate's answer to that problem is `cloudsforgeHosts()`, which reads
+        `window.location.hostname` at runtime, and `CloudsForgeFooter` renders the apex from it the
+        moment the bundle runs (`src/components/shell.tsx`). What is left here without a hostname is
+        the sentence itself, which names EMBER and the chain — so the question is answered even
+        where the link cannot be offered.
+      -->
+      <h1>Forge Hub</h1>
+      <p>
+        Your account: balances, wallet, activity and settings. Part of CloudsForge: EMBER, the chain
+        it runs on, and every surface built on top of it.
+      </p>
+      <p>
+        <!--
+          Both addresses are RELATIVE, which is the only form that is correct on every host this
+          image is served from, and both are real routes on this bundle: `account/login` and
+          `account/register` are two of the six `PUBLIC_ROUTES` in `src/lib/routes.ts`, ungated
+          because a session gate in front of a sign-in form is a redirect loop. nginx serves both
+          from the enumerated `account` location, so they survive a hard refresh with no JavaScript
+          having run at all.
+        -->
+        <a href="/account/login">Sign in</a> · <a href="/account/register">Create an account</a>
+      </p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

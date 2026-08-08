@@ -154,6 +154,112 @@ describe('the static head and the applied head are one string', () => {
     assert.equal(content('name', 'robots'), front.robots)
     assert.equal(content('property', 'og:image'), front.image)
   })
+
+  it('and so does the sentence in the BODY, which is a third copy of it', () => {
+    /*
+     * The pre-hydration block inside `#root` states the same sentence a link-preview fetcher reads
+     * out of the head, because the reader who gets that block is the one who cannot read a meta
+     * tag. Three copies of one sentence is two more than anybody wants; the alternative was a body
+     * that said nothing, which is what this address published until now.
+     *
+     * WHITESPACE IS FLATTENED FIRST. The sentence is 149 characters and the file is formatted to a
+     * 100-column rule, so it is wrapped across two source lines with indentation between them. A
+     * naive `includes()` would fail on a correct document, and the reflow that broke it would look
+     * like a real defect to whoever inherited the red build.
+     */
+    const flat = ROOT_BLOCK.replace(/\s+/g, ' ')
+    assert.ok(
+      flat.includes(front.description),
+      'the pre-hydration block has drifted from the description in the head',
+    )
+  })
+})
+
+/* ─────────────────────────────── the body a stranger is served ─────────────────────────────── */
+
+/**
+ * `index.html` with every comment removed, and then the markup inside `#root`.
+ *
+ * THE ORDER MATTERS AND IT COST A RED BUILD TO FIND OUT. The pre-hydration block explains itself
+ * at length and, doing so, QUOTES the empty div it replaces. Extracting first and stripping second
+ * ends the non-greedy match on the closing tag inside that quotation, so the "block" under test is
+ * a prefix of a comment: every assertion about the markup fails, and the assertion that `#root` is
+ * not empty PASSES against the very string that says it was.
+ *
+ * A source that quotes the defect it fixed is the house style, and it is the right one — it is what
+ * stops the line being retyped by the next reader. The cost is that a test which reads that source
+ * has to strip comments before it matches anything, every time.
+ */
+const HTML_UNCOMMENTED = HTML.replace(/<!--[\s\S]*?-->/g, '')
+const ROOT_BLOCK = /<div id="root">([\s\S]*?)<\/div>/.exec(HTML_UNCOMMENTED)?.[1] ?? ''
+
+describe('the one address this surface invites a crawler to', () => {
+  /*
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * WHAT WAS MEASURED, AND WHY IT IS A CONTENT DEFECT RATHER THAN A PERFORMANCE ONE
+   *
+   * `GET /` on the live estate returned `<div id="root"></div>` and nothing else. Forge Hub
+   * advertises exactly one address in its sitemap and `INDEXABLE_PATHS` is exactly `['/']`, so
+   * the sum of what this surface published about itself, under HTTP 200, was an empty div.
+   *
+   * The reader who is hurt most by that is not the crawler. It is the reader whose bundle did not
+   * arrive on the surface that carries the sign-in form: a blank white page under a 200 is
+   * indistinguishable from the account system being gone, and there is nothing on it to press.
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   */
+  it('does not serve an empty body', () => {
+    assert.ok(!/<div id="root">\s*<\/div>/.test(HTML_UNCOMMENTED), '#root is empty again')
+    assert.ok(
+      ROOT_BLOCK.replace(/\s+/g, '').length > 0,
+      '#root contains only comments, which no reader is served',
+    )
+  })
+
+  it('names the product before it asks for anything', () => {
+    assert.match(ROOT_BLOCK, /<h1>Forge Hub<\/h1>/)
+  })
+
+  it('offers an action a signed-out reader can take, on this surface, without JavaScript', () => {
+    /*
+     * §5.1's rule, applied to the pre-JavaScript floor: a page reached by a stranger has to offer
+     * a way onward that is not "wait". Both addresses are ungated routes of this bundle, so nginx
+     * serves them on a hard refresh with nothing having run.
+     */
+    const hrefs = [...ROOT_BLOCK.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1] ?? '')
+    assert.ok(hrefs.length > 0, 'the pre-hydration block offers no way onward at all')
+    const paths = new Set(PUBLIC_ROUTES.map((r) => `/${r.path}`))
+    for (const href of hrefs) {
+      assert.ok(
+        paths.has(href),
+        `${href} is not one of this bundle's public routes — a signed-out reader lands on a gate`,
+      )
+    }
+    assert.ok(hrefs.includes('/account/login'), 'there is no way to sign in')
+  })
+
+  it('names no hostname, so the same image is correct on every host it is served from', () => {
+    // The rule `test/no-build-time-config.test.ts` owns, restated over the one block in this file
+    // that was tempted to break it: §3.1 asked for a link to the apex, and an absolute URL here
+    // would be right on mainnet and wrong on localhost, on a preview host and on testnet.
+    assert.ok(!/<a href="https?:/.test(ROOT_BLOCK), 'the block links an absolute address')
+    assert.ok(!ROOT_BLOCK.includes('cloudsforge.online'), 'the block names the production apex')
+  })
+
+  it('loads nothing and runs nothing, because it is what renders when nothing loaded', () => {
+    assert.ok(!/<script/i.test(ROOT_BLOCK), 'the pre-hydration block carries a script')
+    assert.ok(!/<img/i.test(ROOT_BLOCK), 'the pre-hydration block fetches an image')
+  })
+
+  it('is replaced rather than hydrated, which is what makes it safe to write at all', () => {
+    /*
+     * `createRoot(container).render()` REMOVES the container's existing children on its first
+     * commit — this is not `hydrateRoot`, which would try to match this markup against the app's
+     * tree and warn. The assertion is on `src/main.tsx` rather than on React: if the boot sequence
+     * ever switched to hydration, every element above would become a mismatch the reader sees.
+     */
+    assert.match(MAIN, /createRoot\(container\)\.render\(/)
+    assert.ok(!MAIN.includes('hydrateRoot'), 'the app hydrates, and #root is not the app tree')
+  })
 })
 
 /* ─────────────────────────────── the shell's own declarations ─────────────────────────────── */
