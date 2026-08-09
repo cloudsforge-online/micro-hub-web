@@ -101,6 +101,15 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
             emptyLabel="No usable price"
             {...(stamp ? { pricedAt: stamp } : {})}
           />
+          {/*
+            Unchanged on purpose, and not an instance of the retired-asset mislabel micro-org#227
+            swept the estate for. `portfolio.shards` is the ledger's own SHARD liability, summed by
+            `hub-api/src/portfolio.ts` off the balances whose `assetCode` is `SHARD`, so the label
+            names what the number is rather than dressing something else up as it. Re-denominating
+            it is micro-org#226 — an open owner decision that changes the ledger first and this
+            tile afterwards. The argument in full, with the mainnet measurement behind it, is on
+            the same tile in `pages/portfolio.tsx`.
+          */}
           <StatTile label="Shards" value={formatAmount(portfolio.shards)} emptyLabel="None held" />
           <StatTile label="EMBER" value={formatAmount(portfolio.ember)} emptyLabel="None held" />
           <StatTile

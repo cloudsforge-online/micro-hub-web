@@ -86,6 +86,35 @@ export function PortfolioPage() {
             emptyLabel="No usable price"
             {...(stamp ? { pricedAt: stamp } : {})}
           />
+          {/*
+            ── THE SHARDS TILE IS UNCHANGED ON PURPOSE. micro-org#226 ──────────────────────────
+
+            SHARD is retired (`RETIRED_ASSETS`, `contracts/packages/chain/src/index.ts`) and the
+            estate has swept its user surfaces for the name (micro-org#227). This tile is not one
+            of the surfaces that sweep was for. Those were copy that said "Shards" over data that
+            was something else — USD cents, EMBER, a season reward. `view.shards` is the LEDGER'S
+            OWN SHARD LIABILITY: `hub-api/src/portfolio.ts` sums the balances whose `assetCode` is
+            `SHARD` out of ledger's `GET /accounts/:subject/balances` and sends the total under
+            that name. The label therefore says exactly what the number is.
+
+            Measured on mainnet 2026-08-09 (micro-org#226): 13 user liability accounts hold 13,000
+            SHARD between them, against a single custody account of 13,000. Small, and beacon and
+            test residue rather than real users — but real ledger rows. Relabelling this tile would
+            tell whoever holds them that their balance is denominated in a unit the ledger does not
+            record, and would put a number on screen that no posting supports.
+
+            `mint/src/migrations.ts` (`retire_shard_pricing`) states the general form of this in
+            its own words: the customer's screen said "Pay 2,500 Shards" and it was TRUE, "which is
+            why the screen could not be fixed by relabelling it, and why this migration is the
+            fix". The same holds here. The unit is a property of the ledger, so it changes in the
+            service that posts to the ledger and this tile follows — it does not lead.
+
+            That change is micro-org#226, which is an open OWNER decision and not a find-and-
+            replace: the two migrations that have retired a SHARD price went to USD cents and
+            refused EMBER by name, and the grant leg pays users who cannot hold USD, so the payout
+            path is unbuilt. `trade-web`, `worlds-web/src/pages/title.tsx` and
+            `admin-web/src/pages/engagement.tsx` are held for the same reason.
+          */}
           <StatTile label="Shards" value={formatAmount(view.shards)} emptyLabel="None held" />
           <StatTile label="EMBER" value={formatAmount(view.ember)} emptyLabel="None held" />
           <StatTile

@@ -197,11 +197,31 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  *
  * ── SPARKS ARE NOT ON THIS LIST, AND MUST NEVER BE ────────────────────────────────────────────
  *
- * Shards are being withdrawn estate-wide in favour of EMBER denominated in Sparks, where one
- * Spark is 10⁻⁶ EMBER. A Spark is a DISPLAY DENOMINATION of EMBER — the same relationship a penny
- * has to a pound — and deliberately never a second asset code. `EMBER` below already covers it.
- * Adding `SPARK` here would re-create the exact defect this list closes, in the currency that
- * replaced the one that caused it.
+ * One Spark is 10⁻⁶ EMBER. A Spark is a DISPLAY DENOMINATION of EMBER — the same relationship a
+ * penny has to a pound — and deliberately never a second asset code; `contracts/packages/chain`
+ * states that where it defines them, and `EMBER` below already covers everything a Spark
+ * denominates. Adding `SPARK` here would re-create the exact defect this list closes.
+ *
+ * ── THIS PARAGRAPH USED TO CALL SPARKS SHARD'S REPLACEMENT. NOTHING HAS REPLACED SHARD ────────
+ *
+ * It read: "Shards are being withdrawn estate-wide in favour of EMBER denominated in Sparks …
+ * the currency that replaced the one that caused it." The retirement half is true — `SHARD` is in
+ * `RETIRED_ASSETS` (`contracts/packages/chain/src/index.ts`). The replacement half is a guess at
+ * an open question, and it guesses against the record:
+ *
+ *   - The two migrations that have actually retired a SHARD price both went to **USD cents** and
+ *     both refuse EMBER by name — `mint/src/migrations.ts` (`retire_shard_pricing`) and
+ *     `billing/src/migrations.ts` (`retire_shard_prices`).
+ *   - Their stated reason is that EMBER's rate is administered rather than discovered
+ *     (`pricing/src/rates.ts`, `ADMINISTERED_ASSETS = ['EMBER']`), so a durable figure stored in
+ *     EMBER silently restates itself every time an operator edits that one number.
+ *   - What is still denominated in Shards — the engagement programme — is micro-org#226, open and
+ *     an owner's decision.
+ *
+ * A sentence naming the destination unit, sitting in the file that decides which assets this app
+ * will offer, is the kind of thing a later reader denominates something in. The rule above needs
+ * no such claim: `SPARK` is excluded because it is not an asset code, which stays true whatever
+ * #226 decides.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 export const CHAIN_ASSETS: readonly string[] = Object.freeze([
