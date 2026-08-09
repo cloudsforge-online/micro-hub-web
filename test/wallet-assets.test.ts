@@ -17,7 +17,7 @@
  * ── WHY WALLET AND NOT `ON_CHAIN_ASSETS` ──────────────────────────────────────────────────────
  *
  * Because they are different questions. `ON_CHAIN_ASSETS` says the estate custodies an asset;
- * `CHAIN_FOR_ASSET` says wallet will move it for a user. Litecoin was the live proof that the two
+ * `ASSET_FOR_CHAIN` says wallet will move it for a user. Litecoin was the live proof that the two
  * can disagree: LTC joined `ON_CHAIN_ASSETS` on 2026-08-05 while wallet had no `LTC` at all, so
  * deriving Send's menu from the first would have offered it and had `POST /v1/withdrawals` refuse
  * it — a dead end presented to a user as a choice. So the equality below is against wallet, and
@@ -25,7 +25,7 @@
  * an asset the estate does not hold.
  *
  * **THE TWO SETS HAPPEN TO AGREE TODAY, AND THAT IS NOT A REASON TO COLLAPSE THEM.** As of
- * 2026-08-08 `ON_CHAIN_ASSETS` and `CHAIN_FOR_ASSET` carry the same eight codes, because
+ * 2026-08-08 `ON_CHAIN_ASSETS` and `ASSET_FOR_CHAIN` carry the same eight codes, because
  * `feat/assets-doge-etc` landed in both repositories at once. A window in which the answers
  * coincide is exactly when deriving one from the other looks free, and the Litecoin gap above is
  * what it costs when it stops being free — silently, in the repository that did not move.
@@ -68,22 +68,38 @@ function read(sibling: (typeof SIBLINGS)[number]): string {
 }
 
 /**
- * The KEYS of wallet's `CHAIN_FOR_ASSET`, which is the map both of its asset gates call through
- * (`chainForAsset`, used by `requestWithdrawal` and `assignDepositAddress`).
+ * The VALUES of wallet's `ASSET_FOR_CHAIN`, the one record both of its asset gates now call
+ * through (`chainForAsset`, used by `requestWithdrawal` and `assignDepositAddress`).
  *
  * Parsed from the source rather than imported: `micro-wallet` is a service, this is a browser
  * bundle, and adding the dependency would put a server package in the shipped app.
+ *
+ * ── RE-POINTED 2026-08-09, AND THE RE-POINTING IS THE POINT ───────────────────────────────────
+ *
+ * This read the KEYS of a `CHAIN_FOR_ASSET` object literal until micro-wallet#5 deleted it. That
+ * change derived the whole chain vocabulary from the asset union instead of re-typing it three
+ * times, so `CHAIN_FOR_ASSET` and `CHAIN_IDS` are now computed and `ASSET_FOR_CHAIN` — chain slug
+ * to asset code — is the only literal left to read.
+ *
+ * The parser threw rather than matching nothing, which is why this was a red build in hub-web
+ * within minutes of that merge rather than a Send menu that silently agreed with itself. A regex
+ * that had degraded to an empty capture would have made every assertion below vacuously true, in
+ * the repository that did not move. That failure mode is the reason the anti-vacuity check exists
+ * and the reason the throw says "re-point this parser — do not delete the check".
  */
 function walletMovableAssets(source: string): readonly string[] {
-  const block = /const CHAIN_FOR_ASSET[^=]*=\s*Object\.freeze\(\{([^}]*)\}/.exec(source)
+  const block = /const ASSET_FOR_CHAIN[^=]*=\s*Object\.freeze\(\{([^}]*)\}/.exec(source)
   if (!block?.[1]) {
     throw new Error(
-      'wallet no longer declares CHAIN_FOR_ASSET as a frozen object literal. Read addresses.ts ' +
+      'wallet no longer declares ASSET_FOR_CHAIN as a frozen object literal. Read addresses.ts ' +
         'and re-point this parser — do not delete the check.',
     )
   }
-  const codes = [...block[1].matchAll(/^\s*([A-Z][A-Z0-9]*)\s*:/gm)].map((m) => m[1] as string)
-  if (codes.length === 0) throw new Error('CHAIN_FOR_ASSET parsed to nothing')
+  // The VALUES, not the keys: the keys are chain slugs (`ltc`), the values are asset codes
+  // (`LTC`), and it is the asset code this list is compared against. Anchored on the colon so a
+  // quoted slug could never be mistaken for a code.
+  const codes = [...block[1].matchAll(/:\s*'([A-Z][A-Z0-9]*)'/g)].map((m) => m[1] as string)
+  if (codes.length === 0) throw new Error('ASSET_FOR_CHAIN parsed to nothing')
   return codes
 }
 
@@ -124,7 +140,7 @@ describe('CHAIN_ASSETS against the estate', () => {
     assert.deepEqual(
       [...CHAIN_ASSETS].sort(),
       wallet,
-      'CHAIN_ASSETS and wallet CHAIN_FOR_ASSET disagree. Wallet decides; edit src/lib/money.ts.',
+      'CHAIN_ASSETS and wallet ASSET_FOR_CHAIN disagree. Wallet decides; edit src/lib/money.ts.',
     )
     // Stated as behaviour too, not only as data: the list is what `settlesOnChain` reads, and a
     // future refactor could satisfy the deepEqual above while changing what Send actually asks.
