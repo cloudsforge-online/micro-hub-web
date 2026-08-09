@@ -34,11 +34,16 @@
  *   2. The checkout in CI has no `node_modules`, so anything that pulled a runtime dependency in
  *      would fail there and pass here. The modules reached below import nothing but `node:crypto`
  *      and each other: everything external in that graph is `import type`, which esbuild elides.
- *      That is a property of the pool's source, so it is asserted rather than assumed.
+ *      That is a property of the pool's source, so it is asserted rather than assumed — in
+ *      `pool-source.test.ts`, NOT here. It used to be here, and on 2026-08-09 it could not fire:
+ *      the property was violated, the `await import(...)` calls below crashed at load, and the
+ *      assertion written for that exact violation was never reached. A guard downstream of what it
+ *      guards is not a guard. This file keeps only the half that has to import to be worth
+ *      anything.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { scryptPow } from '../src/lib/scrypt.ts'
@@ -493,50 +498,5 @@ describe('the numbers this client computes are the pool’s numbers', () => {
       bytesToHex(scryptPow(header)),
       (pow['powHash']('scrypt', Buffer.from(header)) as Buffer).toString('hex'),
     )
-  })
-})
-
-describe('the pool source this client was written against', () => {
-  /**
-   * The submit parameter order, read out of the server rather than restated.
-   *
-   * `pool/src/session.ts` destructures `mining.submit`'s parameters into named bindings, and the
-   * ORDER of those bindings is the contract. This lifts the destructuring pattern out of the source
-   * and compares it to what `buildSubmitParams` emits, so a reordering upstream fails here with a
-   * message that names both — rather than as a mysterious rejected share.
-   */
-  it('destructures submit into the positions buildSubmitParams fills', () => {
-    const source = readFileSync(`${ESTATE}${POOL_PROOF}`, 'utf8')
-    const pattern = /const \[([^\]]*)\] = params/.exec(source)
-    assert.ok(pattern?.[1], 'pool/src/session.ts no longer destructures mining.submit positionally')
-    const positions = pattern[1].split(',').map((name) => name.trim())
-    assert.deepEqual(
-      positions,
-      ['', 'jobIdRaw', 'extranonce2Raw', 'ntimeRaw', 'nonceRaw', 'versionRaw'],
-      'the server reads mining.submit in a different order than buildSubmitParams writes it',
-    )
-  })
-
-  /**
-   * The graph this test imports must stay free of runtime dependencies, because CI checks micro-pool
-   * out without installing it.
-   *
-   * A `import type` line is elided by the transpiler and costs nothing; a value import of
-   * `@cloudsforge/contracts-chain` would make this whole file fail in CI and pass on a developer's
-   * machine, which is the worst available outcome. Checked rather than trusted.
-   */
-  it('reaches no runtime dependency outside node:', () => {
-    for (const file of ['session.ts', 'validate.ts', 'work.ts', 'coinbase.ts', 'merkle.ts', 'pow.ts', 'bytes.ts', 'mweb.ts', 'vardiff.ts', 'pplns.ts']) {
-      const source = readFileSync(`${ESTATE}pool/src/${file}`, 'utf8')
-      for (const line of source.split('\n')) {
-        const importing = /^import\s+(?!type\s)(.*)from\s+'([^']+)'/.exec(line)
-        if (!importing) continue
-        const specifier = importing[2] as string
-        assert.ok(
-          specifier.startsWith('./') || specifier.startsWith('node:'),
-          `pool/src/${file} now has a runtime import of ${specifier}, which a CI checkout cannot resolve`,
-        )
-      }
-    }
   })
 })
