@@ -340,13 +340,45 @@ describe('settlesOnChain', () => {
    * changes and this literal follows it.
    * ══════════════════════════════════════════════════════════════════════════════════════════
    */
-  it('accepts exactly the six assets micro-wallet maps to a chain', () => {
+  it('accepts exactly the assets micro-wallet maps to a chain', () => {
     // LTC joined on 2026-08-05, and it joined the way the block above says it must: `wallet-
     // assets.test.ts` went red first, naming `wallet/src/addresses.ts` as the source, and
     // `CHAIN_ASSETS` and this literal moved together in that change. Nobody edited this line to
     // make a red test green.
-    assert.deepEqual([...CHAIN_ASSETS].sort(), ['BTC', 'EMBER', 'ETH', 'LTC', 'SOL', 'XRP'])
+    //
+    // DOGE and ETC joined on 2026-08-08 by the same route and for the same reason — the estate's
+    // `feat/assets-doge-etc` put both in `CHAIN_FOR_ASSET`, the derived check went red naming
+    // wallet, and the two literals moved together. The title no longer counts them: "six" was a
+    // typed fact about how many chains the estate had, in a test whose neighbours exist to stop
+    // typed facts about chains, and it went stale on the first one that arrived after it.
+    assert.deepEqual(
+      [...CHAIN_ASSETS].sort(),
+      ['BTC', 'DOGE', 'EMBER', 'ETC', 'ETH', 'LTC', 'SOL', 'XRP'],
+    )
     for (const code of CHAIN_ASSETS) assert.equal(settlesOnChain(code), true, `${code} was excluded`)
+  })
+
+  it('offers DOGE and ETC, which wallet moves and this deployment cannot yet settle', () => {
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    // ASSERTED SEPARATELY BECAUSE THE DECISION BEHIND THEM IS THE INTERESTING PART, AND THE
+    // LITERAL ABOVE RECORDS ONLY THE OUTCOME.
+    //
+    // Both chains are unsettleable on the estate today: `settlement/src/registry.ts` refuses DOGE
+    // outright (`unimplementedChain`, phase 8 — the adapter is P2WPKH and Dogecoin has no segwit),
+    // and no manifest gives ETC a `SETTLEMENT_RPC_URLS` entry, so every ETC call ends at
+    // `NoEndpointError`. Offering an asset the estate cannot settle looks like the defect this
+    // whole file exists to stop, and it is not: read on 2026-08-09,
+    // `deploy/compose/docker-compose.estate.yml` quotes fees for EMBER and LTC alone and points
+    // settlement at `ember` alone, XRP is `unimplementedChain` in the very same table, and all
+    // five of those codes have been offered here since before either of these two existed.
+    //
+    // So the limitation is the deployment's and not the asset's, and the guard against it is
+    // structural: Send only lists assets with a non-zero balance, no DOGE or ETC deposit has ever
+    // been credited, and Receive asks `GET /v1/deposits/assets` rather than reading this list. See
+    // `lib/money.ts` for the argument in full and for what would expire it.
+    // ══════════════════════════════════════════════════════════════════════════════════════
+    assert.equal(settlesOnChain('DOGE'), true)
+    assert.equal(settlesOnChain('ETC'), true)
   })
 
   it('offers Litecoin, because micro-wallet moves it now — and the old assertion is gone', () => {

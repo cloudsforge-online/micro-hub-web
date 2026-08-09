@@ -16,12 +16,19 @@
  *
  * ── WHY WALLET AND NOT `ON_CHAIN_ASSETS` ──────────────────────────────────────────────────────
  *
- * Because they are different questions and Litecoin is currently the difference. `ON_CHAIN_ASSETS`
- * says the estate custodies an asset; `CHAIN_FOR_ASSET` says wallet will move it for a user.
- * Deriving Send's menu from the first would offer LTC and have `POST /v1/withdrawals` refuse it —
- * a dead end presented to a user as a choice. So the equality below is against wallet, and
+ * Because they are different questions. `ON_CHAIN_ASSETS` says the estate custodies an asset;
+ * `CHAIN_FOR_ASSET` says wallet will move it for a user. Litecoin was the live proof that the two
+ * can disagree: LTC joined `ON_CHAIN_ASSETS` on 2026-08-05 while wallet had no `LTC` at all, so
+ * deriving Send's menu from the first would have offered it and had `POST /v1/withdrawals` refuse
+ * it — a dead end presented to a user as a choice. So the equality below is against wallet, and
  * `ON_CHAIN_ASSETS` is only asserted as an upper bound, which it genuinely is: wallet cannot move
  * an asset the estate does not hold.
+ *
+ * **THE TWO SETS HAPPEN TO AGREE TODAY, AND THAT IS NOT A REASON TO COLLAPSE THEM.** As of
+ * 2026-08-08 `ON_CHAIN_ASSETS` and `CHAIN_FOR_ASSET` carry the same eight codes, because
+ * `feat/assets-doge-etc` landed in both repositories at once. A window in which the answers
+ * coincide is exactly when deriving one from the other looks free, and the Litecoin gap above is
+ * what it costs when it stops being free — silently, in the repository that did not move.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 import assert from 'node:assert/strict'
@@ -129,8 +136,10 @@ describe('CHAIN_ASSETS against the estate', () => {
   it('never offers an asset the estate does not custody', () => {
     // The upper bound, and it is a real one rather than a restatement: wallet cannot move an
     // asset that is not in ON_CHAIN_ASSETS, because there is no ledger balance to move. A subset
-    // and NOT an equality — Litecoin is in ON_CHAIN_ASSETS and wallet does not move it, and
-    // offering it here because contracts lists it would be the defect this file exists to stop.
+    // and NOT an equality, deliberately, even though the two sets are equal today — Litecoin spent
+    // three days in ON_CHAIN_ASSETS with wallet refusing it, and offering an asset here because
+    // contracts lists it is the defect this file exists to stop. An equality asserted now would go
+    // red the next time contracts ships a chain first, which is the ORDER these changes arrive in.
     const custodied = new Set(onChainAssets(read(SIBLINGS[1])))
     for (const code of CHAIN_ASSETS) {
       assert.ok(custodied.has(code), `${code} is offered by Send but is not an on-chain asset`)

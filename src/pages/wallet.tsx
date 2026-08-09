@@ -54,19 +54,38 @@ export function WalletPage() {
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Wallet</h1>
+        {/*
+          The list is the assets `micro-wallet` will move — `CHAIN_ASSETS` in `lib/money.ts` —
+          written out in words rather than rendered from it, because a sentence assembled from an
+          array reads like one and this is the first paragraph on the page. It moves when that
+          array moves: Dogecoin and Ethereum Classic were added on 2026-08-08 with the estate's
+          `feat/assets-doge-etc` and this sentence went with them. What it does NOT claim is that
+          every one of them can be sent today — see `lib/money.ts` on why that is a fact about the
+          deployment rather than about the asset, and why the panels below are gated on a real
+          balance and on what the service answers rather than on this prose.
+        */}
         <p className="wt-page__lede">
-          We hold EMBER, Bitcoin, Ether, Litecoin, Solana and XRP for you, so sending, receiving
-          and spending across CloudsForge take no key handling on your part. Send anything out and
-          the network fee is taken from the amount rather than added to it, and the figure that
-          will actually land is shown before you commit.
+          We hold EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and XRP for
+          you, so sending, receiving and spending across CloudsForge take no key handling on your
+          part. Send anything out and the network fee is taken from the amount rather than added to
+          it, and the figure that will actually land is shown before you commit.
         </p>
+        {/*
+          Every depth here is `confirmations` from `contracts/packages/chain/src/index.ts`, which is
+          the one place the estate agrees them — wallet, settlement, custody and the indexer all
+          read that package and none of them restate it. Ethereum Classic's 7,500 is not a typo and
+          is deliberately given as a number rather than spelled out: it is three orders of magnitude
+          above its neighbours, for the reason contracts records against it, and rounding it into a
+          phrase like "a few thousand" would hide the one figure on this line a person would want to
+          plan around.
+        */}
         <p className="wt-note">
           Money arriving is credited once the chain has buried it deep enough to be safe: one
-          confirmation on XRP, six on Bitcoin, twelve on Ether and Litecoin, thirty-two on Solana
-          and sixty on EMBER. Should a chain reorganise beneath a deposit, crediting halts rather
-          than guesses. If you would rather hold the key yourself, any managed wallet can be
-          exported below — that is deliberate, deliberate enough to take a day, and it cannot be
-          undone.
+          confirmation on XRP, six on Bitcoin, twelve on Ether and Litecoin, thirty on Dogecoin,
+          thirty-two on Solana, sixty on EMBER and 7,500 on Ethereum Classic. Should a chain
+          reorganise beneath a deposit, crediting halts rather than guesses. If you would rather
+          hold the key yourself, any managed wallet can be exported below — that is deliberate,
+          deliberate enough to take a day, and it cannot be undone.
         </p>
       </header>
 

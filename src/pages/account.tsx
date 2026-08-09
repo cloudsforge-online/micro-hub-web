@@ -620,10 +620,15 @@ export function RegisterPage() {
   return (
     <AccountFrame title="Create a CloudsForge account">
       <form className="wt-form" onSubmit={submit} noValidate>
+        {/*
+          The same list as the Wallet page's lede, and it has to stay the same list: two surfaces
+          naming different assets is a discrepancy a reader notices before they notice either
+          claim. Both follow `CHAIN_ASSETS` in `lib/money.ts`, which follows `micro-wallet`.
+        */}
         <p className="wt-note">
           This is the only account you will need. It carries one balance across every product,
-          holds EMBER, Bitcoin, Ether, Litecoin, Solana and XRP for you, and keeps a single record
-          of everything you have done. Setting it up costs nothing.
+          holds EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and XRP for
+          you, and keeps a single record of everything you have done. Setting it up costs nothing.
         </p>
         {refusal && <RefusalNotice refusal={refusal} />}
 

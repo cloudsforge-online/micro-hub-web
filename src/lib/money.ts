@@ -117,7 +117,7 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * removing a hardcoded list.
  *
  * **LTC IS ON THE LIST NOW, AND HOW IT GOT THERE IS THE POINT.** `micro-wallet` added `ltc` to
- * `ChainId` and `LTC: 'ltc'` to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts,99`, commit
+ * `ChainId` and `LTC: 'ltc'` to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts`, commit
  * 87f2251 "a Litecoin address is a Litecoin address, not a Bitcoin one wearing its name"). This
  * array did not move with it, and for a while wallet would move an asset Send did not offer — a
  * capability the user has and cannot reach. **Nobody noticed and nothing broke; the failing check
@@ -129,6 +129,71 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  * converging and they are not the same. The test asserts this array is a SUBSET of
  * `ON_CHAIN_ASSETS` — a real invariant, because wallet cannot move an asset the estate does not
  * hold — and stops there.
+ *
+ * ── DOGE AND ETC, AND THE ARGUMENT FOR NOT MARKING THEM UNAVAILABLE ───────────────────────────
+ *
+ * "The next chain" arrived on 2026-08-08 and it arrived as two. `feat/assets-doge-etc` merged
+ * across the estate — `contracts` put `ETC` and `DOGE` in `ON_CHAIN_ASSETS`, `micro-wallet` added
+ * `doge` and `etc` to `ChainId` and both codes to `CHAIN_FOR_ASSET` (`wallet/src/addresses.ts`),
+ * and `micro-indexer` and `micro-ledger` took their halves. This array did not move, and
+ * `test/wallet-assets.test.ts` went red in exactly the direction it was written to watch: wallet
+ * moves two assets Send does not offer. That is the whole of the defect, and adding the two codes
+ * below is the whole of the fix. Nothing else in this bundle is keyed by asset — decimals are
+ * DERIVED per holding (`scaleOf` in `lib/format.ts`), there is deliberately no client-side address
+ * validation, no per-asset minimum and no icon set — so there is no second table to follow.
+ *
+ * **THE HARDER QUESTION WAS WHETHER TO OFFER THEM AS WORKING OPTIONS AT ALL, AND THE ANSWER IS
+ * YES — ON EVIDENCE, NOT ON THE DEFAULT.** Both chains are demonstrably unsettleable today:
+ *
+ *   DOGE  `settlement/src/registry.ts` refuses it by construction rather than implementing it —
+ *         `unimplementedChain('doge', 'phase 8 …')`, because that adapter is P2WPKH end to end and
+ *         Dogecoin has no segwit at all: every input is committed as a `witnessUtxo` a base58
+ *         input cannot be signed as, and `vsize` is priced with the witness discount, which would
+ *         under-quote a Dogecoin fee by more than half. Custody derives P2WPKH only, so the
+ *         signing half does not exist either.
+ *   ETC   The adapter IS written (`evmChain('etc')` — ETC never adopted London, so settlement's
+ *         existing legacy `type: 0` builder is already the right shape). What is missing is a
+ *         node: `SETTLEMENT_RPC_URLS` carries no `etc` key in any manifest, so every call ends at
+ *         `NoEndpointError`. And `micro-ledger`'s `dogecoin_and_classic_chain_assets` migration
+ *         says the rest in its own words — "THE ESTATE HAS NO DOGECOIN NODE AND NO ETHEREUM
+ *         CLASSIC NODE … no DOGE or ETC deposit has ever been credited at any depth".
+ *
+ * So why offer them? Because **that is not a fact about DOGE and ETC, it is a fact about this
+ * deployment, and it is already true of five of the six codes this array carried before them.**
+ * Read on 2026-08-09 rather than assumed: `deploy/compose/docker-compose.estate.yml` sets
+ * `WALLET_FEE_QUOTES` to `{"EMBER":…,"LTC":…}` — so a BTC, ETH, SOL or XRP withdrawal is refused
+ * 503 `fee_unavailable` before it reaches settlement — and `SETTLEMENT_RPC_URLS` to `ember` plus an
+ * optional `ltc`, so every other chain is endpointless. XRP is `unimplementedChain('xrp', 'phase
+ * 7 …')` in the same table that refuses DOGE, and XRP has been on this list since it was written.
+ * The same ledger migration puts it plainly: "BTC, ETH, SOL and XRP have sat in this table unswept
+ * since migration 11 and LTC since 14. DOGE and ETC join them on exactly that footing."
+ *
+ * Marking two of eight unavailable while the other six carry the identical limitation would be a
+ * false distinction shown to a user as a real one. Marking all eight would mean typing settlement's
+ * registry and a deployment's environment into a browser bundle that can read neither — a fourth
+ * unversioned copy of a fact this file's own header says not to make, and one that would be wrong
+ * the day an operator adds an endpoint, silently, with nothing to fail.
+ *
+ * What actually protects the user is structural rather than editorial, and it is worth stating so
+ * nobody adds the banner later believing it was an oversight:
+ *
+ *   1. **Send is holdings-gated.** `SendPanel` offers `holdings.filter(available !== '0' &&
+ *      settlesOnChain(...))`, so a code can only appear once a balance exists. No DOGE or ETC
+ *      deposit has ever been credited and the indexer follows neither, so neither can reach the
+ *      menu until the estate can observe the chain — which is the same precondition settling it
+ *      has.
+ *   2. **Receive already ASKS.** It reads `GET /v1/deposits/assets`, which reports `depositable`
+ *      with a reason per asset, so DOGE and ETC come back `not_followed` and are never offered.
+ *      That is the runtime answer this list cannot give, and it exists on the deposit side only.
+ *   3. **Every refusal downstream is named and reaches the user.** `fee_unavailable` renders as a
+ *      503 with its request id, and `settlement/src/withdrawals.ts` classifies a
+ *      `NotImplementedError` as `chain_unsupported` with `refund: 'now'` and the sentence "DOGE
+ *      withdrawals are not available yet, so this has been returned to your balance". A missing
+ *      endpoint refunds at the deadline. The reservation is what makes that safe: the money sits in
+ *      the user's `reserved` account throughout and is returned, never spent.
+ *
+ * If wallet ever gains a route that states which chains can be SETTLED — it serves none today —
+ * this list becomes a runtime question and the argument above expires with it.
  *
  * ── SPARKS ARE NOT ON THIS LIST, AND MUST NEVER BE ────────────────────────────────────────────
  *
@@ -146,6 +211,8 @@ export const CHAIN_ASSETS: readonly string[] = Object.freeze([
   'SOL',
   'XRP',
   'LTC',
+  'DOGE',
+  'ETC',
 ])
 
 /**
