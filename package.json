@@ -1,6 +1,6 @@
 {
   "name": "@cloudsforge/hub-web",
-  "version": "2.5.9",
+  "version": "2.5.12",
   "packageManager": "pnpm@11.9.0",
   "private": true,
   "description": "Forge Hub — the CloudsForge control centre. Dashboard, portfolio, wallet, activity, security and settings.",
