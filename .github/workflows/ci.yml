@@ -94,9 +94,9 @@ jobs:
           token: ${{ secrets.ESTATE_READ_TOKEN }}
 
       # ──────────────────────────────────────────────────────────────────────────────────────
-      # NOT TEMPORARY, AND NOT FOR INSTALL. These two are never installed and never bundled —
-      # `test/wallet-assets.test.ts` READS them, and would otherwise be a check that turns
-      # itself off in the one environment that matters.
+      # NOT TEMPORARY, AND NOT FOR INSTALL. These three are never installed and never bundled —
+      # `test/wallet-assets.test.ts` and `test/pool-contract.test.ts` READ them, and would
+      # otherwise be checks that turn themselves off in the one environment that matters.
       #
       # `src/lib/money.ts` carries the list of assets `micro-wallet` will move, because a
       # browser bundle cannot import a service's source. Every other test in this repository
@@ -118,6 +118,22 @@ jobs:
         with:
           repository: cloudsforge-online/micro-contracts
           path: contracts
+
+      # micro-pool, for the same reason and a sharper one. `test/pool-contract.test.ts` does not
+      # describe the Stratum wire format — it IMPORTS micro-pool's `Session`, `JobRegistry`, `pow`
+      # and `validate` and mines a share the real server then accepts. Every field of
+      # `mining.submit` is positional, every one of them is eight hex characters, and a client that
+      # swapped two of them would assemble a header, hash it, and be answered "stale" for ever.
+      # That is the failure this checkout exists to make impossible, and it is why the test throws
+      # rather than skips when `pool/src/session.ts` is absent.
+      #
+      # Nothing is installed from it: the test imports it by dynamic path, and asserts as it goes
+      # that the reachable graph imports nothing outside `./` and `node:` — so no service
+      # dependency can reach this bundle, and none needs to be installed for the test to run.
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-pool
+          path: pool
 
       # Pinned, because the checkout lives at hub-web/ and the action looks for the
       # packageManager field in the workspace root, where there is no package.json.

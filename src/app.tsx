@@ -39,6 +39,7 @@ import {
 } from './pages/account.tsx'
 import { ActivityPage } from './pages/activity.tsx'
 import { EntitlementsPage } from './pages/entitlements.tsx'
+import { MinePage } from './pages/mine.tsx'
 import { NotFoundPage } from './pages/not-found.tsx'
 import { OverviewPage } from './pages/overview.tsx'
 import { PortfolioPage } from './pages/portfolio.tsx'
@@ -114,6 +115,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="mine"
+              element={
+                <ProtectedRoute>
+                  <MinePage />
                 </ProtectedRoute>
               }
             />

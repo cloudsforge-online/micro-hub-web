@@ -146,6 +146,14 @@ export const ROUTES: readonly HubRoute[] = [
   { path: 'security', label: 'Security', wildcard: false, indexable: false },
   { path: 'entitlements', label: 'Access', wildcard: false, indexable: false },
   { path: 'settings', label: 'Settings', wildcard: false, indexable: false },
+  // Mining, in this tab. Offered in the navigation because it is a thing the reader DOES rather
+  // than a record of something that already happened, and a capability nobody can find is a
+  // capability nobody has — the page is the only place in the estate where a signed-in account can
+  // point a browser at either the EMBER node or the pool.
+  //
+  // `indexable: false` for the reason every row below the front door carries it: the page is behind
+  // the session gate, so what a crawler would be served is a redirect to a sign-in form.
+  { path: 'mine', label: 'Mine', wildcard: false, indexable: false },
   // Reached from the bar's search field, not from the sub-navigation: a nav entry for a page that
   // is empty until you type into something else is a nav entry that wastes a slot.
   //
