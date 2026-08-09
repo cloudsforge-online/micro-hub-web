@@ -865,3 +865,80 @@ body {
   overflow-wrap: anywhere;
   user-select: all;
 }
+
+/* ------------------------------ mining ----------------------------- */
+
+/*
+ * The chain picker.
+ *
+ * A radio group whose options are buttons rather than `<input type=radio>`, because each option
+ * carries two lines — a name and a sentence about whether it can be mined here at all — and a
+ * native radio's label cannot hold a block. The ARIA roles are supplied in the markup, so the
+ * keyboard and screen-reader behaviour is a radio group either way; only the paint is different.
+ */
+.wt-rows--choices {
+  display: grid;
+  gap: var(--cf-space-sm);
+  list-style: none;
+  margin: var(--cf-space-md) 0 0;
+  padding: 0;
+}
+
+.wt-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  padding: var(--cf-space-sm) var(--cf-space-md);
+  border: 1px solid var(--cf-border);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg-sunken);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/*
+ * The selected option differs in BORDER as well as in colour. Colour is never the only channel —
+ * the same rule the tile notes and the field errors are built on.
+ */
+.wt-choice--on {
+  border-color: var(--cf-accent);
+  box-shadow: inset 3px 0 0 0 var(--cf-accent);
+}
+
+.wt-choice__title {
+  font-weight: 600;
+}
+
+.wt-choice__sub {
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg-mute);
+}
+
+/* A subsection inside a panel: the projection, the politeness controls, the credited work. */
+.wt-panel__sub {
+  margin-top: var(--cf-space-lg);
+  padding-top: var(--cf-space-md);
+  border-top: 1px solid var(--cf-border);
+}
+
+.wt-panel__sub h3 {
+  margin: 0 0 var(--cf-space-sm);
+  font-size: var(--cf-text-md);
+}
+
+/* Arithmetic a reader is invited to check, so it is set at reading width rather than as a note. */
+.wt-prose {
+  margin: 0 0 var(--cf-space-sm);
+  max-width: 62ch;
+  line-height: 1.6;
+}
+
+.wt-check {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cf-space-sm);
+  margin-top: var(--cf-space-sm);
+  font-size: var(--cf-text-sm);
+}
