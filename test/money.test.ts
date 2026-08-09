@@ -416,9 +416,14 @@ describe('settlesOnChain', () => {
   })
 
   it('does not accept SPARK, which is a denomination of EMBER and not an asset', () => {
-    // One Spark is 10⁻⁶ EMBER — the relationship a penny has to a pound. Shards are being
-    // withdrawn estate-wide in favour of EMBER denominated in Sparks, and a `SPARK` entry here
-    // would re-create the defect above in the unit that replaced the one that caused it.
+    // One Spark is 10⁻⁶ EMBER — the relationship a penny has to a pound — so a `SPARK` entry here
+    // would re-create the defect above in a name that is not an asset code at all.
+    //
+    // The reason is that and only that. This comment used to add "Shards are being withdrawn
+    // estate-wide in favour of EMBER denominated in Sparks", which states a decision that has not
+    // been taken: SHARD is retired, but the two migrations that retired a SHARD price went to USD
+    // cents and refused EMBER by name, and what remains in Shards is micro-org#226, still open.
+    // `lib/money.ts` carries the citations. The assertion below does not depend on the answer.
     assert.equal(settlesOnChain('SPARK'), false)
   })
 })
