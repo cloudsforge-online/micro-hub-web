@@ -49,9 +49,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 import { StrictMode, createElement as h, type ReactElement } from 'react'
 import { MemoryRouter, Route, Routes as RouterRoutes } from 'react-router-dom'
-import { IDENTITY_AUTH_ROUTES, NOT_PAID_CLAUSE } from '@cloudsforge/ui'
+import { EMBER_CREDITED_CLAUSE, IDENTITY_AUTH_ROUTES, NOT_PAID_CLAUSE } from '@cloudsforge/ui'
 
-import { MINING_CAPABLE, withScreen, type Routes, type Screen } from './dom.ts'
+import { MINING_CAPABLE, withScreen, type Reply, type Routes, type Screen } from './dom.ts'
+import { EMBER_MINE_HREF } from '../src/mining/bar.ts'
 import * as fx from './fixtures.ts'
 import { DOC22_UNCLAIMED, SCENARIOS } from './journeys.ts'
 import { __resetAuth } from '../src/lib/api.ts'
@@ -2610,27 +2611,46 @@ const barMine = (s: Screen): Element => {
   return found[0] as Element
 }
 
-/** Everything both the shell and the mining page read, so neither is silently unrouted. */
-const mineRoutes = (summary = fx.poolSummary()): Routes => ({
+/**
+ * The account's watched custodial EMBER deposit address, which is what makes a bare press startable.
+ *
+ * `watchedAt` is a real date because that is the ordinary signed-in case, and it is the ONE field
+ * that decides it: an address the indexer was never told to watch would take a swept block on chain
+ * and never credit it. BJ-MINE-09 overrides this reply and is the scenario for the other answer.
+ */
+const EMBER_DEPOSIT = {
+  id: 'dep_01J000000000000000000000',
+  assetCode: 'EMBER',
+  chain: 'ember',
+  network: 'mainnet',
+  walletId: 'wal_01J000000000000000000000',
+  address: '0x1111111111111111111111111111111111111111',
+  status: 'active',
+  assignedAt: '2026-08-10T00:00:00.000Z',
+  watchedAt: '2026-08-10T00:00:01.000Z',
+}
+
+/** Everything the shell, the mining page and the EMBER miner read, so none is silently unrouted. */
+const mineRoutes = (summary = fx.poolSummary(), deposit: Reply = { body: { assignment: EMBER_DEPOSIT } }): Routes => ({
   'GET /auth/me': { body: { user: { id: 'u1', handle: MINER_HANDLE, roles: ['player'] } } },
   'GET /v1/pool': { body: summary },
   // Routed and expected to be UNUSED in most of these scenarios. `test/dom.ts` throws on an
   // unrouted request, which would make "no ticket was minted" pass by way of an exception nobody
   // sees; routed, the count is a number a scenario can assert on and can genuinely fail.
   'POST /v1/pool/ticket': { body: { ticket: 'ticket-not-minted-by-these-scenarios', account: 'cf-0000000000000000', worker: 'web-000000', expiresInMs: 60_000 } },
-  'POST /v1/deposits': {
+  'POST /v1/deposits': deposit,
+  // What hearth answers `src/mining/miner.js` on `start()`. The values are inert — the Worker in
+  // `MINING_CAPABLE` never reads them — but the shape has to be a template, because a non-200 makes
+  // `_refresh()` throw and the session would report a miner that started and immediately errored.
+  'GET /mining/template': {
     body: {
-      assignment: {
-        id: 'dep_01J000000000000000000000',
-        assetCode: 'EMBER',
-        chain: 'ember',
-        network: 'mainnet',
-        walletId: 'wal_01J000000000000000000000',
-        address: '0x1111111111111111111111111111111111111111',
-        status: 'active',
-        assignedAt: '2026-08-10T00:00:00.000Z',
-        watchedAt: '2026-08-10T00:00:01.000Z',
-      },
+      height: 10_942,
+      coreHash: '0x' + '11'.repeat(32),
+      coinbasePub: '0x' + '22'.repeat(33),
+      target: '0x' + 'ff'.repeat(32),
+      templateId: 'tpl-not-mined-by-these-scenarios',
+      scratchKiB: 1,
+      walkSteps: 1,
     },
   },
 })
@@ -2638,10 +2658,10 @@ const mineRoutes = (summary = fx.poolSummary()): Routes => ({
 const MINER_HANDLE = 'savvanis'
 
 /** The signed-in mount options these scenarios share. */
-const minerOptions = (path: string, summary = fx.poolSummary()) => ({
+const minerOptions = (path: string, summary = fx.poolSummary(), deposit?: Reply) => ({
   url: `${ORIGIN}${path}`,
   storage: SIGNED_IN,
-  routes: mineRoutes(summary),
+  routes: mineRoutes(summary, deposit),
   windowExtras: MINING_CAPABLE,
 })
 
@@ -2732,12 +2752,23 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
     const summary = fx.poolSummary({
       chains: [fx.poolChain({ websocketEndpoint: 'wss://pool.example.test/v1/pool/stratum/ltc' })],
     })
-    const published = summary.chains[0]?.websocketEndpoint
+    const chain = summary.chains[0]
+    assert.ok(chain, 'the fixture lists no chain')
+    const published = chain.websocketEndpoint
     assert.equal(typeof published, 'string', 'the fixture publishes no endpoint; this asserts nothing')
 
     await withSockets(async (opened) => {
-      await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
-        await s.click(s.byRole('button', 'Mine'))
+      // THE PICKER, NOT THE BAR (micro-org#362). The bar's bare press mines EMBER now, so a pool
+      // chain is something a reader chooses by name. That is the whole point of the fix and it is
+      // also what keeps this scenario honest: the address below is dialled because somebody asked
+      // for Litecoin, not because Litecoin happened to be first in an array.
+      await withScreen(shell('/mine'), minerOptions('/mine', summary), async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', new RegExp(chain.name)))
+        await s.settle()
+        assert.deepEqual(opened, [], 'choosing a chain dialled it, before anybody pressed Start')
+
+        await s.click(s.byRole('button', new RegExp(`Start mining ${chain.asset}`)))
         await s.settle()
 
         assert.deepEqual(
@@ -2759,14 +2790,11 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
     })
   })
 
-  it('BJ-MINE-04 ★ T1: the press lands the reader on the mining page, not just on a running miner', async () => {
+  it('BJ-MINE-04 ★ T1: the press lands the reader on the mining page, with what it started selected', async () => {
     fresh()
-    const summary = fx.poolSummary()
-    const chain = summary.chains[0]
-    assert.ok(chain, 'the fixture lists no chain')
-
     await withSockets(async () => {
-      await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
+      await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        await s.settle()
         assert.ok(
           s.text().includes('Somewhere that is not the mining page'),
           'the scenario did not start away from the mining page, so arriving there proves nothing',
@@ -2774,13 +2802,24 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
         await s.click(s.byRole('button', 'Mine'))
         await s.settle()
 
-        // The name is read out of the fixture the scenario supplied. The mining page is the one
-        // screen carrying the duty-cycle and battery controls and the sentence that says nothing
-        // spendable accrues — a machine that starts hashing with none of that on screen is a
-        // machine somebody did not agree to.
-        assert.ok(
-          s.text().includes(chain.name),
+        // The mining page is the one screen carrying the duty-cycle and battery controls and the
+        // sentence that says what becomes of a found block — a machine that starts hashing with
+        // none of that on screen is a machine somebody did not agree to.
+        assert.match(
+          s.text(),
+          /How hard to work this machine/i,
           `the browser is not on the mining page after starting a session. It holds ${JSON.stringify(s.text().slice(0, 200))}`,
+        )
+
+        // AND ON THE CHAIN IT ACTUALLY STARTED. Landing on the mining page with a different chain
+        // selected is the version of this defect that reads as correct: the reader is looking at
+        // one chain's controls while their cores are busy on another.
+        const ember = s.byRole('radio', /EMBER/)
+        assert.equal(
+          ember.getAttribute('aria-checked') ?? String(ember.hasAttribute('checked')),
+          'true',
+          'the press landed on the mining page with something other than the chain it started ' +
+            'selected, so the politeness controls on screen belong to a session that is not running',
         )
       })
     })
@@ -2790,6 +2829,7 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
     fresh()
     await withSockets(async (opened) => {
       await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        await s.settle()
         await s.click(barMine(s))
         await s.settle()
         const started = barMine(s)
@@ -2805,17 +2845,22 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
         const elsewhere = links.find((link) => s.textOf(link) === (NAV[1]?.label ?? ''))
         assert.ok(elsewhere, 'the sub-navigation has no second entry to walk to')
         await s.click(elsewhere)
+        await s.settle()
 
         const away = barMine(s)
         assert.equal(
           away.getAttribute('aria-pressed'),
           'true',
           'the session ended on a navigation, or the bar stopped reporting it — either way the ' +
-            'reader now has two threads running and no control that admits it',
+            'reader now has threads running and no control that admits it',
         )
-        assert.deepEqual(opened.length, 1, 'the navigation restarted the miner and opened a second socket')
+        // EMBER is mined over `fetch` and an event stream, never over a socket. The old assertion
+        // here was `opened.length === 1`, which is the shape of the defect: a bar whose press
+        // silently connects to the pool.
+        assert.deepEqual(opened, [], 'the bar’s own press dialled the pool')
 
         await s.click(away)
+        await s.settle()
         assert.equal(
           barMine(s).getAttribute('aria-pressed'),
           'false',
@@ -2825,33 +2870,46 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
     })
   })
 
-  it('BJ-MINE-06 ★ T1: with no work to hand out the control refuses, and says WHICH of the two reasons it is', async () => {
+  it('BJ-MINE-06 ★ T1: with no work to hand out the page refuses, and says WHICH of the two reasons it is', async () => {
     fresh()
-    // Two deployments that both cannot mine, for reasons a reader acts on differently: a node
-    // still in initial block download fixes itself, and an operator who published no browser
+    // Two deployments that both cannot mine a POOL chain, for reasons a reader acts on differently:
+    // a node still in initial block download fixes itself, and an operator who published no browser
     // address will not have published one tomorrow either. `lib/pool.ts` keeps them apart all the
     // way to the sentence; this is the assertion that they arrive apart.
+    //
+    // Asserted on the mining page rather than on the bar since micro-org#362. The bar's press no
+    // longer touches the pool at all, so a pool with no work is no longer a reason for the bar to
+    // refuse — it was, and that was wrong rather than merely narrow: an account that could mine
+    // EMBER right now was told the whole browser could not mine, because Bitcoin was syncing.
     const reasons: string[] = []
     for (const summary of [
       fx.poolSummary({ chains: [fx.poolChain({ ready: false })] }),
       fx.poolSummary({ chains: [fx.poolChain({ websocketEndpoint: null })] }),
     ]) {
+      const chain = summary.chains[0]
+      assert.ok(chain, 'the fixture lists no chain')
       await withSockets(async (opened) => {
-        await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
-          const mine = s.byRole('button', 'Mine')
+        await withScreen(shell('/mine'), minerOptions('/mine', summary), async (s) => {
+          await s.settle()
+          await s.click(s.byRole('radio', new RegExp(chain.name)))
+          await s.settle()
+
+          // NO START CONTROL AT ALL, not a disabled one. A control that says "not now" and never
+          // says why is the state micro-org#285 left a reader debugging their own machine in.
           assert.equal(
-            mine.getAttribute('aria-disabled'),
-            'true',
-            'a control that cannot mine is offering a press. `aria-disabled` rather than ' +
-              '`disabled` on purpose: the reader who most needs the reason must still reach it',
+            s.allByRole('button').filter((el) => /^Start mining /i.test(s.textOf(el))).length,
+            0,
+            'a chain the pool cannot serve is offering a press, which spends a single-use mining ' +
+              'ticket to earn a refused upgrade',
           )
-          const described = mine.getAttribute('aria-describedby') ?? ''
-          const reason = s.textOf(s.document.getElementById(described))
+          // The sentence itself, scoped to the panel so the picker's own descriptions are not
+          // mistaken for it.
+          const panel = s.document.querySelector('.wt-panel--chain') ?? s.document.body
+          const reason = s.textOf(panel)
           assert.ok(reason.length > 60, `the refusal is not a sentence: ${JSON.stringify(reason)}`)
           reasons.push(reason)
 
-          await s.click(mine)
-          assert.deepEqual(opened, [], 'a refusing control still dialled the pool when pressed')
+          assert.deepEqual(opened, [], 'a chain that cannot be mined was dialled anyway')
         })
       })
     }
@@ -2867,10 +2925,23 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
 
   it('BJ-MINE-07 ★ T1: nothing on the control implies a payment', async () => {
     fresh()
+    // The vocabulary of money, checked against everything the control says EXCEPT the one clause
+    // that is allowed to talk about it. The two figures the control may carry — a rate and a count
+    // — are work.
+    const money = /[$£€¥₿]|\bearn|\bprofit|\brevenue|\bpayout|\bbalance|\brewards?\b/i
+
+    // ── HALF ONE: A POOL SESSION, WHICH IS PAID NOTHING ──────────────────────────────────────
+    const summary = fx.poolSummary()
+    const chain = summary.chains[0]
+    assert.ok(chain, 'the fixture lists no chain')
     await withSockets(async () => {
-      await withScreen(shell('/'), minerOptions('/'), async (s) => {
-        await s.click(barMine(s))
+      await withScreen(shell('/mine'), minerOptions('/mine', summary), async (s) => {
         await s.settle()
+        await s.click(s.byRole('radio', new RegExp(chain.name)))
+        await s.settle()
+        await s.click(s.byRole('button', new RegExp(`Start mining ${chain.asset}`)))
+        await s.settle()
+
         const mine = barMine(s)
         const described = mine.getAttribute('aria-describedby') ?? ''
         const reason = s.textOf(s.document.getElementById(described))
@@ -2881,17 +2952,163 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
         // false because the estate says false.
         assert.ok(
           reason.includes(NOT_PAID_CLAUSE),
-          `the control describes a running miner without saying nothing is paid: ${JSON.stringify(reason)}`,
+          `the control describes a running POOL miner without saying nothing is paid: ${JSON.stringify(reason)}`,
         )
-
-        // Everything the control says EXCEPT that clause, checked for the vocabulary of money.
-        // The two figures it is allowed to carry — a rate and a share count — are work.
         const rest = `${s.textOf(mine)} ${reason.split(NOT_PAID_CLAUSE).join(' ')}`
+        assert.ok(!money.test(rest), `the mining control uses the vocabulary of money: ${JSON.stringify(rest)}`)
+      })
+    })
+
+    // ── HALF TWO: AN EMBER SESSION, WHICH IS CREDITED ────────────────────────────────────────
+    // The pool's clause is FALSE of this one and must not be pasted onto it: EMBER swept to the
+    // account's own custodial deposit address really does arrive. Saying "nothing you mine is paid
+    // out" over a sweep that lands is the same class of dishonesty in the other direction.
+    fresh()
+    await withSockets(async () => {
+      await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        await s.settle()
+        await s.click(barMine(s))
+        await s.settle()
+
+        const mine = barMine(s)
+        const described = mine.getAttribute('aria-describedby') ?? ''
+        const reason = s.textOf(s.document.getElementById(described))
         assert.ok(
-          !/[$£€¥₿]|\bearn|\bprofit|\brevenue|\bpayout|\bbalance|\brewards?\b/i.test(rest),
-          `the mining control uses the vocabulary of money: ${JSON.stringify(rest)}`,
+          reason.includes(EMBER_CREDITED_CLAUSE),
+          `the control describes a running EMBER miner without saying where the block goes: ${JSON.stringify(reason)}`,
+        )
+        assert.ok(
+          !reason.includes(NOT_PAID_CLAUSE),
+          'the pool’s not-paid clause was attached to an EMBER session, whose blocks are swept to ' +
+            'the account’s own deposit address and credited',
+        )
+        const rest = `${s.textOf(mine)} ${reason.split(EMBER_CREDITED_CLAUSE).join(' ')}`
+        assert.ok(!money.test(rest), `the mining control uses the vocabulary of money: ${JSON.stringify(rest)}`)
+      })
+    })
+  })
+
+  it('BJ-MINE-08 ★ T1: the bar’s one press mines EMBER, and dials no pool', async () => {
+    fresh()
+    // THE SCENARIO FOR THE DEFECT ITSELF (micro-org#362). The owner's report: "by default mine bar
+    // start ltc instead of ember". It did, and it was not a bug in a branch — the bar had no EMBER
+    // branch at all, and `summary.chains.find(isMineable)` is LTC and only LTC on this estate,
+    // because bitcoind and dogecoind are still in initial block download.
+    //
+    // The fixture publishes a perfectly good, perfectly startable LTC endpoint on purpose. Nothing
+    // here refuses the pool; the pool is simply not what one press is for.
+    const summary = fx.poolSummary()
+    const published = summary.chains[0]?.websocketEndpoint
+    assert.equal(typeof published, 'string', 'the fixture publishes no pool endpoint to mistake for EMBER')
+
+    await withSockets(async (opened) => {
+      await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
+        await s.settle()
+        await s.click(barMine(s))
+        await s.settle()
+
+        assert.deepEqual(
+          opened,
+          [],
+          `one press on the bar opened a pool socket. The estate's own chain is mined over the ` +
+            'mining API and never over a socket, so anything dialled here is a chain the reader ' +
+            'did not choose',
+        )
+        assert.deepEqual(
+          s.api.matching('POST /v1/pool/ticket'),
+          [],
+          'a pool mining ticket was minted by a press that was offering to mine EMBER',
+        )
+        // And the positive half: the EMBER miner really did ask hearth for work. Asserted as a
+        // REQUEST rather than as a rendered word, because the rendered word is the design system's
+        // and would go on agreeing with a bar that started nothing at all.
+        assert.equal(
+          s.api.matching('GET /mining/template').length >= 1,
+          true,
+          'nothing asked the CloudsForge network for a block template, so whatever that press ' +
+            'started, it was not EMBER',
+        )
+        assert.equal(
+          barMine(s).getAttribute('aria-pressed'),
+          'true',
+          'the bar does not report the session it just started, so there is nothing to stop it with',
         )
       })
+    })
+  })
+
+  it('BJ-MINE-09 ★ T1: with nowhere for a block to go the press becomes a link, not a different chain', async () => {
+    fresh()
+    // The account has an EMBER deposit address and the indexer was never told to watch it. wallet's
+    // own note: "an unwatched address produces no events" — so a block swept there would arrive on
+    // chain and never be credited, which is worse than not sweeping at all because nobody would be
+    // looking for it. The two answers the bar must NOT give are the two it used to be capable of:
+    // start a pool chain instead, or mint a bearer key and put the reward on it silently.
+    const summary = fx.poolSummary()
+    await withSockets(async (opened) => {
+      await withScreen(
+        shell('/'),
+        minerOptions('/', summary, { body: { assignment: { ...EMBER_DEPOSIT, watchedAt: null } } }),
+        async (s) => {
+          await s.settle()
+          const mine = barMine(s)
+
+          // A REAL ANCHOR, so it is reachable by keyboard, opens in a new tab and is read as a
+          // destination rather than as a switch. `ui/packages/ui/src/mining.tsx` renders the
+          // `elsewhere` phase this way for the other thirteen surfaces; this is the same vocabulary
+          // pointed at this one's own mining page.
+          assert.equal(
+            mine.tagName.toLowerCase(),
+            'a',
+            'the control still presses. Whatever that press starts is a chain the reader did not ' +
+              'choose or a key nobody told them about',
+          )
+          assert.match(
+            mine.getAttribute('href') ?? '',
+            /[?&]chain=ember\b/,
+            'the link does not select EMBER, so the reader lands on whatever the picker defaults to',
+          )
+          const described = mine.getAttribute('aria-describedby') ?? ''
+          assert.match(
+            s.textOf(s.document.getElementById(described)),
+            /not being watched yet/i,
+            'the reader is sent away without being told why, which is a dead end with a link on it',
+          )
+
+          assert.deepEqual(opened, [], 'the offer to hand off dialled the pool anyway')
+          assert.deepEqual(
+            s.api.matching('GET /mining/template'),
+            [],
+            'a miner was started for an account with nowhere to put what it finds',
+          )
+        },
+      )
+    })
+
+    // WHERE THAT LINK LANDS, ASSERTED BY GOING THERE. It is a real anchor and a real document
+    // navigation, which no `MemoryRouter` can follow — so the destination is mounted as its own
+    // address rather than clicked, which is what a browser would do with it anyway.
+    await withSockets(async () => {
+      await withScreen(
+        shell(EMBER_MINE_HREF),
+        {
+          ...minerOptions('/mine', summary, { body: { assignment: { ...EMBER_DEPOSIT, watchedAt: null } } }),
+          url: `${ORIGIN}${EMBER_MINE_HREF}`,
+        },
+        async (s) => {
+          await s.settle()
+          assert.match(
+            s.text(),
+            /unreachable by anyone, including us/i,
+            'the reader arrives somewhere that does not explain what holding the key themselves ' +
+              'costs them, which is the one thing this hand-off exists to make them read',
+          )
+          assert.ok(
+            s.queryByRole('button', /Create a mining address/),
+            'neither mode is offered at the destination, so the hand-off is a dead end',
+          )
+        },
+      )
     })
   })
 })

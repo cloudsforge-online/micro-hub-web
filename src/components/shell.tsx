@@ -14,7 +14,6 @@ import {
   CloudsForgeBar,
   CloudsForgeFooter,
   CookieBanner,
-  HUB_MINE_PATH,
   MainRegion,
   SkipLink,
   SubNav,
@@ -26,7 +25,7 @@ import { PRODUCT } from '../lib/hosts.ts'
 import { MAX_SEARCH_LENGTH } from '../lib/hub.ts'
 import { NAV, PUBLIC_ROUTES, ROUTES, isIndexable } from '../lib/routes.ts'
 import { useSession } from '../lib/auth.tsx'
-import { barMining } from '../mining/bar.ts'
+import { EMBER_MINE_HREF, barMining } from '../mining/bar.ts'
 import { MiningProvider, useMining } from '../mining/session.tsx'
 
 /*
@@ -64,14 +63,24 @@ export function AppShell() {
  *
  * The `idle` press starts the session AND goes to `/mine`. Both halves matter. Starting is the
  * owner's request taken literally — one press, from anywhere, no page to find first. Landing on
- * the mining page is what keeps that honest: `pages/mine.tsx` carries the sentence that says
- * nothing spendable accrues, the duty-cycle and battery controls, and the measured numbers, and a
- * machine that starts hashing with none of that on screen is a machine somebody did not agree to.
- * The address is `HUB_MINE_PATH` from the design system — the same constant the other thirteen
- * surfaces link to, so this app's route and their link cannot drift apart.
+ * the mining page is what keeps that honest: `pages/mine.tsx` carries the duty-cycle and battery
+ * controls, the measured numbers, the deposit address a found block is being swept to and the
+ * confirmation depth it has to reach, and a machine that starts hashing with none of that on
+ * screen is a machine somebody did not agree to. The address is `HUB_MINE_PATH` from the design
+ * system — the same constant the other thirteen surfaces link to, so this app's route and their
+ * link cannot drift apart, and `?chain=ember` selects what was just started rather than leaving
+ * the picker on whatever it defaults to.
+ *
+ * `session.start()` is called with NO ARGUMENT, which since micro-org#362 means EMBER and means it
+ * only when EMBER is startable. The bar does not offer this press in any other state, and the
+ * session refuses it in any other state, so the two agree twice.
  *
  * The `mining` press only stops. It deliberately does NOT navigate: the reader is in the middle of
  * something else, which is the whole reason the control is in the bar.
+ *
+ * `elsewhere` has no press at all — it is an anchor, and react-router is deliberately not involved:
+ * `MiningControl` renders a real `<a href>` so the destination can be middle-clicked, opened in a
+ * new tab and read by every check that reads links.
  */
 function useBarMining(): MiningControlProps | undefined {
   const { account, signIn } = useSession()
@@ -80,15 +89,27 @@ function useBarMining(): MiningControlProps | undefined {
 
   return barMining({
     signedIn: account.signedIn,
-    settled: session.settled,
-    running: session.running,
+    // The subject travels with the session rather than being assumed, so a reader who started a
+    // pool chain from the mining page's picker keeps the pool's Stop, the pool's shares and the
+    // pool's clause while it runs.
+    live: session.running
+      ? session.target === 'ember'
+        ? {
+            subject: 'ember',
+            readout: {
+              hashrate: session.emberSnapshot.hashrate,
+              accepted: session.emberSnapshot.accepted.length,
+            },
+          }
+        : { subject: 'pool', readout: session.snapshot }
+      : null,
     refusal: session.refusal,
-    snapshot: session.snapshot,
+    ember: session.ember,
     payoutsImplemented: session.payoutsImplemented,
     onSignIn: () => signIn(),
     onStart: () => {
       session.start()
-      navigate(HUB_MINE_PATH)
+      navigate(EMBER_MINE_HREF)
     },
     onStop: session.stop,
   })
