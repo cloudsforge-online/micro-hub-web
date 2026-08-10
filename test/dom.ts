@@ -98,6 +98,12 @@ const GLOBALS = [
   'DocumentFragment',
   'Event',
   'CustomEvent',
+  // With `CustomEvent` above it and not this, the two halves of one dispatch come from different
+  // implementations: `src/mining/miner.js` is `class Miner extends EventTarget`, which without this
+  // line resolves to NODE's EventTarget, and `emit()` hands it happy-dom's CustomEvent — which
+  // Node refuses with "The 'event' argument must be an instance of Event". Nothing in the app is a
+  // bare `EventTarget` other than the two miners, and both of them dispatch DOM events.
+  'EventTarget',
   'MouseEvent',
   'KeyboardEvent',
   'FocusEvent',
@@ -105,6 +111,12 @@ const GLOBALS = [
   'SubmitEvent',
   'NodeFilter',
   'CSS',
+  // happy-dom has no `EventSource`, and the EMBER miner opens one — `src/mining/miner.js`'s
+  // `_follow()`. It is listed here rather than left absent so that a scenario supplying one in
+  // `windowExtras` reaches the code, which reads the BARE global and not `window.EventSource`.
+  // Absent it is not a failure: `_follow()` catches the ReferenceError and falls back to the blind
+  // poll — which is a real state, and one that silently makes "is the stream live" untestable.
+  'EventSource',
 ] as const
 
 /* ── a browser that can mine ────────────────────────────────────────────────────────────────── */
@@ -112,16 +124,27 @@ const GLOBALS = [
 /**
  * `windowExtras` for a device the mining control will offer itself on.
  *
- * happy-dom implements `WebSocket` and does not implement `Worker`. `src/mining/session.tsx`'s
- * `deviceRefusal()` reads BOTH off `window` — deliberately, so a harness can say what this browser
- * is — which means every mount of `AppShell` renders the bar's Mine control in the `unavailable`
- * phase unless the scenario supplies this. That phase is `aria-disabled` and does nothing when
- * pressed, so a scenario that forgot it would assert against a control that cannot be operated and
- * would go on passing after the control stopped working.
+ * happy-dom does not implement `Worker`, and `src/mining/session.tsx`'s `deviceRefusal()` reads it
+ * off `window` — deliberately, so a harness can say what this browser is — which means every mount
+ * of `AppShell` renders the bar's Mine control in the `unavailable` phase unless the scenario
+ * supplies this. That phase is `aria-disabled` and does nothing when pressed, so a scenario that
+ * forgot it would assert against a control that cannot be operated and would go on passing after
+ * the control stopped working.
  *
- * The constructor is INERT: it takes what a real one takes and answers nothing. Nothing here fakes
- * proof-of-work. A scenario that needs a worker to REPLY passes `PoolMiner`'s own `spawn`, which is
- * the seam that exists for it; this one exists only to make the capability check true.
+ * `WebSocket` is NOT part of this any more (micro-org#362). happy-dom implements one, and
+ * `deviceRefusal()` used to require it — which meant a browser without the POOL's transport was
+ * told it could not mine EMBER either, on a chain that is reached over `fetch` and an event stream
+ * and never over a socket at all.
+ *
+ * `EventSource` is here because the EMBER miner opens one on `start()`. Supplying it is what lets a
+ * scenario exercise the miner's live-stream branch; without it the miner falls back to its blind
+ * poll, which is a genuine state but not the ordinary one, and a scenario asserting "the bar
+ * reports a running session" would be asserting it about a degraded miner.
+ *
+ * Both constructors are INERT: they take what a real one takes and answer nothing. Nothing here
+ * fakes proof-of-work or a chain tip. A scenario that needs a worker to REPLY passes `PoolMiner`'s
+ * own `spawn`, or `MiningProvider`'s `createEmber`, which are the seams that exist for it; these
+ * exist only to make the capability checks true and to keep the constructors from throwing.
  */
 export const MINING_CAPABLE: Record<string, unknown> = {
   Worker: class InertWorker {
@@ -130,6 +153,22 @@ export const MINING_CAPABLE: Record<string, unknown> = {
     onerror: unknown = null
     postMessage(): void {}
     terminate(): void {}
+    addEventListener(): void {}
+    removeEventListener(): void {}
+    dispatchEvent(): boolean {
+      return false
+    }
+  },
+  EventSource: class InertEventSource {
+    static readonly CONNECTING = 0
+    static readonly OPEN = 1
+    static readonly CLOSED = 2
+    readyState = 0
+    onopen: unknown = null
+    onmessage: unknown = null
+    onerror: unknown = null
+    constructor(readonly url: string) {}
+    close(): void {}
     addEventListener(): void {}
     removeEventListener(): void {}
     dispatchEvent(): boolean {

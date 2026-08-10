@@ -701,7 +701,7 @@ export const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'BJ-MINE-03',
-    what: 'one press opens exactly one socket, at the address the pool published, verbatim — and the ticket is not minted before there is a transport to carry it',
+    what: 'a pool chain chosen on the mining page opens exactly one socket, at the address the pool published, verbatim — and the ticket is not minted before there is a transport to carry it',
     asserts: 'client-request',
     tier: 'T1',
     gate: true,
@@ -716,7 +716,7 @@ export const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'BJ-MINE-04',
-    what: 'the press that starts a session also takes the reader to the mining page, where the politeness controls and the not-paid sentence are',
+    what: 'the press that starts a session also takes the reader to the mining page, with the chain it started already selected, where the politeness controls and the honesty sentence are',
     asserts: 'navigation',
     tier: 'T1',
     gate: true,
@@ -730,7 +730,7 @@ export const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'BJ-MINE-06',
-    what: 'when the pool can hand out no work the control refuses in a sentence, and the sentence for a node still syncing is not the sentence for a deployment that published no address',
+    what: 'when the pool can hand out no work the mining page refuses in a sentence, and the sentence for a node still syncing is not the sentence for a deployment that published no address',
     asserts: 'presentation',
     tier: 'T1',
     gate: true,
@@ -738,11 +738,32 @@ export const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'BJ-MINE-07',
-    what: 'nothing on the control implies a payment: the not-paid sentence is on it, and no currency mark or earnings word is anywhere near it',
+    what: 'nothing on the control implies a payment: a pool session carries the not-paid sentence, an EMBER session says where the block goes instead, and no currency mark or earnings word is anywhere near either',
     asserts: 'presentation',
     tier: 'T1',
     gate: true,
     ownedBy: { path: 'pool/src/payouts.ts', grep: 'PAYOUTS ARE OFF' },
+  },
+  {
+    id: 'BJ-MINE-08',
+    what: 'the bar’s own press mines EMBER, the estate’s own chain, and opens no pool socket doing it',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    caveat:
+      'The proof-of-work itself is not driven here, because a browser harness cannot do it: the ' +
+      'Worker is inert, so no nonce is tried and no block is found, and a found block is only a ' +
+      'block if hearth agrees it is. The sweep that follows an accepted one is asserted against ' +
+      'src/lib/embersweep.ts in test/ember-sweep.test.ts, and the proof-of-work itself against ' +
+      'hearth/node/src/chain/header.js. What this scenario owns is the half a reader can see: ' +
+      'which chain one press starts, and that it is not the pool’s.',
+  },
+  {
+    id: 'BJ-MINE-09',
+    what: 'with nowhere on the account for a mined block to go, the press becomes a link to the mining page with EMBER selected and a reason, rather than starting a different chain or minting a key nobody was told about',
+    asserts: 'navigation',
+    tier: 'T1',
+    gate: true,
   },
 ]
 

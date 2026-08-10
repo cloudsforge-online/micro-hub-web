@@ -52,8 +52,18 @@ const appSource = read('src/app.tsx')
  * the change that put a Start control in the bar of every address — so the page reads the session
  * from a context rather than holding a `PoolMiner` of its own, and a mount without the provider is
  * a mount of a page that cannot exist. `AuthProvider` is under it because the provider ends a
- * session when the account does; no scenario in this file seeds a token, so nothing is asked of
- * identity.
+ * session when the account does.
+ *
+ * ── WHY EVERY SCENARIO HERE IS NOW SIGNED IN (micro-org#362) ──────────────────────────────────
+ *
+ * `/mine` is behind `ProtectedRoute` — the first scenario in this file asserts exactly that — so a
+ * signed-out mount of it is not a state the application has. It did not matter while the page asked
+ * `POST /v1/deposits` for itself on mount, because it asked unconditionally. It matters now: the
+ * session owns that question and does not ask it without an account to ask about, so a signed-out
+ * mount answers "there is nowhere for a block to go" for a reason that has nothing to do with the
+ * deposit reply the scenario supplied. Three scenarios below vary that reply and would have agreed
+ * with each other whatever it said, which is the defect class of micro-org#355: a check that cannot
+ * fail. `storage: SIGNED_IN` is what makes them able to.
  *
  * The provider reads `GET /v1/pool` for the bar as well, so every scenario here sees that route
  * called twice. Only the ticket route is counted below, and deliberately: the count that matters is
@@ -140,7 +150,18 @@ const assignment = (over: Partial<DepositAssignment> = {}): DepositAssignment =>
 const poolRoutes = (body: PoolSummary, deposit?: Reply): Routes => ({
   'GET /v1/pool': { status: 200, body },
   'POST /v1/deposits': deposit ?? { status: 200, body: { assignment: assignment() } },
+  // Not scenery either. The held token below is not a JWT, so `AuthProvider` cannot read a handle
+  // out of it and starts at `loading` — which renders as signed OUT. Identity's answer is what
+  // moves it to `signedIn`, and the session asks nothing about deposits until it does.
+  'GET /auth/me': { status: 200, body: { user: { id: 'u1', handle: 'miner', roles: ['player'] } } },
 })
+
+/**
+ * A held session, as `lib/api.ts` stores one. Opaque on purpose: it is not a JWT, so this file
+ * exercises the path where the handle comes from `/auth/me` rather than from the token, and no test
+ * here ever depends on a signature nothing verifies.
+ */
+const SIGNED_IN = { 'cf.accessToken': 'held-access-token', 'cf.refreshToken': 'held-refresh-token' }
 
 /* ══════════════════════════════ 1. the address ══════════════════════════════ */
 
@@ -191,7 +212,7 @@ describe('the chain picker', () => {
     const bitcoin = chain({ chain: 'btc', name: 'Bitcoin', asset: 'BTC', algorithm: 'sha256d' })
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary({ chains: [chain(), bitcoin] })) },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [chain(), bitcoin] })) },
       async (s) => {
         await s.settle()
         // Names built from this test's own fixture, never read back off the page.
@@ -208,7 +229,7 @@ describe('the chain picker', () => {
     assert.equal(isMineable(unpublished), false, 'the fixture is not the case this scenario is about')
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary({ chains: [unpublished] })) },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [unpublished] })) },
       async (s) => {
         await s.settle()
         assert.ok(
@@ -229,7 +250,7 @@ describe('a chain with no published WebSocket endpoint', () => {
     await withScreen(
       page(h(MinePage), '/mine'),
       {
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         routes: poolRoutes(summary({ chains: [chain({ websocketEndpoint: null })] })),
       },
       async (s) => {
@@ -263,7 +284,7 @@ describe('a chain with no published WebSocket endpoint', () => {
     await withScreen(
       page(h(MinePage), '/mine'),
       {
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         routes: poolRoutes(summary({ chains: [chain({ websocketEndpoint: null })] })),
       },
       async (s) => {
@@ -308,7 +329,7 @@ describe('a chain the pool has published but has no work for', () => {
     )
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary({ chains: [syncing] })) },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [syncing] })) },
       async (s) => {
         await s.settle()
         await s.click(s.byRole('radio', /Bitcoin/))
@@ -350,7 +371,7 @@ describe('a chain the pool has published an endpoint for', () => {
   it('offers a start control, and says payouts do not exist before it', async () => {
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary({ payoutsImplemented: false })) },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ payoutsImplemented: false })) },
       async (s) => {
         await s.settle()
         await s.click(s.byRole('radio', /Litecoin/))
@@ -381,7 +402,7 @@ describe('a chain the pool has published an endpoint for', () => {
   it('states every quantitative claim with its unit', async () => {
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary()) },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary()) },
       async (s) => {
         await s.settle()
         await s.click(s.byRole('radio', /Litecoin/))
@@ -424,7 +445,7 @@ describe('EMBER, and where the reward is told to go', () => {
     await withScreen(
       page(h(MinePage), '/mine'),
       {
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         routes: poolRoutes(summary(), { status: 200, body: { assignment: custody } }),
       },
       async (s) => {
@@ -475,7 +496,7 @@ describe('EMBER, and where the reward is told to go', () => {
   it('asks for the address once, and never asks for a new one', async () => {
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary()), strict: true },
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary()), strict: true },
       async (s) => {
         await s.settle()
         const calls = s.api.matching('POST /v1/deposits')
@@ -504,7 +525,7 @@ describe('EMBER, and where the reward is told to go', () => {
       {
         // `not_depositable` is what `wallet/src/deposits.ts` answers for an asset this deployment
         // does not take deposits in; a signed-out session and a wallet outage arrive the same way.
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         routes: poolRoutes(summary(), { status: 400, body: { error: 'not_depositable' } }),
       },
       async (s) => {
@@ -537,7 +558,7 @@ describe('EMBER, and where the reward is told to go', () => {
     await withScreen(
       page(h(MinePage), '/mine'),
       {
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         routes: poolRoutes(summary(), { status: 200, body: { assignment: unwatched } }),
       },
       async (s) => {
@@ -567,7 +588,7 @@ describe('EMBER, and where the reward is told to go', () => {
     await withScreen(
       page(h(MinePage), '/mine'),
       {
-        url: `${ORIGIN}/mine`,
+        url: `${ORIGIN}/mine`, storage: SIGNED_IN,
         // Slow enough that the mount's own flush cannot reach the answer. The scenario is the gap.
         routes: poolRoutes(summary(), { status: 200, body: { assignment: assignment() }, delayMs: 200 }),
       },

@@ -83,6 +83,14 @@ declare module '*/mining/miner.js' {
     readonly following: boolean
     /** Writable: the duty calculation reads it live, so it can be changed on a running pool. */
     pauseOnBattery: boolean
+    /**
+     * Declared because `mining/session.tsx` drives politeness for both miners from one place and
+     * needs the SAME two methods on each. They have always existed on the implementation; the page
+     * that used to own this miner reached past them and poked `duty` then `_applyDuty()` by hand,
+     * which is the shape that lets a caller set one without recomputing the other.
+     */
+    setDuty(duty: number): void
+    setPauseOnBattery(on: boolean): void
     /** Recomputes duty and pushes it to every worker. Call after changing `pauseOnBattery`. */
     _applyDuty(): void
     /** Opens the event stream and arms the fallback poll. Called by `start()`. */

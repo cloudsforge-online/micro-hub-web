@@ -49,16 +49,15 @@
  * a socket to a guess. micro-org#285 is the defect where a plausible endpoint was derived from
  * `window.location` and published, and it cost somebody a day of debugging their own machine.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
-import { sweepToCustody, type SweepOutcome } from '../lib/embersweep.ts'
-import { emberMiningBase } from '../lib/hosts.ts'
-import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
+import type { SweepOutcome } from '../lib/embersweep.ts'
 import { loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
 import type { PoolMinerSnapshot } from '../mining/pool-miner.ts'
-import { useMining } from '../mining/session.tsx'
+import { useMining, type Swept } from '../mining/session.tsx'
 
 /** EMBER is not one of the pool's chains, so it gets an id that cannot collide with one. */
 const EMBER = 'ember'
@@ -76,20 +75,38 @@ export function MinePage() {
     'We could not read what this deployment can mine.',
   )
   /*
-   * The page opens on whatever is already being mined, and on EMBER when nothing is.
+   * The page opens on what it was ASKED for, then on whatever is already being mined, then EMBER.
    *
-   * This is the other half of the bar's Start: a press there begins a session and comes here, and
-   * arriving on a picker that had helpfully selected something else would leave the reader looking
-   * at an idle panel for one chain while another was hashing behind it.
+   * `?chain=` is read first because it is the bar's hand-off, and both halves of that hand-off need
+   * it (micro-org#362): a press that STARTED EMBER navigates here to show the reader what is now
+   * running, and a press that COULD NOT start it navigates here — as a real anchor — so they read
+   * the self-custody screens. In the second case there is no session at all to infer a chain from,
+   * so without the parameter the reader would arrive at the picker's default and, on a deployment
+   * where that default is a pool chain, at a panel about the wrong one.
+   *
+   * The parameter is a chain ID and nothing else, and an unknown one falls through to EMBER rather
+   * than to an empty panel: `chain` below is a lookup in the pool's own answer, so a value that is
+   * not `ember` and not a chain the pool named selects nothing, which is the one state this page
+   * has no rendering for.
    */
   const session = useMining()
-  const [selected, setSelected] = useState<string>(() => session.chain?.chain ?? EMBER)
+  const [params] = useSearchParams()
+  const [selected, setSelected] = useState<string>(() => {
+    const asked = params.get('chain')
+    if (asked !== null && asked !== '') return asked
+    if (session.target === 'ember') return EMBER
+    return session.chain?.chain ?? EMBER
+  })
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
   if (state === 'loading' || !data) return <Loading label="Reading what this deployment can mine" />
 
   const chain = data.chains.find((candidate) => candidate.chain === selected) ?? null
+  // EMBER is the answer for "EMBER" and for anything the pool did not name — see `?chain=` above.
+  // Normalised here rather than in the state so the picker's `aria-checked` cannot disagree with
+  // the panel below it.
+  const ember = selected === EMBER || chain === null
 
   return (
     <>
@@ -102,9 +119,9 @@ export function MinePage() {
         </p>
       </header>
 
-      <ChainPicker summary={data} selected={selected} onSelect={setSelected} />
+      <ChainPicker summary={data} selected={ember ? EMBER : selected} onSelect={setSelected} />
 
-      {selected === EMBER ? <EmberPanel /> : chain ? <PoolPanel chain={chain} summary={data} /> : null}
+      {ember ? <EmberPanel /> : chain ? <PoolPanel chain={chain} summary={data} /> : null}
     </>
   )
 }
@@ -519,26 +536,6 @@ function Credited({ chain, account }: { chain: string; account: string }) {
 
 /* ══════════════════════════════ EMBER ══════════════════════════════ */
 
-interface MiningKey {
-  readonly priv: Uint8Array
-  readonly pubHex: string
-  readonly address: string
-  readonly privHex: string
-}
-
-interface EmberHandle extends EventTarget {
-  start(): Promise<void>
-  stop(): void
-  pauseOnBattery: boolean
-  _applyDuty(): void
-}
-
-/** One accepted block, and what became of the reward it paid to this tab's key. */
-interface Swept {
-  readonly height: number
-  readonly outcome: SweepOutcome
-}
-
 /**
  * EMBER, mined against the node, paid to a key this tab holds, and swept into the account.
  *
@@ -570,190 +567,45 @@ interface Swept {
  * situation this change exists to prevent. So the reveal control comes BACK, in sweep mode, the
  * moment a sweep has not landed: not as a warning up front that would undo the point, but as a
  * recovery path offered exactly when there is something to recover.
+ *
+ * ── AND NONE OF IT IS OWNED HERE ANY MORE (micro-org#362) ─────────────────────────────────────
+ *
+ * The miner, the throwaway key, the sweep queue and the custody answer all moved to
+ * `mining/session.tsx`, for the same reason the pool miner did and then one more. The bar can now
+ * start EMBER, so a miner scoped to this component would be a SECOND one: two `Miner`s grinding at
+ * once, doubling the machine's load and racing two sweeps against one key's nonce, which is the
+ * exact double-spend-into-a-fee shape `lib/embersweep.ts` was rewritten to stop. There is one
+ * session; this panel is a view of it.
+ *
+ * What is still local is what is local to READING this page: whether the private key has been
+ * revealed, and whether the reader has ticked the box saying they saved it. Both are about this
+ * screen rather than about the miner, and neither should survive being navigated away from — a
+ * checkbox that stays ticked from a previous visit is a checkbox nobody read.
  */
 function EmberPanel() {
-  const [key, setKey] = useState<MiningKey | null>(null)
+  const session = useMining()
   const [revealed, setRevealed] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [running, setRunning] = useState(false)
-  /**
-   * The account's custodial EMBER deposit address, or null while it is being asked for or if there
-   * is not one. `undefined` is not used: `custodyState` carries the difference, because "still
-   * asking" and "asked and there is none" render differently and conflating them would flash the
-   * self-custody warning at somebody who is about to be told the opposite.
-   */
-  const [custody, setCustody] = useState<DepositAssignment | null>(null)
-  const [custodyState, setCustodyState] = useState<'asking' | 'settled'>('asking')
-  const [swept, setSwept] = useState<readonly Swept[]>([])
-  // Whether the tip is reaching this tab live over `GET /events`, or the fallback poll is carrying
-  // it. Rendered rather than logged: it changes what the hashrate beside it is worth.
-  const [following, setFollowing] = useState(false)
-  const [hashrate, setHashrate] = useState(0)
-  const [height, setHeight] = useState<number | null>(null)
-  const [accepted, setAccepted] = useState<readonly { height: number }[]>([])
-  const [notice, setNotice] = useState<string | null>(null)
-  const [duty, setDuty] = useState(0.6)
-  const [pauseOnBattery, setPauseOnBattery] = useState(true)
-  const miner = useRef<EmberHandle | null>(null)
 
-  useEffect(() => () => miner.current?.stop(), [])
+  const key = session.emberKey
+  const { hashrate, height, accepted, swept, following, notice } = session.emberSnapshot
+  // Scoped to the EMBER miner rather than to the session, so this panel does not report a pool
+  // chain's session as its own — the same scoping `PoolPanel` does with `session.chain`.
+  const running = session.target === 'ember' && session.running
 
   /**
-   * Ask wallet where this account's EMBER deposits go. Once, on mount, before anything is mined.
-   *
-   * `POST` on a page load looks wrong and is not: `assignDepositAddress` is called WITHOUT `rotate`,
-   * and wallet's own comment is that rotation is the dangerous default because it "would mint a new
-   * address on every page load and leave a trail of addresses nobody was told about". Without it the
-   * service returns the existing active assignment and mints at most one, ever — the same address
-   * the receive screen would hand out. There is no read-only route that returns an address, and
-   * `GET /v1/deposits` returns only assignments that already exist, so an account that has never
-   * received would be told it has nowhere to mine to, which is false.
-   *
-   * It has to happen before mining rather than at the first accepted block, because it decides which
-   * warning the reader is shown and whether Start is gated — and by the time a block is accepted,
-   * they have already read one of them and made a decision on it.
+   * The address a sweep will send to, or null, taken from the session's own answer rather than
+   * re-derived here. `asking` is a third state and not a `null`: the two modes tell a reader
+   * opposite things about their own money, and showing one and then swapping it for the other is
+   * worse than a moment of silence.
    */
-  const asked = useRef(false)
-  useEffect(() => {
-    /*
-     * ONCE PER MOUNT, AND THE GUARD IS NOT DECORATION.
-     *
-     * `src/main.tsx` mounts this app inside `<StrictMode>`, which runs every effect, tears it down
-     * and runs it again — so the ordinary `let live = true` cleanup, which cancels the STATE UPDATE,
-     * still lets the REQUEST go twice. For a GET that is waste; for a `POST /v1/deposits` it is two
-     * calls to the route wallet says must not be called casually. Both are harmless today because
-     * `rotate` is absent and the second returns the same assignment, but "harmless because of a
-     * default on somebody else's route" is not a thing to rely on twice a page load.
-     *
-     * There is deliberately no abort either. The request may already have minted the account's only
-     * EMBER deposit address, and aborting the response does not unmint it — it just throws away the
-     * one copy of the answer. Setting state after an unmount is a no-op in React 18 and later.
-     */
-    if (asked.current) return
-    asked.current = true
-    assignDepositAddress('EMBER')
-      .then((answer) => setCustody(answer.assignment))
-      .catch(() => {
-        // Deliberately silent, and deliberately not a notice. Every reason this can fail — no
-        // session, EMBER not depositable on this deployment, wallet down — has the same correct
-        // consequence: mine to the tab's own key, with the warning that goes with it. An error
-        // banner above a working page would be noise about a fallback that is functioning.
-        setCustody(null)
-      })
-      .finally(() => setCustodyState('settled'))
-  }, [])
+  const offer = session.ember
+  const payingIn = offer.state === 'ready' ? offer.payingIn : null
 
-  /**
-   * The address the sweep will actually send to, or null. Both conditions are refusals to send.
-   *
-   * `watchedAt === null` means the indexer has not been told to watch it, so a deposit to it arrives
-   * on chain and is never credited — losing the sweep is recoverable, sending EMBER into a hole is
-   * not. The `chain` check is belt and braces against an assignment for something that is not the
-   * chain this page mines; `hosts()` derives the wallet host and the RPC host from the same apex, so
-   * the two cannot be different DEPLOYMENTS, but they can be different assets.
-   */
-  const payingIn =
-    custody !== null && custody.watchedAt !== null && custody.chain === 'ember' ? custody : null
-
-  /*
-   * Refs beside the state, because the `accepted` listener is registered ONCE inside `toggle` and
-   * would otherwise close over whatever these were at that instant — a block found ten minutes later
-   * would sweep to an address that had since been re-read, or with a key from a previous session.
-   */
-  const payingInRef = useRef<DepositAssignment | null>(null)
-  payingInRef.current = payingIn
-  const keyRef = useRef<MiningKey | null>(null)
-  keyRef.current = key
-
-  /**
-   * One sweep at a time, whatever the chain does.
-   *
-   * Two blocks accepted seconds apart would otherwise read `eth_getTransactionCount` concurrently,
-   * get the same nonce, and sign two transactions of which the chain takes one — turning a reward
-   * into a fee. The queue is a promise chain rather than a lock because the work is already async
-   * and a lock would need a release path on every throw. A second sweep behind a first also fixes
-   * itself: `sweepToCustody` pays out the BALANCE, so by the time it runs the first has already
-   * moved what it could and this one moves whatever arrived after.
-   */
-  const sweepQueue = useRef<Promise<void>>(Promise.resolve())
-
-  const sweep = useCallback((height: number) => {
-    const to = payingInRef.current
-    const signing = keyRef.current
-    if (to === null || signing === null) return
-    sweepQueue.current = sweepQueue.current.then(async () => {
-      const outcome = await sweepToCustody(signing, to.address)
-      setSwept((prev) => [{ height, outcome }, ...prev].slice(0, 8))
-    })
-  }, [])
-
-  const makeKey = useCallback(async () => {
-    setNotice(null)
-    try {
-      const account = await import('../mining/account.js')
-      setKey(account.generateKey())
-      setSaved(false)
-      setRevealed(false)
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'that key could not be made')
-    }
-  }, [])
-
-  const toggle = useCallback(async () => {
-    if (running) {
-      miner.current?.stop()
-      setFollowing(false)
-      return
-    }
-    setNotice(null)
-    try {
-      // In sweep mode there is no "Create a mining address" step to press, because the address is
-      // an implementation detail of a transfer the reader never sees — so the key is made here, on
-      // the way to starting. `keyRef` is written alongside the state because the `accepted` listener
-      // below is registered in this same pass and would otherwise close over the null.
-      const signing = key ?? (await import('../mining/account.js')).generateKey()
-      if (key === null) {
-        keyRef.current = signing
-        setKey(signing)
-      }
-      const { Miner } = await import('../mining/miner.js')
-      const instance = new Miner({
-        rpc: emberMiningBase(),
-        key: signing,
-        duty,
-        pauseOnBattery,
-      }) as unknown as EmberHandle
-      miner.current = instance
-      instance.addEventListener('state', (event) =>
-        setRunning(Boolean((event as CustomEvent).detail.running)),
-      )
-      instance.addEventListener('hashrate', (event) =>
-        setHashrate((event as CustomEvent).detail.hashrate),
-      )
-      instance.addEventListener('template', (event) =>
-        setHeight((event as CustomEvent).detail.height ?? null),
-      )
-      instance.addEventListener('accepted', (event) => {
-        const detail = (event as CustomEvent).detail as { height: number }
-        setAccepted((prev) => [detail, ...prev].slice(0, 8))
-        // The whole of micro-org#299, in one line and only when there is somewhere to send it.
-        // `sweep` is a no-op in the self-custody mode, where the reward is meant to stay put.
-        sweep(detail.height)
-      })
-      instance.addEventListener('rejected', (event) =>
-        setNotice(`the node refused a block: ${(event as CustomEvent).detail.err}`),
-      )
-      instance.addEventListener('error', (event) =>
-        setNotice((event as CustomEvent).detail.message),
-      )
-      instance.addEventListener('follow', (event) =>
-        setFollowing(Boolean((event as CustomEvent).detail.following)),
-      )
-      await instance.start()
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'mining could not start')
-    }
-  }, [running, key, duty, pauseOnBattery, sweep])
+  const toggle = useCallback(() => {
+    if (running) session.stop()
+    else session.startEmber()
+  }, [running, session])
 
   return (
     <section className="wt-panel">
@@ -766,7 +618,7 @@ function EmberPanel() {
         self-custody warning "for now": the two modes tell a reader opposite things about their own
         money, and showing one and then swapping it for the other is worse than a moment of silence.
       */}
-      {custodyState === 'asking' ? (
+      {offer.state === 'asking' ? (
         <p className="wt-note">Checking where mined EMBER should go on this account…</p>
       ) : payingIn !== null ? (
         <>
@@ -782,7 +634,7 @@ function EmberPanel() {
             <Fact label="Paid into" value={payingIn.address} />
           </dl>
           <div className="wt-form__actions">
-            <button type="button" className="cf-btn cf-btn--ember" onClick={() => void toggle()}>
+            <button type="button" className="cf-btn cf-btn--ember" onClick={toggle}>
               {running ? 'Stop mining' : 'Start mining EMBER'}
             </button>
           </div>
@@ -797,9 +649,20 @@ function EmberPanel() {
             if you close this tab without saving it, anything paid to it is unreachable by anyone,
             including us.
           </p>
+          {/*
+            The named reason from the session, under the standing warning rather than instead of it.
+            Since micro-org#362 this is also the destination the BAR sends a reader to, and it sends
+            them with this sentence — so the page they land on has to be able to show it, or the
+            control that brought them here would be explaining something the page never mentions.
+          */}
+          {offer.state === 'blocked' && <p className="wt-note">{offer.reason}</p>}
           {key === null ? (
             <div className="wt-form__actions">
-              <button type="button" className="cf-btn cf-btn--ember" onClick={() => void makeKey()}>
+              <button
+                type="button"
+                className="cf-btn cf-btn--ember"
+                onClick={session.createEmberKey}
+              >
                 Create a mining address
               </button>
             </div>
@@ -832,7 +695,7 @@ function EmberPanel() {
                 <button
                   type="button"
                   className="cf-btn cf-btn--ember"
-                  onClick={() => void toggle()}
+                  onClick={toggle}
                   disabled={!saved && !running}
                 >
                   {running ? 'Stop mining' : 'Start mining EMBER'}
@@ -843,25 +706,18 @@ function EmberPanel() {
         </>
       )}
 
+      {/*
+        Both settings live on the SESSION, exactly as the pool panel's do. This panel used to reach
+        past the miner's own API and write `duty` then call `_applyDuty()` by hand, which is a shape
+        that lets one be set without the other being recomputed; `setDuty` and `setPauseOnBattery`
+        have always existed on the implementation and the session calls them on BOTH miners, so a
+        duty cycle chosen here is the one the machine runs at whichever chain is going.
+      */}
       <Politeness
-        duty={duty}
-        onDuty={(value) => {
-          setDuty(value)
-          // The EMBER miner reads `this.duty` live, so a running pool is retuned in place.
-          const instance = miner.current as unknown as { duty?: number; _applyDuty?: () => void } | null
-          if (instance) {
-            instance.duty = value
-            instance._applyDuty?.()
-          }
-        }}
-        pauseOnBattery={pauseOnBattery}
-        onPauseOnBattery={(value) => {
-          setPauseOnBattery(value)
-          if (miner.current) {
-            miner.current.pauseOnBattery = value
-            miner.current._applyDuty()
-          }
-        }}
+        duty={session.duty}
+        onDuty={session.setDuty}
+        pauseOnBattery={session.pauseOnBattery}
+        onPauseOnBattery={session.setPauseOnBattery}
         snapshot={null}
       />
 
