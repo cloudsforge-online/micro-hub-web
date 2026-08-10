@@ -110,9 +110,17 @@ export function loadPool(signal?: AbortSignal): Promise<PoolSummary> {
  *   * `unpublished` — the operator has published no browser address. Nothing the reader does will
  *     change it, today or in an hour.
  *   * `not-ready` — the pool holds no template for this chain, so it has no work to hand out. In
- *     practice this is a node still downloading its chain: measured 2026-08-09, micro-pool's
- *     bitcoind was 885,650 blocks into 961,712 and still in initial block download, which is why
- *     BTC is listed and LTC is the only chain a browser can actually mine today. It fixes itself.
+ *     practice this is a node still downloading its chain. The example this comment used to give
+ *     was bitcoind mid-IBD on 2026-08-09, and it has expired twice over: bitcoind reached tip on
+ *     2026-08-10, and mainnet's pool no longer offers BTC at all — measured 2026-08-11,
+ *     `POOL_CHAINS=ltc` and `GET /v1/pool` returns exactly one chain, `ltc`, `ready: true`. So
+ *     `not-ready` currently describes nothing on this deployment, which is the healthy state and
+ *     not a reason to delete the branch: it is what a reader sees in the minutes after a node
+ *     restarts, and it fixes itself.
+ *
+ * A chain the operator has not configured is a THIRD case and is not either of these — it simply
+ * does not appear in the response, so nothing renders and nothing needs a reason. That is why BTC
+ * is absent from the page today rather than showing as blocked.
  *
  * Both are refused BEFORE a socket is opened, because the alternative is a Start button whose only
  * effect is a `503` on the upgrade — `pool/src/wsstratum.ts` refuses a chain that is not serving —
