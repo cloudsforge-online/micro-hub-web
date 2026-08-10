@@ -57,7 +57,7 @@ body {
   background: var(--cf-bg-sunken);
   color: var(--cf-fg);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--cf-text-xs);
 }
 
 .wt-search__input:focus-visible {
@@ -67,7 +67,7 @@ body {
 
 .wt-search__hint {
   font-family: var(--cf-font-mono);
-  font-size: 0.7rem;
+  font-size: var(--cf-text-2xs);
   color: var(--cf-fg-mute);
   border: 1px solid var(--cf-line-strong);
   border-radius: 4px;
@@ -80,67 +80,25 @@ body {
   }
 }
 
-/* ----------------------------- sub-nav ----------------------------- */
-
-/*
- * Docked at exactly the bar's height. `--cf-bar-h` is the token the bar itself is sized with, so
- * the two cannot drift; a copied `46px` would leave a gap or an overlap the day the bar changes,
- * on every surface at once and on none of the ones anybody rechecked.
- */
-.wt-subnav {
-  position: sticky;
-  top: var(--cf-bar-h);
-  z-index: 40;
-  background: var(--cf-bg-raised);
-  border-bottom: 1px solid var(--cf-line);
-}
-
-.wt-subnav__inner {
-  display: flex;
-  gap: 0.25rem;
-  align-items: stretch;
-  max-width: 76rem;
-  margin: 0 auto;
-  padding: 0 1rem;
-  /* Seven entries do not fit a phone. Scrolling the nav beats wrapping it into two rows, which
-     would move the page content down by a line on exactly one breakpoint. */
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.wt-subnav__link {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  padding: 0.7rem 0.85rem;
-  color: var(--cf-fg-dim);
-  text-decoration: none;
-  font-size: 0.875rem;
-  /* The active marker is a 2px underline in the accent, and the LABEL also changes weight and
-     colour: colour is never the only channel. */
-  border-bottom: 2px solid transparent;
-}
-
-.wt-subnav__link:hover {
-  color: var(--cf-fg);
-  background: var(--cf-surface-hover);
-}
-
-.wt-subnav__link.is-active {
-  color: var(--cf-fg);
-  font-weight: 600;
-  border-bottom-color: var(--cf-accent);
-}
-
-.wt-subnav__link:focus-visible {
-  outline: 2px solid var(--cf-accent);
-  outline-offset: -2px;
-}
+/* ----------------------------- sub-nav ----------------------------- *
+ * DELETED. The strip is `.cf-subnav` from the design system now, rendered by `SubNav` in
+ * `src/components/shell.tsx`.
+ *
+ * The rules that stood here were not wrong — they were the one copy of ten that scrolled instead
+ * of squeezing on a phone, and they were the source of the shared ones. They are gone because a
+ * private copy beside the shared one is what produced the ten in the first place: each was right
+ * on the day it was pasted, and six prefixes later they differed in the sticky offset, the
+ * measure and the type size. Nothing app-specific was lost; the links are still this app's, and
+ * still derived from `lib/routes.ts`.
+ * ------------------------------------------------------------------- */
 
 /* ------------------------------ page ------------------------------- */
 
 .wt-main {
-  max-width: 76rem;
+  /* The bar's and the footer's own measure, not a second number that agrees with it today.
+     Measured 2026-08-10: this was `76rem` — 1216px against `.cf-bar__inner`'s 1200px — so the
+     page content sat 8px proud of the chrome above and below it on every wide screen. */
+  max-width: var(--cf-max-w);
   margin: 0 auto;
   padding: 1.5rem 1rem 4rem;
 }
@@ -155,14 +113,14 @@ body {
 
 .wt-page__title {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--cf-text-xl);
   letter-spacing: -0.01em;
 }
 
 .wt-page__meta {
   margin: 0;
   color: var(--cf-fg-mute);
-  font-size: 0.8rem;
+  font-size: var(--cf-text-xs);
 }
 
 .wt-panel {
@@ -190,7 +148,7 @@ body {
 
 .wt-panel__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--cf-text-md);
   color: var(--cf-fg-dim);
   font-weight: 600;
 }
@@ -226,7 +184,7 @@ body {
   border-radius: 8px;
   border: 1px dashed var(--cf-line-strong);
   color: var(--cf-fg-dim);
-  font-size: 0.85rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-banner--degraded {
@@ -241,7 +199,7 @@ body {
 
 .wt-note {
   color: var(--cf-fg-dim);
-  font-size: 0.85rem;
+  font-size: var(--cf-text-sm);
   margin: 0.5rem 0 0;
 }
 
@@ -255,7 +213,7 @@ body {
 
 .wt-link {
   color: var(--cf-accent-text);
-  font-size: 0.85rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-facts {
@@ -263,7 +221,7 @@ body {
   grid-template-columns: minmax(9rem, auto) 1fr;
   gap: 0.35rem 1rem;
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-facts dt {
@@ -276,7 +234,7 @@ body {
 
 .wt-facts--mono dd {
   font-family: var(--cf-font-mono);
-  font-size: 0.82rem;
+  font-size: var(--cf-text-xs);
   word-break: break-all;
 }
 
@@ -292,7 +250,7 @@ body {
   align-items: baseline;
   gap: 0.45rem;
   margin: 0 0 0.75rem;
-  font-size: 0.8rem;
+  font-size: var(--cf-text-xs);
   color: var(--cf-fg-dim);
 }
 
@@ -328,7 +286,7 @@ body {
   gap: 0.65rem;
   padding: 0.55rem 0;
   border-top: 1px solid var(--cf-line);
-  font-size: 0.875rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-row:first-child {
@@ -359,7 +317,7 @@ body {
 
 .wt-row__sub {
   color: var(--cf-fg-mute);
-  font-size: 0.78rem;
+  font-size: var(--cf-text-xs);
   overflow-wrap: anywhere;
 }
 
@@ -376,7 +334,7 @@ body {
 
 .wt-row__time {
   color: var(--cf-fg-mute);
-  font-size: 0.78rem;
+  font-size: var(--cf-text-xs);
   flex-shrink: 0;
 }
 
@@ -390,7 +348,7 @@ body {
 }
 
 .wt-addr {
-  font-size: 0.78rem;
+  font-size: var(--cf-text-xs);
   color: var(--cf-fg-dim);
   /* An address retyped by hand is an address sent to the wrong place. One click selects all of
      it, and it wraps rather than being clipped. */
@@ -411,7 +369,7 @@ body {
   border-radius: 999px;
   border: 1px solid var(--cf-line-strong);
   color: var(--cf-fg-mute);
-  font-size: 0.7rem;
+  font-size: var(--cf-text-2xs);
   text-transform: lowercase;
   white-space: nowrap;
 }
@@ -485,19 +443,19 @@ body {
 .wt-card__title {
   margin: 0;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-card__detail {
   margin: 0;
   color: var(--cf-fg-dim);
-  font-size: 0.8rem;
+  font-size: var(--cf-text-xs);
 }
 
 .wt-card__progress {
   margin: 0;
   color: var(--cf-fg-mute);
-  font-size: 0.78rem;
+  font-size: var(--cf-text-xs);
 }
 
 .wt-card__foot {
@@ -512,7 +470,7 @@ body {
    what makes "a card that cannot load is absent, not broken" legible rather than mysterious. */
 .wt-card__source {
   color: var(--cf-fg-mute);
-  font-size: 0.7rem;
+  font-size: var(--cf-text-2xs);
   text-transform: lowercase;
 }
 
@@ -534,7 +492,7 @@ body {
   padding: 0.55rem 0.8rem;
   border-radius: 8px;
   border: 1px solid var(--cf-warn);
-  font-size: 0.85rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-alert--critical {
@@ -552,7 +510,7 @@ body {
 .wt-alert__source {
   margin-left: auto;
   color: var(--cf-fg-mute);
-  font-size: 0.7rem;
+  font-size: var(--cf-text-2xs);
 }
 
 /* ----------------------------- tables ------------------------------ */
@@ -566,7 +524,7 @@ body {
 .wt-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: var(--cf-text-sm);
 }
 
 .wt-table th,
@@ -580,7 +538,7 @@ body {
 .wt-table thead th {
   color: var(--cf-fg-mute);
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: var(--cf-text-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -600,7 +558,7 @@ body {
  */
 .wt-unpriced {
   color: var(--cf-warn-text);
-  font-size: 0.8rem;
+  font-size: var(--cf-text-xs);
 }
 
 .wt-unpriced__why {
@@ -611,13 +569,13 @@ body {
    page head, which is the OLDEST of them. */
 .wt-asof {
   color: var(--cf-fg-mute);
-  font-size: 0.72rem;
+  font-size: var(--cf-text-2xs);
   margin-left: 0.35rem;
 }
 
 .wt-unit {
   color: var(--cf-fg-mute);
-  font-size: 0.72rem;
+  font-size: var(--cf-text-2xs);
 }
 
 /* ------------------------------ feed ------------------------------- */
@@ -648,7 +606,7 @@ body {
 }
 
 .wt-state__icon {
-  font-size: 1.5rem;
+  font-size: var(--cf-text-2xl);
   line-height: 1;
 }
 
@@ -661,7 +619,7 @@ body {
 .wt-state__meta {
   margin: 0;
   color: var(--cf-fg-dim);
-  font-size: 0.875rem;
+  font-size: var(--cf-text-sm);
   max-width: 34rem;
 }
 

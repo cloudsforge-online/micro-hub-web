@@ -17,6 +17,7 @@ import {
   HUB_MINE_PATH,
   MainRegion,
   SkipLink,
+  SubNav,
   type MiningControlProps,
 } from '@cloudsforge/ui'
 import { applyHead, surfaceMeta, type SurfaceMeta } from '@cloudsforge/ui/seo'
@@ -127,9 +128,19 @@ function Chrome() {
         mining={mining}
       />
       {/*
-        The sub-nav is sticky at exactly `var(--cf-bar-h)` — the bar's own height token, not a
-        number copied out of it. When the bar's height changes, this moves with it; a hard-coded
-        46px would leave a seam that only appears on the surfaces nobody rechecked.
+        `SubNav` from @cloudsforge/ui, rather than the `.wt-subnav` this file used to write itself.
+
+        The strip was sticky at `var(--cf-bar-h)`, scrolled rather than squeezed on a phone, and
+        marked the current section in three channels — all of which was RIGHT, and all of which
+        was private. Measured 2026-08-10: ten frontends declared this same row under six different
+        class prefixes, and this repository's copy was the only one of the ten that survived a
+        narrow viewport. The other nine squeezed their labels and broke them mid-word. Sharing the
+        copy that got it right is what fixes them; keeping a private copy here is what let the
+        other nine drift in the first place.
+
+        What this app still owns is the LINKS — `NAV` is derived from `lib/routes.ts`, and the
+        active state is react-router's, which is why the shared component takes children rather
+        than a list of addresses.
 
         It is absent for a signed-out reader. Every entry in it goes to a page that reads somebody's
         money or sessions, so for a visitor on the sign-in page it is eight links that all end in a
@@ -138,22 +149,22 @@ function Chrome() {
         — it is the same reasoning as the switcher's `adminOnly`: a menu entry nobody can open.
       */}
       {account.signedIn && (
-        <nav className="wt-subnav" aria-label="Sections">
-          <div className="wt-subnav__inner">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                // `end` only on the index: without it, `/` matches every path and the Overview tab
-                // stays highlighted on all seven pages.
-                end={item.to === '/'}
-                className={({ isActive }) => `wt-subnav__link${isActive ? ' is-active' : ''}`}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </div>
-        </nav>
+        <SubNav label="Sections">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              // `end` only on the index: without it, `/` matches every path and the Overview tab
+              // stays highlighted on all seven pages.
+              end={item.to === '/'}
+              className={({ isActive }) =>
+                `cf-subnav__link${isActive ? ' cf-subnav__link--current' : ''}`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </SubNav>
       )}
       <DocumentMeta />
       {/*
