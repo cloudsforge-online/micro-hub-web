@@ -510,7 +510,22 @@ function tabbablesIn(doc: Document): Element[] {
 
 export async function mount(element: ReactElement, options: MountOptions = {}): Promise<Screen> {
   const url = options.url ?? 'https://hub.cloudsforge.online/'
-  const win = new Window({ url })
+  /*
+   * NO SCRIPT IN THIS HARNESS IS EVER FETCHED.
+   *
+   * `stubbed fetch` above covers what the APP asks for; it does not cover a `<script src>` the app
+   * appends, which happy-dom loads through its own client. One page does append one:
+   * `src/lib/turnstile.ts` adds Cloudflare's widget script. Left alone, every scenario that mounts
+   * the register page would make a real request to `challenges.cloudflare.com` — a suite that needs
+   * the internet, and a third party that decides whether CI is green.
+   *
+   * Turned off rather than routed, because there is nothing useful to serve: the real script's job
+   * is to install `window.turnstile`, and a scenario that needs it installs its own through
+   * `windowExtras` (which is also the only way to drive a widget's callbacks). happy-dom fires
+   * `error` on the element, which is precisely the "a content blocker ate the script" case the
+   * register page has a branch for.
+   */
+  const win = new Window({ url, settings: { disableJavaScriptFileLoading: true } })
   const doc = win.document as unknown as Document
 
   for (const [k, v] of Object.entries(options.storage ?? {})) {

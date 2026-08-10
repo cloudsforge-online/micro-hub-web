@@ -568,6 +568,13 @@ for (const strict of [false, true]) {
           url: `${ORIGIN}/account/register`,
           strict,
           routes: {
+            // No bot challenge on this deployment, declared rather than left unrouted — see the
+            // same constant's note in `test/journeys.test.ts`. The latch is what this scenario is
+            // about, and it must hold with or without a challenge in front of it.
+            'GET /auth/challenge': {
+              status: 200,
+              body: { required: false, provider: 'turnstile', siteKey: null, action: 'signup' },
+            },
             // The service's real behaviour: the first creates the account, the second is refused
             // because the handle it asks for was just taken — by the first. A stub that answered
             // both 201 would let this scenario pass against a client that sent two.
