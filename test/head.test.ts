@@ -29,7 +29,8 @@ import { MAIN_ID, accountUrl, cloudsforgeHosts } from '@cloudsforge/ui'
 import { surfaceMeta } from '@cloudsforge/ui/seo'
 import { CONSENT_STORAGE_KEY } from '@cloudsforge/ui/consent'
 
-import { withScreen, type Screen } from './dom.ts'
+import { MINING_CAPABLE, withScreen, type Screen } from './dom.ts'
+import { poolSummary } from './fixtures.ts'
 import { __resetAuth } from '../src/lib/api.ts'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import { AppShell, headFor } from '../src/components/shell.tsx'
@@ -355,14 +356,32 @@ async function shellAt(
       // What `index.html` declares. Without it `analyticsId()` finds nothing and the banner
       // renders `null`, which would make every consent assertion below pass vacuously.
       meta: { 'cf-analytics': ANALYTICS_ID },
+      /*
+       * The pool, signed in or out, because the SHELL asks now.
+       *
+       * `src/mining/session.tsx` mounts inside `AppShell` and reads `GET /v1/pool` on every address
+       * so the bar's Mine control knows what it is offering. The route is public, so it is called
+       * for a signed-out reader too. Left unrouted it throws in the harness, is swallowed by the
+       * provider, and settles the bar into "the pool could not be reached" — a state none of the
+       * scenarios below chose, in the one piece of chrome they are all about.
+       */
+      routes: {
+        'GET /v1/pool': { body: poolSummary() },
+        ...(signedIn ? { 'GET /auth/me': { body: { user: { id: 'u1', handle, roles: ['player'] } } } } : {}),
+      },
+      /*
+       * A browser that can mine, so the control is in the state a reader with a working machine
+       * sees rather than permanently refusing. happy-dom implements `WebSocket` and does not
+       * implement `Worker`; `deviceRefusal()` reads both off `window` for exactly this reason, and
+       * without the stub every assertion here would be made against the `unavailable` phase — the
+       * one phase that is a `<button>` nobody can press.
+       */
+      windowExtras: MINING_CAPABLE,
       ...(signedIn
         ? {
             storage: {
               'cf.accessToken': unsignedToken({ handle, roles: ['player'] }),
               'cf.refreshToken': 'held-refresh-token',
-            },
-            routes: {
-              'GET /auth/me': { body: { user: { id: 'u1', handle, roles: ['player'] } } },
             },
           }
         : {}),

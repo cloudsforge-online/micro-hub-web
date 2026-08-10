@@ -107,6 +107,37 @@ const GLOBALS = [
   'CSS',
 ] as const
 
+/* ── a browser that can mine ────────────────────────────────────────────────────────────────── */
+
+/**
+ * `windowExtras` for a device the mining control will offer itself on.
+ *
+ * happy-dom implements `WebSocket` and does not implement `Worker`. `src/mining/session.tsx`'s
+ * `deviceRefusal()` reads BOTH off `window` — deliberately, so a harness can say what this browser
+ * is — which means every mount of `AppShell` renders the bar's Mine control in the `unavailable`
+ * phase unless the scenario supplies this. That phase is `aria-disabled` and does nothing when
+ * pressed, so a scenario that forgot it would assert against a control that cannot be operated and
+ * would go on passing after the control stopped working.
+ *
+ * The constructor is INERT: it takes what a real one takes and answers nothing. Nothing here fakes
+ * proof-of-work. A scenario that needs a worker to REPLY passes `PoolMiner`'s own `spawn`, which is
+ * the seam that exists for it; this one exists only to make the capability check true.
+ */
+export const MINING_CAPABLE: Record<string, unknown> = {
+  Worker: class InertWorker {
+    onmessage: unknown = null
+    onmessageerror: unknown = null
+    onerror: unknown = null
+    postMessage(): void {}
+    terminate(): void {}
+    addEventListener(): void {}
+    removeEventListener(): void {}
+    dispatchEvent(): boolean {
+      return false
+    }
+  },
+}
+
 /* ── what went over the wire ────────────────────────────────────────────────────────────────── */
 
 export interface Wire {

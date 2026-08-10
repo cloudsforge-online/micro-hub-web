@@ -57,7 +57,8 @@ import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
 import { loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
-import { PoolMiner, type PoolMinerSnapshot } from '../mining/pool-miner.ts'
+import type { PoolMinerSnapshot } from '../mining/pool-miner.ts'
+import { useMining } from '../mining/session.tsx'
 
 /** EMBER is not one of the pool's chains, so it gets an id that cannot collide with one. */
 const EMBER = 'ember'
@@ -74,7 +75,15 @@ export function MinePage() {
     () => 1,
     'We could not read what this deployment can mine.',
   )
-  const [selected, setSelected] = useState<string>(EMBER)
+  /*
+   * The page opens on whatever is already being mined, and on EMBER when nothing is.
+   *
+   * This is the other half of the bar's Start: a press there begins a session and comes here, and
+   * arriving on a picker that had helpfully selected something else would leave the reader looking
+   * at an idle panel for one chain while another was hashing behind it.
+   */
+  const session = useMining()
+  const [selected, setSelected] = useState<string>(() => session.chain?.chain ?? EMBER)
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
@@ -168,31 +177,31 @@ function ChainPicker({
 
 /* ══════════════════════════════ pool mining ══════════════════════════════ */
 
+/**
+ * One pool chain, and the controls for the session that mines it.
+ *
+ * ── THE MINER IS NOT OWNED HERE ANY MORE, AND THAT IS THE POINT ────────────────────────────────
+ *
+ * This panel used to hold a `PoolMiner` in a ref and stop it on unmount, which meant a session
+ * ended the moment its reader looked at anything else. It now drives the one session
+ * `mining/session.tsx` holds above the router — the same one the bar's control on every page is
+ * showing and can stop. Nothing here stops it on unmount: leaving this page is not a decision to
+ * stop mining, and there is now a control in the bar of the page they left for.
+ *
+ * `running` and the numbers are scoped to THIS chain rather than to the session, so a panel for a
+ * chain that is not the one running shows its own idle state instead of somebody else's hashrate.
+ * Starting from a second chain's panel switches the session over; `start()` stops the first.
+ */
 function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary }) {
-  const miner = useRef<PoolMiner | null>(null)
-  const [snapshot, setSnapshot] = useState<PoolMinerSnapshot | null>(null)
-  const [duty, setDuty] = useState(0.6)
-  const [pauseOnBattery, setPauseOnBattery] = useState(true)
+  const session = useMining()
+  const mine = session.chain?.chain === chain.chain
+  const snapshot = mine ? session.snapshot : null
   const blocker = miningBlocker(chain)
 
-  // A worker pool left running in a detached component keeps every core busy and there is no longer
-  // anything on screen to turn it off. Switching chains unmounts this, so this is the stop.
-  useEffect(() => () => miner.current?.stop(), [])
-  useEffect(() => {
-    miner.current?.stop()
-    miner.current = null
-    setSnapshot(null)
-  }, [chain.chain])
-
   const toggle = useCallback(() => {
-    if (miner.current?.running) {
-      miner.current.stop()
-      return
-    }
-    const instance = new PoolMiner({ chain, duty, pauseOnBattery, onChange: setSnapshot })
-    miner.current = instance
-    void instance.start()
-  }, [chain, duty, pauseOnBattery])
+    if (mine && session.running) session.stop()
+    else session.start(chain)
+  }, [chain, mine, session])
 
   if (blocker !== null) {
     return (
@@ -226,7 +235,7 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
     )
   }
 
-  const running = snapshot !== null && snapshot.status !== 'stopped' && snapshot.status !== 'idle'
+  const running = mine && session.running
 
   return (
     <section className="wt-panel">
@@ -248,17 +257,16 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
         </button>
       </div>
 
+      {/*
+        Both settings live on the SESSION rather than on this panel, so a duty cycle chosen here
+        survives the navigation that used to end the session anyway, and applies to the miner the
+        bar can start on any page.
+      */}
       <Politeness
-        duty={duty}
-        onDuty={(value) => {
-          setDuty(value)
-          miner.current?.setDuty(value)
-        }}
-        pauseOnBattery={pauseOnBattery}
-        onPauseOnBattery={(value) => {
-          setPauseOnBattery(value)
-          miner.current?.setPauseOnBattery(value)
-        }}
+        duty={session.duty}
+        onDuty={session.setDuty}
+        pauseOnBattery={session.pauseOnBattery}
+        onPauseOnBattery={session.setPauseOnBattery}
         snapshot={snapshot}
       />
 

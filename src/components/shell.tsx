@@ -14,8 +14,10 @@ import {
   CloudsForgeBar,
   CloudsForgeFooter,
   CookieBanner,
+  HUB_MINE_PATH,
   MainRegion,
   SkipLink,
+  type MiningControlProps,
 } from '@cloudsforge/ui'
 import { applyHead, surfaceMeta, type SurfaceMeta } from '@cloudsforge/ui/seo'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -23,6 +25,8 @@ import { PRODUCT } from '../lib/hosts.ts'
 import { MAX_SEARCH_LENGTH } from '../lib/hub.ts'
 import { NAV, PUBLIC_ROUTES, ROUTES, isIndexable } from '../lib/routes.ts'
 import { useSession } from '../lib/auth.tsx'
+import { barMining } from '../mining/bar.ts'
+import { MiningProvider, useMining } from '../mining/session.tsx'
 
 /*
  * The sub-navigation is DERIVED from `lib/routes.ts` rather than restated here. A second list
@@ -30,8 +34,68 @@ import { useSession } from '../lib/auth.tsx'
  * see the header of that file for why the count matters.
  */
 
+/**
+ * The shell, wrapped in the one thing that has to outlive the page.
+ *
+ * `MiningProvider` is here rather than in `app.tsx` for a reason that is a property of the router:
+ * this component is the LAYOUT route's element, so react-router keeps it mounted across every
+ * navigation between the routes nested inside it, and the miner it holds is not restarted by
+ * walking from the wallet to the activity feed. Putting it around `<Routes>` would work equally
+ * well and would leave three test files mounting `AppShell` without it — the provider throws
+ * rather than returning a not-mining default, on purpose.
+ *
+ * `Chrome` is a separate component because a component cannot consume a context it provides in the
+ * same render pass, and the bar needs the session.
+ */
 export function AppShell() {
+  return (
+    <MiningProvider>
+      <Chrome />
+    </MiningProvider>
+  )
+}
+
+/**
+ * The bar's mining control, in whichever of its states is true right now.
+ *
+ * All of the judgement is in `mining/bar.ts`, which is a pure function of the session so that
+ * every state can be walked without a browser. This is the wiring: what a press DOES.
+ *
+ * The `idle` press starts the session AND goes to `/mine`. Both halves matter. Starting is the
+ * owner's request taken literally — one press, from anywhere, no page to find first. Landing on
+ * the mining page is what keeps that honest: `pages/mine.tsx` carries the sentence that says
+ * nothing spendable accrues, the duty-cycle and battery controls, and the measured numbers, and a
+ * machine that starts hashing with none of that on screen is a machine somebody did not agree to.
+ * The address is `HUB_MINE_PATH` from the design system — the same constant the other thirteen
+ * surfaces link to, so this app's route and their link cannot drift apart.
+ *
+ * The `mining` press only stops. It deliberately does NOT navigate: the reader is in the middle of
+ * something else, which is the whole reason the control is in the bar.
+ */
+function useBarMining(): MiningControlProps | undefined {
+  const { account, signIn } = useSession()
+  const session = useMining()
+  const navigate = useNavigate()
+
+  return barMining({
+    signedIn: account.signedIn,
+    settled: session.settled,
+    running: session.running,
+    refusal: session.refusal,
+    snapshot: session.snapshot,
+    payoutsImplemented: session.payoutsImplemented,
+    onSignIn: () => signIn(),
+    onStart: () => {
+      session.start()
+      navigate(HUB_MINE_PATH)
+    },
+    onStop: session.stop,
+  })
+}
+
+function Chrome() {
   const { account, signIn, signOut } = useSession()
+  const mining = useBarMining()
 
   return (
     <>
@@ -48,12 +112,19 @@ export function AppShell() {
         defect `test/account-link.test.ts` exists for.
       */}
       <SkipLink>Skip to the page</SkipLink>
+      {/*
+        `mining` is the design system's own control and sits between the search field and the
+        account menu — the bar decides that, not this file. Forge Hub is the ONE surface that passes
+        a live session rather than `miningOnHub()`: the miner runs on this origin, so this is the
+        only bundle that can observe or stop it. See `mining/session.tsx`.
+      */}
       <CloudsForgeBar
         current={PRODUCT}
         account={account}
         onSignIn={() => signIn()}
         onSignOut={signOut}
         rightSlot={account.signedIn ? <SearchField /> : undefined}
+        mining={mining}
       />
       {/*
         The sub-nav is sticky at exactly `var(--cf-bar-h)` — the bar's own height token, not a
