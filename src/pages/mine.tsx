@@ -971,6 +971,15 @@ function describeSweep(outcome: SweepOutcome): string {
       return `${ember(outcome.value)} sent to your deposit address — it appears in your balance after 60 confirmations`
     case 'too_small':
       return `left where it is: ${ember(outcome.balance)} does not cover the ${ember(outcome.fee)} fee to move it`
+    case 'in_flight':
+      // Deliberately NOT phrased as a failure, because nothing failed and nothing was lost. Before
+      // this state existed the reader saw `insufficient funds for gas * price + value` on every
+      // other block — the node's words for a transaction this page should never have signed — and
+      // the only honest reading of that sentence is that their money went somewhere. It did not:
+      // the earlier transfer is carrying it, and the next one carries this reward too. `queued` is
+      // not printed — it is a mempool nonce distance, it is 1 in every case a reader will meet,
+      // and the number that answers "how long" is a block rather than a count of transactions.
+      return `waiting for the previous transfer to be mined — nothing was sent and nothing was lost, and the next block moves this reward with it`
     case 'failed':
       return `not moved — ${outcome.message}`
   }
