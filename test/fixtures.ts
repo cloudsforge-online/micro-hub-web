@@ -25,6 +25,7 @@ import type {
   WithdrawalRecord,
 } from '../src/lib/hub.ts'
 import type { KeyExport, RevealedKey, TokenSighting, Withdrawal } from '../src/lib/money.ts'
+import type { PoolChain, PoolSummary } from '../src/lib/pool.ts'
 import type { Tile } from '../src/lib/tile.ts'
 
 /* ══════════════════════════════ tiles ══════════════════════════════ */
@@ -326,5 +327,72 @@ export const tokenSighting = (over: Partial<TokenSighting> = {}): TokenSighting 
   confirmations: 12,
   firstSeenAt: '2026-08-09T18:04:00.000Z',
   credited: false,
+  ...over,
+})
+
+/* ══════════════════════════════ the pool ══════════════════════════════ */
+
+/**
+ * micro-pool describing itself, as `GET /v1/pool` answers. `src/lib/pool.ts` declares the shape.
+ *
+ * ── WHY A POOL FIXTURE LIVES IN THE SHARED FILE NOW ───────────────────────────────────────────
+ *
+ * Because the SHELL reads this route, on every address. `src/mining/session.tsx` owns the browser
+ * mining session above the router so the control in the bar can start and stop one thing from
+ * anywhere, and it asks the pool what it is as soon as it mounts. That makes `GET /v1/pool` part of
+ * the scenery of every scenario that mounts `AppShell` — the account menu, the consent banner, the
+ * held session — none of which are about mining. A scenario that leaves it unrouted is not neutral:
+ * `test/dom.ts` throws, the provider's rejection handler swallows the throw, and the bar settles
+ * into the "the pool could not be reached" state the scenario never arranged and does not know it
+ * is asserting against.
+ *
+ * `test/mine.test.ts` deliberately keeps its own copy rather than importing this. Its scenarios vary
+ * one chain field at a time and read every expected value back out of the object they supplied; a
+ * shared default that each of them overrode would be a fixture in name only, and the mining page is
+ * the one surface where the pool's shape IS the subject.
+ *
+ * The default describes ONE MINEABLE CHAIN, which is the estate as measured on 2026-08-10: LTC has
+ * a published browser endpoint and a template, and BTC and DOGE are listed but answer `not-ready`
+ * because their nodes are still in initial block download. That is also the state in which the bar's
+ * control has something to offer, so a scenario that wanted a refusal has to say so rather than
+ * inheriting one.
+ */
+export const poolChain = (over: Partial<PoolChain> = {}): PoolChain => ({
+  chain: 'ltc',
+  name: 'Litecoin',
+  asset: 'LTC',
+  decimals: 8,
+  algorithm: 'scrypt',
+  stratumPort: 3333,
+  // Null, and not a plausible-looking `stratum+tcp://…`. micro-org#285 is the defect where a
+  // derived address that could not connect was published on a public page; a fixture that carried
+  // one would let a scenario pass while the page showed exactly that.
+  stratumEndpoint: null,
+  websocketEndpoint: 'wss://pool.example.test/v1/pool/stratum/ltc',
+  connections: 2,
+  height: 2_900_001,
+  networkDifficulty: 41_000_000,
+  templateAgeSeconds: 4,
+  ready: true,
+  windowSeconds: 600,
+  sharesInWindow: 128,
+  workersInWindow: 3,
+  hashrateEstimate: 51_200,
+  ...over,
+})
+
+/**
+ * The pool's own summary.
+ *
+ * `payoutsImplemented` is false, which is not a convenience: `pool/src/payouts.ts` holds two
+ * independent gates that refuse settlement, the service derives this flag from them, and a fixture
+ * that said otherwise would let a surface claim a payment the estate cannot make.
+ */
+export const poolSummary = (over: Partial<PoolSummary> = {}): PoolSummary => ({
+  network: 'mainnet',
+  feeBasisPoints: 100,
+  pplnsWindowMultiplier: 2,
+  payoutsImplemented: false,
+  chains: [poolChain()],
   ...over,
 })

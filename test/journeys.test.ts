@@ -48,10 +48,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 import { StrictMode, createElement as h, type ReactElement } from 'react'
-import { MemoryRouter } from 'react-router-dom'
-import { IDENTITY_AUTH_ROUTES } from '@cloudsforge/ui'
+import { MemoryRouter, Route, Routes as RouterRoutes } from 'react-router-dom'
+import { IDENTITY_AUTH_ROUTES, NOT_PAID_CLAUSE } from '@cloudsforge/ui'
 
-import { withScreen, type Routes, type Screen } from './dom.ts'
+import { MINING_CAPABLE, withScreen, type Routes, type Screen } from './dom.ts'
 import * as fx from './fixtures.ts'
 import { DOC22_UNCLAIMED, SCENARIOS } from './journeys.ts'
 import { __resetAuth } from '../src/lib/api.ts'
@@ -69,6 +69,8 @@ import {
   VerifyEmailPage,
 } from '../src/pages/account.tsx'
 import { WalletPage } from '../src/pages/wallet.tsx'
+import { MinePage } from '../src/pages/mine.tsx'
+import { NAV } from '../src/lib/routes.ts'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
 const at = (p: string) => fileURLToPath(new URL(`../${p}`, import.meta.url))
@@ -543,7 +545,12 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
           // over the tunnel — 308ms for the preflight alone, measured 2026-08-05 — and the whole
           // defect lives in the window this delay stands in for.
           'GET /auth/me': { delayMs: 200, body: { user: { id: 'u1', handle: fromIdentity, roles: ['player'] } } },
+          // The shell's own read, since the mining session moved above the router. Public, so it
+          // is issued for a signed-out reader too, and routed here so the bar this scenario
+          // inspects is the ordinary one rather than one that has just failed to reach the pool.
+          'GET /v1/pool': { body: fx.poolSummary() },
         },
+        windowExtras: MINING_CAPABLE,
       },
       async (s) => {
         // The identity call is IN FLIGHT and has not answered. If this is ever 0, the delay stopped
@@ -2420,6 +2427,378 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
         },
       )
     }
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   6.21 Group M — browser mining, from the bar, on every address.
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The socket the pool would have answered, which answers nothing.
+ *
+ * A recorder and not a Stratum server. What these scenarios are about is the client's FIRST move —
+ * which address it dialled and how many times — and a socket that replied would take them into a
+ * handshake that `test/pool-contract.test.ts` already drives against micro-pool's own modules.
+ *
+ * `globalThis.WebSocket` rather than `window.WebSocket`, because that is what `lib/stratum-client.ts`
+ * `defaultSocket` resolves: it is module code, it says `new WebSocket(url)`, and on Node 24 that
+ * global is a REAL client. Without this swap a scenario that pressed Start would attempt a live
+ * connection to whatever hostname the fixture carries.
+ */
+async function withSockets(run: (opened: string[]) => Promise<void>): Promise<void> {
+  const g = globalThis as unknown as Record<string, unknown>
+  const saved = Object.getOwnPropertyDescriptor(g, 'WebSocket')
+  const opened: string[] = []
+  class RecordingSocket {
+    onopen: unknown = null
+    onmessage: unknown = null
+    onerror: unknown = null
+    onclose: unknown = null
+    readyState = 0
+    constructor(url: string) {
+      opened.push(String(url))
+    }
+    send(): void {}
+    close(): void {}
+  }
+  Object.defineProperty(g, 'WebSocket', { configurable: true, writable: true, value: RecordingSocket })
+  try {
+    await run(opened)
+  } finally {
+    if (saved) Object.defineProperty(g, 'WebSocket', saved)
+    else delete g['WebSocket']
+  }
+}
+
+/** The shell, at `path`, with a probe for the index and the REAL mining page at `/mine`. */
+const shell = (path: string): ReactElement =>
+  h(
+    MemoryRouter,
+    { initialEntries: [path] },
+    h(
+      AuthProvider,
+      null,
+      h(
+        RouterRoutes,
+        null,
+        h(
+          Route,
+          { element: h(AppShell) },
+          // A probe rather than the real overview: the overview reads six tiles from hub-api and
+          // none of them is what these scenarios are about. The mining page below is NOT a probe —
+          // where the press LANDS is half of BJ-MINE-04's claim, and a stand-in there would let the
+          // control navigate anywhere and still pass.
+          h(Route, { index: true, element: h('p', null, 'Somewhere that is not the mining page.') }),
+          h(Route, { path: 'mine', element: h(MinePage) }),
+          // A catch-all under the SAME layout route, so walking the sub-navigation lands on a real
+          // route change rather than on no match at all — with no match, react-router renders the
+          // layout's element not at all, and "the bar is still there" would be asserting that a
+          // page which does not exist has no bar.
+          h(Route, { path: '*', element: h('p', null, 'Another address of this surface.') }),
+        ),
+      ),
+    ),
+  )
+
+/**
+ * The bar's own mining control.
+ *
+ * Scoped to the bar rather than found by role, because `/mine` renders a chain picker whose first
+ * button is named "EMBER — Mined directly against the CloudsForge network", and an accessible-name
+ * search for "Mine" matches both. This is the one place in these scenarios where a class name is
+ * used as a selector; it is the design system's own (`cf-mine`, from `ui/packages/ui/src/mining.tsx`)
+ * and BJ-MINE-01 asserts the control's placement without it.
+ */
+const barMine = (s: Screen): Element => {
+  const found = [...s.document.querySelectorAll('.cf-bar .cf-mine')]
+  assert.equal(found.length, 1, `expected one mining control in the bar, found ${found.length}`)
+  return found[0] as Element
+}
+
+/** Everything both the shell and the mining page read, so neither is silently unrouted. */
+const mineRoutes = (summary = fx.poolSummary()): Routes => ({
+  'GET /auth/me': { body: { user: { id: 'u1', handle: MINER_HANDLE, roles: ['player'] } } },
+  'GET /v1/pool': { body: summary },
+  // Routed and expected to be UNUSED in most of these scenarios. `test/dom.ts` throws on an
+  // unrouted request, which would make "no ticket was minted" pass by way of an exception nobody
+  // sees; routed, the count is a number a scenario can assert on and can genuinely fail.
+  'POST /v1/pool/ticket': { body: { ticket: 'ticket-not-minted-by-these-scenarios', account: 'cf-0000000000000000', worker: 'web-000000', expiresInMs: 60_000 } },
+  'POST /v1/deposits': {
+    body: {
+      assignment: {
+        id: 'dep_01J000000000000000000000',
+        assetCode: 'EMBER',
+        chain: 'ember',
+        network: 'mainnet',
+        walletId: 'wal_01J000000000000000000000',
+        address: '0x1111111111111111111111111111111111111111',
+        status: 'active',
+        assignedAt: '2026-08-10T00:00:00.000Z',
+        watchedAt: '2026-08-10T00:00:01.000Z',
+      },
+    },
+  },
+})
+
+const MINER_HANDLE = 'savvanis'
+
+/** The signed-in mount options these scenarios share. */
+const minerOptions = (path: string, summary = fx.poolSummary()) => ({
+  url: `${ORIGIN}${path}`,
+  storage: SIGNED_IN,
+  routes: mineRoutes(summary),
+  windowExtras: MINING_CAPABLE,
+})
+
+describe('BJ-MINE — browser mining is reachable from wherever you are', () => {
+  it('BJ-MINE-01 ★ T1: the control is in the bar, immediately before the account menu, and survives a navigation', async () => {
+    fresh()
+    await withSockets(async () => {
+      await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        const mine = s.byRole('button', 'Mine')
+
+        // ── IN THE SHARED BAR ────────────────────────────────────────────────────────────────
+        // Not in `rightSlot`, which is each app's own and would put the control somewhere
+        // different on every surface. The bar is the one piece of chrome on every address of
+        // every bundle, which is what makes "on all pages" true rather than aspirational.
+        const bar = s.document.querySelector('.cf-bar')
+        assert.ok(bar?.contains(mine), 'the mining control is not inside the shared bar')
+
+        // ── BESIDE THE ACCOUNT ───────────────────────────────────────────────────────────────
+        // Asserted through the TAB ORDER rather than through document order, because "beside" is
+        // a claim about how a person reaches it. The account menu is the next stop after it; a
+        // control that drifted to the far side of the bar would still be in the same container
+        // and would fail here.
+        const order = s.tabbables()
+        const account = s.byRole('button', MINER_HANDLE)
+        assert.equal(
+          order.indexOf(account) - order.indexOf(mine),
+          1,
+          'the mining control is not the tab stop immediately before the account menu — the ' +
+            'owner’s report was that it is “hidden deep in mining page”, and a control that is ' +
+            'somewhere else in the bar on each surface is hidden again',
+        )
+
+        // ── AND STILL THERE ON THE NEXT ADDRESS ──────────────────────────────────────────────
+        const links = [...s.document.querySelectorAll('.wt-subnav__link')]
+        const wallet = links.find((link) => s.textOf(link) === (NAV[1]?.label ?? ''))
+        assert.ok(wallet, 'the sub-navigation has no second entry to walk to')
+        await s.click(wallet)
+        assert.ok(
+          s.queryByRole('button', 'Mine') !== null,
+          'the mining control disappeared on a navigation, which is the defect in the other ' +
+            'direction: reachable from one page only',
+        )
+        s.clean('the bar with a mining control')
+      })
+    })
+  })
+
+  it('BJ-MINE-02 ★ T1: signed out, the control offers a sign-in and touches neither the pool nor a socket', async () => {
+    fresh()
+    await withSockets(async (opened) => {
+      await withScreen(
+        shell('/'),
+        {
+          url: `${ORIGIN}/`,
+          // No tokens. The pool route is still supplied because `GET /v1/pool` is public and the
+          // shell reads it for everybody — that is what makes the control able to say anything.
+          routes: { 'GET /v1/pool': { body: fx.poolSummary() } },
+          windowExtras: MINING_CAPABLE,
+        },
+        async (s) => {
+          const mine = s.byRole('button', 'Mine')
+          await s.click(mine)
+
+          // A press offers authentication and nothing else. There is no ticket without an estate
+          // session — `POST /v1/pool/ticket` is bearer-authenticated — so a control that opened a
+          // socket here would be dialling a pool that is about to refuse it.
+          assert.deepEqual(opened, [], 'a socket was opened for a reader with no session')
+          assert.deepEqual(
+            s.api.matching('POST /v1/pool/ticket'),
+            [],
+            'a ticket was requested without a session to mint it against',
+          )
+          assert.equal(
+            s.navigations.length,
+            1,
+            'pressing Mine while signed out did not take the reader to authentication',
+          )
+        },
+      )
+    })
+  })
+
+  it('BJ-MINE-03 ★ T1: one press opens exactly one socket, at the address the pool published, verbatim', async () => {
+    fresh()
+    // The scenario's own input, and the only place this URL is written. Every assertion below
+    // compares against THIS value, so a client that assembled an endpoint from the page's own
+    // hostname — micro-org#285, which shipped — cannot agree with it.
+    const summary = fx.poolSummary({
+      chains: [fx.poolChain({ websocketEndpoint: 'wss://pool.example.test/v1/pool/stratum/ltc' })],
+    })
+    const published = summary.chains[0]?.websocketEndpoint
+    assert.equal(typeof published, 'string', 'the fixture publishes no endpoint; this asserts nothing')
+
+    await withSockets(async (opened) => {
+      await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
+        await s.click(s.byRole('button', 'Mine'))
+        await s.settle()
+
+        assert.deepEqual(
+          opened,
+          [published],
+          'the browser did not dial the address the pool published. A derived one is worse than ' +
+            'none: it cannot connect, and the person holding it debugs their own machine',
+        )
+
+        // The ticket is a sixty-second credential. `lib/stratum-client.ts` mints it from the
+        // subscribe reply, so a connection exists before one is spent; a client that minted it at
+        // Start would burn a third of its life on a DNS lookup and a TLS handshake.
+        assert.deepEqual(
+          s.api.matching('POST /v1/pool/ticket'),
+          [],
+          'a ticket was minted before the socket had said anything, so it is ageing in a variable',
+        )
+      })
+    })
+  })
+
+  it('BJ-MINE-04 ★ T1: the press lands the reader on the mining page, not just on a running miner', async () => {
+    fresh()
+    const summary = fx.poolSummary()
+    const chain = summary.chains[0]
+    assert.ok(chain, 'the fixture lists no chain')
+
+    await withSockets(async () => {
+      await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
+        assert.ok(
+          s.text().includes('Somewhere that is not the mining page'),
+          'the scenario did not start away from the mining page, so arriving there proves nothing',
+        )
+        await s.click(s.byRole('button', 'Mine'))
+        await s.settle()
+
+        // The name is read out of the fixture the scenario supplied. The mining page is the one
+        // screen carrying the duty-cycle and battery controls and the sentence that says nothing
+        // spendable accrues — a machine that starts hashing with none of that on screen is a
+        // machine somebody did not agree to.
+        assert.ok(
+          s.text().includes(chain.name),
+          `the browser is not on the mining page after starting a session. It holds ${JSON.stringify(s.text().slice(0, 200))}`,
+        )
+      })
+    })
+  })
+
+  it('BJ-MINE-05 ★ T1: a session started in the bar survives a navigation and stops from a different address', async () => {
+    fresh()
+    await withSockets(async (opened) => {
+      await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        await s.click(barMine(s))
+        await s.settle()
+        const started = barMine(s)
+        assert.equal(
+          started.getAttribute('aria-pressed'),
+          'true',
+          'the control does not report a live session, so nothing below is about a running miner',
+        )
+
+        // Walk away. This is the half the old page-owned miner failed: a reader who found Start
+        // and then looked at their wallet lost the session, silently, with the threads gone.
+        const links = [...s.document.querySelectorAll('.wt-subnav__link')]
+        const elsewhere = links.find((link) => s.textOf(link) === (NAV[1]?.label ?? ''))
+        assert.ok(elsewhere, 'the sub-navigation has no second entry to walk to')
+        await s.click(elsewhere)
+
+        const away = barMine(s)
+        assert.equal(
+          away.getAttribute('aria-pressed'),
+          'true',
+          'the session ended on a navigation, or the bar stopped reporting it — either way the ' +
+            'reader now has two threads running and no control that admits it',
+        )
+        assert.deepEqual(opened.length, 1, 'the navigation restarted the miner and opened a second socket')
+
+        await s.click(away)
+        assert.equal(
+          barMine(s).getAttribute('aria-pressed'),
+          'false',
+          'the session could not be stopped from an address that is not the mining page',
+        )
+      })
+    })
+  })
+
+  it('BJ-MINE-06 ★ T1: with no work to hand out the control refuses, and says WHICH of the two reasons it is', async () => {
+    fresh()
+    // Two deployments that both cannot mine, for reasons a reader acts on differently: a node
+    // still in initial block download fixes itself, and an operator who published no browser
+    // address will not have published one tomorrow either. `lib/pool.ts` keeps them apart all the
+    // way to the sentence; this is the assertion that they arrive apart.
+    const reasons: string[] = []
+    for (const summary of [
+      fx.poolSummary({ chains: [fx.poolChain({ ready: false })] }),
+      fx.poolSummary({ chains: [fx.poolChain({ websocketEndpoint: null })] }),
+    ]) {
+      await withSockets(async (opened) => {
+        await withScreen(shell('/'), minerOptions('/', summary), async (s) => {
+          const mine = s.byRole('button', 'Mine')
+          assert.equal(
+            mine.getAttribute('aria-disabled'),
+            'true',
+            'a control that cannot mine is offering a press. `aria-disabled` rather than ' +
+              '`disabled` on purpose: the reader who most needs the reason must still reach it',
+          )
+          const described = mine.getAttribute('aria-describedby') ?? ''
+          const reason = s.textOf(s.document.getElementById(described))
+          assert.ok(reason.length > 60, `the refusal is not a sentence: ${JSON.stringify(reason)}`)
+          reasons.push(reason)
+
+          await s.click(mine)
+          assert.deepEqual(opened, [], 'a refusing control still dialled the pool when pressed')
+        })
+      })
+    }
+    assert.equal(reasons.length, 2)
+    assert.notEqual(
+      reasons[0],
+      reasons[1],
+      'a node still downloading its chain and a deployment that published no address produce the ' +
+        'same sentence. One fixes itself and the other never will, and a reader deciding whether ' +
+        'to come back cannot tell which they are looking at',
+    )
+  })
+
+  it('BJ-MINE-07 ★ T1: nothing on the control implies a payment', async () => {
+    fresh()
+    await withSockets(async () => {
+      await withScreen(shell('/'), minerOptions('/'), async (s) => {
+        await s.click(barMine(s))
+        await s.settle()
+        const mine = barMine(s)
+        const described = mine.getAttribute('aria-describedby') ?? ''
+        const reason = s.textOf(s.document.getElementById(described))
+
+        // The clause is the design system's own exported constant, not a paraphrase this
+        // repository keeps a second copy of. `pool/src/payouts.ts` holds two independent gates
+        // that refuse settlement and derives `payoutsImplemented` from them; the fixture says
+        // false because the estate says false.
+        assert.ok(
+          reason.includes(NOT_PAID_CLAUSE),
+          `the control describes a running miner without saying nothing is paid: ${JSON.stringify(reason)}`,
+        )
+
+        // Everything the control says EXCEPT that clause, checked for the vocabulary of money.
+        // The two figures it is allowed to carry — a rate and a share count — are work.
+        const rest = `${s.textOf(mine)} ${reason.split(NOT_PAID_CLAUSE).join(' ')}`
+        assert.ok(
+          !/[$£€¥₿]|\bearn|\bprofit|\brevenue|\bpayout|\bbalance|\brewards?\b/i.test(rest),
+          `the mining control uses the vocabulary of money: ${JSON.stringify(rest)}`,
+        )
+      })
+    })
   })
 })
 

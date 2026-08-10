@@ -46,6 +46,12 @@
  * `BJ-ACC-` number, deliberately: doc 22 owns the `BJ-ACC`
  * sequence and will extend it, and minting into somebody else's sequence is how two scenarios end
  * up sharing an id. `market-web/test/journeys.ts` sets the precedent with `BJ-MARKET-404`.
+ *
+ * `BJ-MINE-` is the second locally-minted prefix, and it exists for a blunter reason: doc 22 has no
+ * mining group at all. Browser mining was built after the document, on one page of one surface, and
+ * the owner's report — "start mining, from browser is hidden deep in mining page, it should be
+ * easily found near the account on all pages" — is a report about a control that no catalogued
+ * journey passes through. A feature nothing walks is a feature that breaks silently.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 
@@ -674,6 +680,69 @@ export const SCENARIOS: readonly Scenario[] = [
     tier: 'T1',
     gate: true,
     unblocks: { was: '§6.20 ⛔★ "no UI (§8.2)".', by: 'src/components/keyexport.tsx.' },
+  },
+
+  /* ══════════════════════════════════════════════════════════════════════════════════════════
+     6.21 Group M — browser mining from the bar. Locally minted; doc 22 has no mining rows.
+     ══════════════════════════════════════════════════════════════════════════════════════ */
+  {
+    id: 'BJ-MINE-01',
+    what: 'the mining control sits in the shared bar immediately before the account menu, and is still there after a navigation',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+  },
+  {
+    id: 'BJ-MINE-02',
+    what: 'signed out, the control offers authentication and opens no socket and asks for no ticket',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+  },
+  {
+    id: 'BJ-MINE-03',
+    what: 'one press opens exactly one socket, at the address the pool published, verbatim — and the ticket is not minted before there is a transport to carry it',
+    asserts: 'client-request',
+    tier: 'T1',
+    gate: true,
+    caveat:
+      'The handshake itself is not driven here: the socket is a recorder, so nothing subscribes, ' +
+      'nothing authorises and no share is submitted. That half cannot be asserted from a browser ' +
+      'harness at all — a share is only a share if a pool agrees it is — and it is asserted ' +
+      'against micro-pool’s OWN server modules in test/pool-contract.test.ts, which imports ' +
+      'pool/src/session.ts and pool/src/validate.ts and drives a real submit through them. What ' +
+      'this scenario owns is the half that lives on this side: which address was dialled, how ' +
+      'many times, and that the credential is not minted into the air before a connection exists.',
+  },
+  {
+    id: 'BJ-MINE-04',
+    what: 'the press that starts a session also takes the reader to the mining page, where the politeness controls and the not-paid sentence are',
+    asserts: 'navigation',
+    tier: 'T1',
+    gate: true,
+  },
+  {
+    id: 'BJ-MINE-05',
+    what: 'a session started from the bar survives a navigation and can be stopped from a different address',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+  },
+  {
+    id: 'BJ-MINE-06',
+    what: 'when the pool can hand out no work the control refuses in a sentence, and the sentence for a node still syncing is not the sentence for a deployment that published no address',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'pool/src/wsstratum.ts', grep: 'no browser mining on this chain right now' },
+  },
+  {
+    id: 'BJ-MINE-07',
+    what: 'nothing on the control implies a payment: the not-paid sentence is on it, and no currency mark or earnings word is anywhere near it',
+    asserts: 'presentation',
+    tier: 'T1',
+    gate: true,
+    ownedBy: { path: 'pool/src/payouts.ts', grep: 'PAYOUTS ARE OFF' },
   },
 ]
 
