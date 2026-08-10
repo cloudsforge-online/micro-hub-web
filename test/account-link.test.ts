@@ -35,7 +35,8 @@ import { createElement as h } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { accountUrl, cloudsforgeHosts } from '@cloudsforge/ui'
 
-import { withScreen } from './dom.ts'
+import { MINING_CAPABLE, withScreen } from './dom.ts'
+import { poolSummary } from './fixtures.ts'
 import { __resetAuth } from '../src/lib/api.ts'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import { AppShell } from '../src/components/shell.tsx'
@@ -76,7 +77,13 @@ describe('BJ-SIGNIN — the account menu leads somewhere', () => {
         },
         routes: {
           'GET /auth/me': { body: { user: { id: 'u1', handle, roles: ['player'] } } },
+          // The bar asks the pool what it is now, on every address — `src/mining/session.tsx` sits
+          // inside `AppShell` so the Mine control can start and stop one session from anywhere.
+          // Routed here so this scenario's bar is the ordinary one and not a bar in the state that
+          // follows an unreachable pool.
+          'GET /v1/pool': { body: poolSummary() },
         },
+        windowExtras: MINING_CAPABLE,
       },
       async (s) => {
         // Open the menu the way a reader does. The trigger is named by the handle it displays.

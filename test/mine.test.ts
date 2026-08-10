@@ -35,16 +35,36 @@ import { MemoryRouter } from 'react-router-dom'
 
 import { withScreen, type Reply, type Routes } from './dom.ts'
 import { MinePage } from '../src/pages/mine.tsx'
+import { AuthProvider } from '../src/lib/auth.tsx'
 import type { DepositAssignment } from '../src/lib/money.ts'
 import { isMineable, miningBlocker, type PoolChain, type PoolSummary } from '../src/lib/pool.ts'
 import { NON_INDEX_PATHS, ROUTES } from '../src/lib/routes.ts'
+import { MiningProvider } from '../src/mining/session.tsx'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
 const appSource = read('src/app.tsx')
 
+/**
+ * The page, under the two providers the application mounts it under.
+ *
+ * `MiningProvider` is not scenery. The mining session outlives this page now — that is the whole of
+ * the change that put a Start control in the bar of every address — so the page reads the session
+ * from a context rather than holding a `PoolMiner` of its own, and a mount without the provider is
+ * a mount of a page that cannot exist. `AuthProvider` is under it because the provider ends a
+ * session when the account does; no scenario in this file seeds a token, so nothing is asked of
+ * identity.
+ *
+ * The provider reads `GET /v1/pool` for the bar as well, so every scenario here sees that route
+ * called twice. Only the ticket route is counted below, and deliberately: the count that matters is
+ * of the CREDENTIAL, not of a public description of the pool.
+ */
 const page = (element: ReactElement, path: string): ReactElement =>
-  h(MemoryRouter, { initialEntries: [path] }, element)
+  h(
+    MemoryRouter,
+    { initialEntries: [path] },
+    h(AuthProvider, null, h(MiningProvider, null, element)),
+  )
 
 /* ══════════════════════════════ the fixture ══════════════════════════════ */
 
