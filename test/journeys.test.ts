@@ -93,6 +93,24 @@ const IDENTITY_ROUTES = {
   handoffRedeem: '/auth/handoff/redeem',
 } as const
 
+/**
+ * `GET /auth/challenge`, answered the way a deployment with NO bot challenge answers it.
+ *
+ * Every register scenario below predates micro-org#361 and asserts this form as it is when there is
+ * no challenge — which is every developer machine, the micro network, and mainnet until the
+ * operator sets `TURNSTILE_SECRET`. It is DECLARED rather than left unrouted so that the harness's
+ * "no stub" throw keeps meaning something: `fetchRegistrationChallenge` swallows a failed ask on
+ * purpose (an identity that predates the route answers 404), so an unrouted request here would be
+ * caught and these scenarios would go on passing after the page started asking a fourth address.
+ * The challenged form of this page is `test/turnstile.test.ts`.
+ */
+const NO_CHALLENGE: Routes = {
+  'GET /auth/challenge': {
+    status: 200,
+    body: { required: false, provider: 'turnstile', siteKey: null, action: 'signup' },
+  },
+}
+
 /** A page under a router at `path`. No page in this file reads the session context. */
 const page = (element: ReactElement, path: string): ReactElement =>
   h(MemoryRouter, { initialEntries: [path] }, element)
@@ -125,7 +143,10 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
       page(h(RegisterPage), `/account/register?return=${encodeURIComponent(returnTo)}`),
       {
         url: `${ORIGIN}/account/register`,
-        routes: { [`POST ${IDENTITY_ROUTES.register}`]: { status: 201, body: fx.session() } },
+        routes: {
+          ...NO_CHALLENGE,
+          [`POST ${IDENTITY_ROUTES.register}`]: { status: 201, body: fx.session() },
+        },
       },
       async (s) => {
         await s.type(s.byRole('textbox', 'Email'), typed.email)
@@ -167,6 +188,7 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
       {
         url: `${ORIGIN}/account/register`,
         routes: {
+          ...NO_CHALLENGE,
           [`POST ${IDENTITY_ROUTES.register}`]: {
             status: 409,
             body: fx.errorBody('handle_taken', 'That registration was refused.', [
@@ -477,7 +499,10 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
         url: `${ORIGIN}/account/register`,
         // A route that WOULD succeed. The scenario is that it is never called: stubbing a failure
         // here would let a bundle that posted the mismatch pass by rendering the failure.
-        routes: { [`POST ${IDENTITY_ROUTES.register}`]: { status: 201, body: fx.session() } },
+        routes: {
+          ...NO_CHALLENGE,
+          [`POST ${IDENTITY_ROUTES.register}`]: { status: 201, body: fx.session() },
+        },
       },
       async (s) => {
         await s.type(s.byRole('textbox', 'Email'), typed.email)
@@ -709,6 +734,7 @@ describe('BJ-SIGNIN — proving the address', () => {
       {
         url: `${ORIGIN}/account/register`,
         routes: {
+          ...NO_CHALLENGE,
           // identity's 202: the account exists, unverified, and the link is what creates a session.
           [`POST ${IDENTITY_ROUTES.register}`]: {
             status: 202,

@@ -30,7 +30,14 @@
  * hold the rule, and doc 22 §3.1 forbids a browser scenario from asserting one.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactElement,
+} from 'react'
 import { useLatch } from '../lib/latch.ts'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, clearTokens, getAccessToken, getRefreshToken, hasSession } from '../lib/api.ts'
@@ -38,6 +45,7 @@ import {
   EMAIL_UNVERIFIED_CODE,
   answerMfaChallenge,
   completeSignIn,
+  fetchRegistrationChallenge,
   readReturnTo,
   registerAccount,
   requestPasswordReset,
@@ -51,6 +59,7 @@ import {
   type SignInOutcome,
 } from '../lib/identity.ts'
 import { pageOrigin } from '../lib/hosts.ts'
+import { REGISTER_ACTION, loadTurnstile, type TurnstileApi } from '../lib/turnstile.ts'
 
 /* ─────────────────────────────── shared pieces ─────────────────────────────── */
 
@@ -484,6 +493,136 @@ export function SignInPage() {
 
 /* ─────────────────────────────── register ─────────────────────────────── */
 
+/** What `useRegistrationChallenge` hands the form. */
+interface ChallengeHandle {
+  /** `null` when this deployment has no challenge, or has not answered yet. Then nothing renders. */
+  readonly siteKey: string | null
+  /** The `action` identity will assert on the way back. */
+  readonly action: string
+  /** The last token the widget produced, `''` when there is none. Never logged, never stored. */
+  readonly token: string
+  /** True when Cloudflare's script could not be loaded or the widget refused to render. */
+  readonly blocked: boolean
+  /**
+   * Where the widget goes, as a REF CALLBACK rather than a ref object.
+   *
+   * The difference is the teardown. A ref object silently becomes `null` when its element leaves,
+   * and nothing runs — so the widget stayed registered inside Cloudflare's script, pointing at a
+   * detached node, every time this form was replaced by the "check your email" screen. A callback
+   * ref is CALLED on both attach and detach, which is what makes `turnstile.remove(id)` happen at
+   * the moment the container actually goes.
+   */
+  readonly container: (element: HTMLDivElement | null) => void
+  /** Throw away the token in hand and ask the widget for another. See `submit`. */
+  readonly reset: () => void
+}
+
+/**
+ * Ask identity whether this deployment challenges registrations, and render the widget if it does.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── THE ANSWER COMES FROM THE SERVER, EVERY TIME, AT RUNTIME ──────────────────────────────────
+ *
+ * `GET /auth/challenge` is public and unauthenticated and returns `{ required, siteKey, action }`.
+ * A developer's machine with no `TURNSTILE_SECRET` gets `required: false` and this hook renders
+ * nothing at all — the feature is off, not broken, and the form is what it was before
+ * micro-org#361. That is also why the site key is not a build-time constant: one bundle serves
+ * localhost, the micro network and mainnet (`test/no-build-time-config.test.ts` enforces it).
+ *
+ * If the ask fails, `fetchRegistrationChallenge` answers `NO_CHALLENGE` and no widget appears. That
+ * is not a bypass. identity refuses a tokenless registration on its own authority whatever this
+ * file believes — a browser cannot turn the gate off by failing to draw it.
+ *
+ * ── THIS HOOK DECIDES NOTHING ABOUT WHETHER YOU MAY REGISTER ──────────────────────────────────
+ *
+ * It produces a string and holds it. It does not check it, it does not call `siteverify` — the
+ * secret that redeems a token cannot live in a bundle every visitor downloads — and it does not
+ * disable the submit button when there is no token yet. The file header's rule ("nothing on this
+ * page decides anything") applies here in full: an unsolved challenge is refused by identity, with
+ * identity's own sentence, exactly like a taken handle. A local "you must complete the challenge"
+ * would be a second copy of a server rule, and worse, it would let a blocked script or a slow
+ * `GET /auth/challenge` stop a registration that identity would have allowed.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+function useRegistrationChallenge(): ChallengeHandle {
+  const [siteKey, setSiteKey] = useState<string | null>(null)
+  const [action, setAction] = useState(REGISTER_ACTION)
+  const [token, setToken] = useState('')
+  const [blocked, setBlocked] = useState(false)
+  /** State rather than a ref, so that the element arriving and leaving both re-run the effect. */
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
+  /**
+   * The widget id, held for the life of the mount.
+   *
+   * `turnstile.reset()` with no argument only does the right thing on a page with exactly one
+   * widget, and that is an assumption about pages nobody has written yet. Keeping the id makes the
+   * reset name the widget it means.
+   */
+  const widget = useRef<{ api: TurnstileApi; id: string } | null>(null)
+
+  useEffect(() => {
+    let live = true
+    void fetchRegistrationChallenge().then((answer) => {
+      if (!live) return
+      setSiteKey(answer.required ? answer.siteKey : null)
+      setAction(answer.action)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (siteKey === null || element === null) return
+    let live = true
+    setBlocked(false)
+    void loadTurnstile()
+      .then((api) => {
+        // Ordinary: `live` is false when StrictMode unmounted the first of its two mounts while the
+        // script was still in flight.
+        if (!live) return
+        const id = api.render(element, {
+          sitekey: siteKey,
+          action,
+          callback: (solved: string) => setToken(solved),
+          // A token expires roughly five minutes after it is solved, and a stale one is refused
+          // with `timeout-or-duplicate` — indistinguishable, from the user's side, from being
+          // called a bot. Dropping it here means the next submit carries nothing rather than
+          // something dead, and Cloudflare re-renders the widget for another go.
+          'expired-callback': () => setToken(''),
+          'error-callback': () => setToken(''),
+          'timeout-callback': () => setToken(''),
+        })
+        if (id === undefined) {
+          setBlocked(true)
+          return
+        }
+        widget.current = { api, id }
+      })
+      .catch(() => {
+        // A content blocker, an offline browser, a network that eats third-party scripts. Said
+        // plainly on screen below rather than swallowed, because the person is about to press a
+        // button that will be refused and they deserve to know why before they do.
+        if (live) setBlocked(true)
+      })
+    return () => {
+      live = false
+      const held = widget.current
+      widget.current = null
+      setToken('')
+      if (held) held.api.remove(held.id)
+    }
+  }, [siteKey, action, element])
+
+  const reset = useCallback(() => {
+    setToken('')
+    const held = widget.current
+    if (held) held.api.reset(held.id)
+  }, [])
+
+  return { siteKey, action, token, blocked, container: setElement, reset }
+}
+
 export function RegisterPage() {
   const returnTo = useReturnTo()
   const complete = useCompletion()
@@ -503,6 +642,8 @@ export function RegisterPage() {
   const [mismatched, setMismatched] = useState(false)
   /** The address identity says it sent the link to, once it has. Never a token. */
   const [sent, setSent] = useState<string | null>(null)
+  /** The bot challenge, if this deployment has one. Renders nothing when it does not. */
+  const challenge = useRegistrationChallenge()
 
   /**
    * `POST /auth/register` carries no idempotency key, and this is the sharpest handler on the
@@ -553,7 +694,7 @@ export function RegisterPage() {
     if (!attempt.take()) return
     setBusy(true)
     setRefusal(null)
-    registerAccount({ email, handle, password })
+    registerAccount({ email, handle, password, challengeToken: challenge.token })
       .then(async (outcome) => {
         // THE ORDINARY OUTCOME IS NOW "GO AND READ YOUR EMAIL", NOT A SESSION. The account exists
         // and is unverified; the link in the mail is what creates the session, on whichever
@@ -579,6 +720,23 @@ export function RegisterPage() {
         // a password they had right, to fix one word.
         setRefusal(refusalFrom(err))
         setBusy(false)
+        /*
+         * ── THE CHALLENGE TOKEN IS SPENT, WHATEVER WENT WRONG ────────────────────────────────
+         *
+         * Cloudflare redeems a token the moment identity presents it at `siteverify`, and a widget
+         * hands out ONE token per solve. So by the time this handler runs the string in hand is
+         * either spent — identity got as far as verifying it and the failure was downstream, a
+         * taken handle or a weak password — or worthless, because it was rejected. Either way the
+         * next press would send the same dead string and earn `timeout-or-duplicate`: a form that
+         * refuses for ever, telling a real person they are a bot, after ONE ordinary mistake.
+         *
+         * Resetting on every failure rather than only on a challenge refusal is deliberate. This
+         * page cannot tell from a 409 on the handle whether the token was redeemed on the way, and
+         * asking the widget for a fresh one costs nothing when it was not.
+         *
+         * Every typed field keeps its value. Only the token goes.
+         */
+        challenge.reset()
       })
       .finally(() => attempt.release())
   }
@@ -737,6 +895,44 @@ export function RegisterPage() {
             />
           )}
         </Field>
+
+        {/*
+          The bot challenge, and it is a GATE ON this form rather than a replacement for any of it.
+          Every input above is untouched: same names, same values, same handlers, same refusal
+          sentences under the same controls. When this deployment has no challenge the block below
+          renders nothing and the form is byte-for-byte what it was before micro-org#361.
+
+          `data-sitekey` and `data-action` are on the container because that is where a person
+          reading the DOM — or the browser's own devtools, or a support screenshot — will look for
+          them. They are not what configures the widget: this app loads Cloudflare's script with
+          `?render=explicit` and passes the same two values to `turnstile.render()`, for the reason
+          `lib/turnstile.ts` gives (implicit mode scans the document once, at script load, and a
+          form mounted later by the router is not there yet). Both come from the same variables, so
+          the attributes cannot drift from what was rendered.
+        */}
+        {challenge.siteKey !== null && (
+          <div className="wt-form__challenge">
+            <div
+              ref={challenge.container}
+              className="cf-turnstile"
+              data-sitekey={challenge.siteKey}
+              data-action={challenge.action}
+            />
+            {/*
+              Said out loud, because the alternative is a person pressing Create account into a
+              refusal they have no way to explain. This is a report of what happened to a script,
+              not a decision about the registration: the button stays live, the request still goes,
+              and identity still answers — it is entitled to be configured with no challenge at all.
+            */}
+            {challenge.blocked && (
+              <p className="wt-note" role="status" aria-live="polite">
+                The bot check could not load. It is usually a content blocker or a network that
+                filters third-party scripts; allowing <code>challenges.cloudflare.com</code> and
+                reloading this page should bring it back.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="wt-form__actions">
           <button type="submit" className="cf-btn cf-btn--ember" disabled={busy}>

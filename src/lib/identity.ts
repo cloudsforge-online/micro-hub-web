@@ -9,6 +9,7 @@
  * to `/auth/exchange`, which identity has never served. So each function below carries the
  * `identity/src/server.ts` line its path and its response shape were verified against.
  *
+ *   GET  /auth/challenge      server.ts   → { required, provider, siteKey, action }
  *   POST /auth/register       server.ts   → 202 { verificationRequired: true, email }
  *   POST /auth/login          server.ts   → tokens, OR { mfaRequired, challenge, factors }
  *   POST /auth/email/verify                   → { accessToken, refreshToken, expiresIn, user }
@@ -226,21 +227,101 @@ export function readRegisterOutcome(body: unknown): RegisterOutcome | null {
   return readSignInOutcome(body)
 }
 
+/* ─────────────────────────────── the registration challenge ─────────────────────────────── */
+
+/**
+ * What a client must do before it may register, ASKED OF THE DEPLOYMENT rather than compiled in.
+ *
+ * The site key is public — it appears in the page source of every site that uses Turnstile — so
+ * there is no secrecy argument for fetching it. The argument is that this repository has NO
+ * build-time configuration at all (`test/no-build-time-config.test.ts` greps for it, `lib/hosts.ts`
+ * derives every address from `window.location`), because one image has to serve localhost, the
+ * micro network and mainnet. micro-org#361 suggests baking the key into the bundle; that is safe
+ * and it would be the first thing in this repository to need a build per environment.
+ */
+export interface RegistrationChallenge {
+  readonly required: boolean
+  /** Public. `null` when this deployment has no challenge. */
+  readonly siteKey: string | null
+  /** The `action` identity asserts on the way back, so the widget is configured with the same one. */
+  readonly action: string
+}
+
+/**
+ * The answer for a deployment with no Turnstile account — a developer machine, CI, every micro
+ * network — and the answer this app falls back to when it cannot ask.
+ *
+ * **Falling back to "no challenge" is not a bypass.** It is a statement about what to RENDER, and
+ * rendering is not deciding: identity refuses a tokenless registration whether or not this bundle
+ * ever drew a widget. The alternative — refusing to show the form when the challenge cannot be
+ * fetched — would turn a blip on one GET into "nobody can open an account", which is a worse
+ * failure than a form that is submitted and answered honestly.
+ */
+export const NO_CHALLENGE: RegistrationChallenge = { required: false, siteKey: null, action: 'signup' }
+
+/**
+ * Read a challenge answer, or say it was not one.
+ *
+ * `required: true` with no site key is unreadable rather than "required": a widget cannot be
+ * rendered without a key, so treating it as required would leave a form nobody can complete and no
+ * sentence saying why. It is refused here so the caller falls back to the honest thing — submit,
+ * and let identity say what it wants.
+ */
+export function readChallenge(body: unknown): RegistrationChallenge | null {
+  if (typeof body !== 'object' || body === null) return null
+  const source = body as Record<string, unknown>
+  if (typeof source['required'] !== 'boolean') return null
+  const siteKey = typeof source['siteKey'] === 'string' && source['siteKey'] !== '' ? source['siteKey'] : null
+  if (source['required'] && siteKey === null) return null
+  return {
+    required: source['required'],
+    siteKey,
+    action: asString(source, 'action') || 'signup',
+  }
+}
+
+/**
+ * `GET /auth/challenge` — `identity/src/server.ts`.
+ *
+ * `auth: false`: it is asked by somebody who has no account yet, and a stale token in storage must
+ * not turn this GET into a refresh attempt that signs a reader out of a session they were not
+ * using — the same reason every call on this page carries it.
+ *
+ * Never rejects. An identity that predates this route answers 404, an offline browser throws, and
+ * both mean the same thing to the page: draw no widget. See `NO_CHALLENGE`.
+ */
+export const fetchRegistrationChallenge = (): Promise<RegistrationChallenge> =>
+  nimbus<unknown>('/auth/challenge', { method: 'GET', auth: false })
+    .then((body) => readChallenge(body) ?? NO_CHALLENGE)
+    .catch(() => NO_CHALLENGE)
+
 /**
  * `POST /auth/register`.
  *
  * Answers 202 and `{ verificationRequired: true, email }` for a fresh account: the account exists,
  * unverified, and the link in the mail is what creates the session.
+ *
+ * `cf-turnstile-response` is Cloudflare's own field name and is sent verbatim — it is what the
+ * widget writes into a plain HTML form and what every Turnstile guide names, and a second spelling
+ * on our side would be one more thing for the two halves to disagree about. It is OMITTED rather
+ * than sent empty when there is no token: identity separates "no challenge was attempted" from "a
+ * challenge did not hold", and an empty string would blur the two.
  */
 export const registerAccount = (input: {
   email: string
   handle: string
   password: string
+  challengeToken?: string
 }): Promise<RegisterOutcome> =>
   nimbus<unknown>('/auth/register', {
     method: 'POST',
     auth: false,
-    body: { email: input.email.trim(), handle: input.handle.trim(), password: input.password },
+    body: {
+      email: input.email.trim(),
+      handle: input.handle.trim(),
+      password: input.password,
+      ...(input.challengeToken ? { 'cf-turnstile-response': input.challengeToken } : {}),
+    },
   }).then((body) => {
     const outcome = readRegisterOutcome(body)
     if (!outcome) throw new UnreadableIdentityResponse()
