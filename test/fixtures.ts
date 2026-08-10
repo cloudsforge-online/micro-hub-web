@@ -99,6 +99,15 @@ export const holding = (over: Partial<Holding> = {}): Holding => ({
   allocationBps: 10000,
   quotedAt: '2026-08-03T09:00:00.000Z',
   priceReason: null,
+  /*
+    `administered`, because this fixture's asset is EMBER and EMBER has no exchange listing —
+    pricing answers `source: "administered"` for it and hub-api passes that through
+    (`hub-api/src/portfolio.ts`). A fixture that said `market` here would be a fixture of a response
+    the estate cannot produce, and every scenario built on it would be showing a screen no reader
+    ever sees. Scenarios that want a market-priced holding pass `assetCode` and `priceSource`
+    together.
+  */
+  priceSource: 'administered',
   ...over,
 })
 
@@ -251,7 +260,15 @@ export function dashboard(over: Partial<DashboardTiles> = {}): Dashboard {
     budgetMs: 800,
     elapsedMs: 42,
     tiles,
-    nextActions: { actions: [], generatedAt: '2026-08-03T09:31:00.000Z' } as unknown as Dashboard['nextActions'],
+    /*
+      `missing` is present and empty, and the `as unknown as` cast that used to stand here is gone.
+      `NextActions` (src/lib/hub.ts) declares two fields and this fixture supplied one of them plus
+      a `generatedAt` the interface does not have; the cast made that compile. `pages/overview.tsx`
+      reads `nextActions.missing.length` unconditionally — it is how "we could not ask" is told
+      apart from "nothing is waiting on you" — so any scenario mounting that page against this
+      fixture threw on the first render, which is how the omission was found.
+    */
+    nextActions: { actions: [], missing: [] },
     // Derived from the tiles rather than passed in, so a scenario cannot arrange a dashboard whose
     // banner disagrees with its own tiles — which is a state hub-api cannot produce.
     degraded: Object.entries(tiles)

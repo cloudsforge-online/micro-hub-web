@@ -18,16 +18,17 @@
  *   3. Wallet lifecycle state visible in the list rather than behind a detail view.
  *   4. Activity as a preview of the last four, with one link out.
  */
-import { useCallback } from 'react'
+import { useCallback, useId } from 'react'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
 import { Link } from 'react-router-dom'
 import { DegradedBanner, TilePanel } from '../components/tile.tsx'
+import { EstimateNotice } from '../components/estimate.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { ActivityRow } from './activity.tsx'
 import { WalletRow } from './wallet.tsx'
 import { formatAmount, formatBps, pricedStamp } from '../lib/format.ts'
 import { loadDashboard, type Dashboard, type NextAction } from '../lib/hub.ts'
-import { allocationData, hasAllocation, portfolioTotal } from '../lib/portfolio.ts'
+import { allocationData, estimatedAssets, hasAllocation, portfolioTotal } from '../lib/portfolio.ts'
 import { useResource } from '../lib/resource.ts'
 import { degradedSentence } from '../lib/tile.ts'
 
@@ -53,10 +54,12 @@ export function OverviewPage() {
 }
 
 function Overview({ dashboard }: { dashboard: Dashboard }) {
+  const estimateId = useId()
   const { tiles, nextActions } = dashboard
   const portfolio = tiles.portfolio.data
   const total = portfolioTotal(portfolio)
   const stamp = pricedStamp(portfolio.pricedAt)
+  const estimated = estimatedAssets(portfolio)
 
   return (
     <>
@@ -120,6 +123,13 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         </div>
 
         {total.caveat && <p className="wt-note wt-note--caveat">{total.caveat}</p>}
+
+        {/*
+          "Total held" here is the same sum as on the portfolio page and can carry the same
+          estimate inside it. This page shows no per-holding figures, so there is nothing to point
+          an `aria-describedby` at — the statement stands on its own, under the number it is about.
+        */}
+        <EstimateNotice id={estimateId} assets={estimated} />
 
         {hasAllocation(portfolio) && (
           <BarChart

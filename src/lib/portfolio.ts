@@ -102,6 +102,66 @@ export function holdingValue(holding: Holding): string | null {
   return formatUsd(holding.usd)
 }
 
+/* ───────────────────────── prices no market ever agreed to ───────────────────────── */
+
+/**
+ * Whether this holding's figure came from an operator rather than from a market.
+ *
+ * ── Why this reads `priceSource` and never an asset code ───────────────────────────────────────
+ *
+ * EMBER is the only administered asset today, and writing `assetCode === 'EMBER'` here would work
+ * today. It would also put a copy of `ADMINISTERED_ASSETS` (`pricing/src/rates.ts`) in a bundle
+ * that ships separately from the service that owns it, and the first asset added to that list — or
+ * removed from it, the day EMBER is listed somewhere — would be a note this screen keeps showing or
+ * never starts showing, with nothing failing anywhere. Pricing already answers the question on
+ * every rate; this asks it.
+ *
+ * A holding with no `priceSource` is not an estimate. SHARD and USD are fixed by contract, which is
+ * a stronger statement than a market price rather than a weaker one.
+ */
+export function isEstimate(holding: Holding): boolean {
+  return holding.priceSource === 'administered' && holding.usd !== null
+}
+
+/** The assets on this screen whose value is an estimate, in the order the holdings arrived. */
+export function estimatedAssets(view: PortfolioView): readonly string[] {
+  return view.holdings.filter(isEstimate).map((holding) => holding.assetCode)
+}
+
+/**
+ * The standing statement to print beside those figures, or null when there are none.
+ *
+ * ── The copy standard, from `pool-web/src/components/notices.tsx` ──────────────────────────────
+ *
+ * That file is this estate's reference for saying an uncomfortable thing plainly, and its three
+ * rules are kept here:
+ *
+ *   * **Present tense, no schedule.** "not yet listed" and "listing soon" both describe a date that
+ *     does not exist. EMBER *is not listed*; whether that ever changes is not this sentence's to
+ *     say.
+ *   * **No number.** Not a target price, not a range, not a confidence. The figure beside the note
+ *     is the only number in view, and the note's whole job is to say what kind of number it is.
+ *   * **Derived from the API.** The asset names come from the holdings that reported an
+ *     administered source, so this sentence cannot name an asset the service did not.
+ *
+ * "an estimate set by CloudsForge" rather than "an estimated value": the second implies somebody
+ * estimated what a market would pay, and nobody has, because there is no market to estimate.
+ */
+export function estimateNotice(assets: readonly string[]): string | null {
+  if (assets.length === 0) return null
+  if (assets.length === 1) {
+    return (
+      `${assets[0]} is not listed on any exchange. Its value here is an estimate set by ` +
+      `CloudsForge, not a market price.`
+    )
+  }
+  const named = `${assets.slice(0, -1).join(', ')} and ${assets[assets.length - 1]}`
+  return (
+    `${named} are not listed on any exchange. Their values here are estimates set by CloudsForge, ` +
+    `not market prices.`
+  )
+}
+
 /**
  * The allocation bars, as chart data.
  *
