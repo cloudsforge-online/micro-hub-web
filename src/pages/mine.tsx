@@ -16,16 +16,24 @@
  * credited to an account, and NOTHING SPENDABLE ACCRUES FROM EITHER. A share count next to a
  * balance-shaped number would be read as money by everyone who saw it, and it would be false.
  *
- * **EMBER pays a key this tab holds, not the account's custodial balance.** This is the one place
- * the port could have quietly become a lie. `/mining/template` issues work to a public key and
- * `hearth/node/src/chain/header.js` `verifyPow` recovers the signer from a 65-byte signature over
- * the winning digest — so the coinbase can only be an address whose PRIVATE KEY is in this page.
- * The EMBER address on this account is custodial: micro-custody holds the key and releases it only
- * through a 24-hour ceremony with a second factor. There is therefore no way to mine EMBER into the
- * account balance from a browser, and pretending otherwise would send someone's electricity to an
- * address they cannot spend from. So the mining key is generated here, held in memory, shown, and
- * the reader is told to save it BEFORE the Start button, exactly as
- * `network-site/src/components/browsermine.tsx` does. Nothing is written to storage.
+ * **EMBER is PAID to a key this tab holds, and then sent on to the account's own custodial deposit
+ * address.** This is the one place the port could have quietly become a lie, and until 2026-08-10
+ * (micro-org#299) it was half a lie in the other direction. `/mining/template` issues work to a
+ * public key and `hearth/node/src/chain/header.js` `verifyPow` recovers the signer from a 65-byte
+ * signature over the winning digest — so the coinbase can only be an address whose PRIVATE KEY is in
+ * this page, and micro-custody releases a key only through a 24-hour ceremony with a second factor.
+ * Both of those are still true and neither bends. What was wrong was the conclusion drawn from them:
+ * that the reward therefore had to STAY on the throwaway key, so the page showed the key, told the
+ * reader to save it, and gated Start behind a checkbox — a self-custody problem handed to somebody
+ * without warning, inside a custodial product, at the worst possible moment.
+ *
+ * The reward does not have to stay there. It has to be PAID there. One transaction later it can be
+ * anywhere, and the account already has a place for it: the custodial EMBER deposit address wallet
+ * mints from `POST /v1/deposits`, which the indexer already watches and `handleDepositConfirmed`
+ * already books — after EMBER's 60 confirmations, which is also the orphan re-check. So this page
+ * asks for that address, and on an accepted block sweeps the key's balance to it. `lib/embersweep.ts`
+ * argues the whole design and names what it refuses to do. The old flow is still here, unchanged, as
+ * the fallback for a session that has no such address: nothing is written to storage in either.
  *
  * **Every number on screen carries its unit and its window.** Hashes per second, shares, difficulty
  * as a bare ratio, seconds. The projection panel exists so the arithmetic is on the page rather
@@ -43,7 +51,9 @@
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
+import { sweepToCustody, type SweepOutcome } from '../lib/embersweep.ts'
 import { emberMiningBase } from '../lib/hosts.ts'
+import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
 import { loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
@@ -515,19 +525,58 @@ interface EmberHandle extends EventTarget {
   _applyDuty(): void
 }
 
+/** One accepted block, and what became of the reward it paid to this tab's key. */
+interface Swept {
+  readonly height: number
+  readonly outcome: SweepOutcome
+}
+
 /**
- * EMBER, mined against the node, paid to a key this tab holds.
+ * EMBER, mined against the node, paid to a key this tab holds, and swept into the account.
  *
- * See the file header for why the reward cannot go to the account's custodial EMBER address. The
- * warning is placed BEFORE the Start button rather than after it, which is the arrangement
- * `network-site/src/components/browsermine.tsx` settled on for the same reason: a key that is only
- * mentioned afterwards is a key somebody has already lost.
+ * ── THE TWO MODES, AND WHY THE PAGE PICKS ONE RATHER THAN OFFERING BOTH ────────────────────────
+ *
+ * The reward is paid to the tab's key either way — that is consensus and it does not bend (file
+ * header). What differs is what happens next, and it turns on a single question this page cannot
+ * answer by itself: **does this account have a custodial EMBER deposit address the indexer is
+ * already watching?** So it asks, once, on mount.
+ *
+ *   - **Yes** → the sweep mode. The key is generated but never displayed, nothing is asked of the
+ *     reader, and each accepted block's balance is sent to that address, where the estate's ordinary
+ *     deposit path credits it after 60 confirmations. Showing a private key that nobody needs would
+ *     be inviting somebody to write down a bearer credential for no reason.
+ *   - **No** → the old flow, unchanged: the key is shown, the reader is told to save it, and Start
+ *     is gated behind a checkbox. `assignDepositAddress` failing, `watchedAt` being null — wallet's
+ *     own note is "an unwatched address produces no events", so a sweep there would arrive on chain
+ *     and never be credited — or the asset not being depositable all land here.
+ *
+ * The failing shape this avoids is a page that offers both and lets somebody start in the mode they
+ * did not read the paragraph for. Whichever mode is active, its warning is placed BEFORE the Start
+ * button, which is the arrangement `network-site/src/components/browsermine.tsx` settled on for the
+ * same reason: a key that is only mentioned afterwards is a key somebody has already lost.
+ *
+ * ── AND THE ESCAPE HATCH, WHICH IS NOT DECORATION ──────────────────────────────────────────────
+ *
+ * A sweep can fail — the node refuses, the tab loses the network, the balance will not cover its own
+ * fee. When one does, the reward is sitting on a key the reader has never seen, which is the very
+ * situation this change exists to prevent. So the reveal control comes BACK, in sweep mode, the
+ * moment a sweep has not landed: not as a warning up front that would undo the point, but as a
+ * recovery path offered exactly when there is something to recover.
  */
 function EmberPanel() {
   const [key, setKey] = useState<MiningKey | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [saved, setSaved] = useState(false)
   const [running, setRunning] = useState(false)
+  /**
+   * The account's custodial EMBER deposit address, or null while it is being asked for or if there
+   * is not one. `undefined` is not used: `custodyState` carries the difference, because "still
+   * asking" and "asked and there is none" render differently and conflating them would flash the
+   * self-custody warning at somebody who is about to be told the opposite.
+   */
+  const [custody, setCustody] = useState<DepositAssignment | null>(null)
+  const [custodyState, setCustodyState] = useState<'asking' | 'settled'>('asking')
+  const [swept, setSwept] = useState<readonly Swept[]>([])
   // Whether the tip is reaching this tab live over `GET /events`, or the fallback poll is carrying
   // it. Rendered rather than logged: it changes what the hashrate beside it is worth.
   const [following, setFollowing] = useState(false)
@@ -540,6 +589,95 @@ function EmberPanel() {
   const miner = useRef<EmberHandle | null>(null)
 
   useEffect(() => () => miner.current?.stop(), [])
+
+  /**
+   * Ask wallet where this account's EMBER deposits go. Once, on mount, before anything is mined.
+   *
+   * `POST` on a page load looks wrong and is not: `assignDepositAddress` is called WITHOUT `rotate`,
+   * and wallet's own comment is that rotation is the dangerous default because it "would mint a new
+   * address on every page load and leave a trail of addresses nobody was told about". Without it the
+   * service returns the existing active assignment and mints at most one, ever — the same address
+   * the receive screen would hand out. There is no read-only route that returns an address, and
+   * `GET /v1/deposits` returns only assignments that already exist, so an account that has never
+   * received would be told it has nowhere to mine to, which is false.
+   *
+   * It has to happen before mining rather than at the first accepted block, because it decides which
+   * warning the reader is shown and whether Start is gated — and by the time a block is accepted,
+   * they have already read one of them and made a decision on it.
+   */
+  const asked = useRef(false)
+  useEffect(() => {
+    /*
+     * ONCE PER MOUNT, AND THE GUARD IS NOT DECORATION.
+     *
+     * `src/main.tsx` mounts this app inside `<StrictMode>`, which runs every effect, tears it down
+     * and runs it again — so the ordinary `let live = true` cleanup, which cancels the STATE UPDATE,
+     * still lets the REQUEST go twice. For a GET that is waste; for a `POST /v1/deposits` it is two
+     * calls to the route wallet says must not be called casually. Both are harmless today because
+     * `rotate` is absent and the second returns the same assignment, but "harmless because of a
+     * default on somebody else's route" is not a thing to rely on twice a page load.
+     *
+     * There is deliberately no abort either. The request may already have minted the account's only
+     * EMBER deposit address, and aborting the response does not unmint it — it just throws away the
+     * one copy of the answer. Setting state after an unmount is a no-op in React 18 and later.
+     */
+    if (asked.current) return
+    asked.current = true
+    assignDepositAddress('EMBER')
+      .then((answer) => setCustody(answer.assignment))
+      .catch(() => {
+        // Deliberately silent, and deliberately not a notice. Every reason this can fail — no
+        // session, EMBER not depositable on this deployment, wallet down — has the same correct
+        // consequence: mine to the tab's own key, with the warning that goes with it. An error
+        // banner above a working page would be noise about a fallback that is functioning.
+        setCustody(null)
+      })
+      .finally(() => setCustodyState('settled'))
+  }, [])
+
+  /**
+   * The address the sweep will actually send to, or null. Both conditions are refusals to send.
+   *
+   * `watchedAt === null` means the indexer has not been told to watch it, so a deposit to it arrives
+   * on chain and is never credited — losing the sweep is recoverable, sending EMBER into a hole is
+   * not. The `chain` check is belt and braces against an assignment for something that is not the
+   * chain this page mines; `hosts()` derives the wallet host and the RPC host from the same apex, so
+   * the two cannot be different DEPLOYMENTS, but they can be different assets.
+   */
+  const payingIn =
+    custody !== null && custody.watchedAt !== null && custody.chain === 'ember' ? custody : null
+
+  /*
+   * Refs beside the state, because the `accepted` listener is registered ONCE inside `toggle` and
+   * would otherwise close over whatever these were at that instant — a block found ten minutes later
+   * would sweep to an address that had since been re-read, or with a key from a previous session.
+   */
+  const payingInRef = useRef<DepositAssignment | null>(null)
+  payingInRef.current = payingIn
+  const keyRef = useRef<MiningKey | null>(null)
+  keyRef.current = key
+
+  /**
+   * One sweep at a time, whatever the chain does.
+   *
+   * Two blocks accepted seconds apart would otherwise read `eth_getTransactionCount` concurrently,
+   * get the same nonce, and sign two transactions of which the chain takes one — turning a reward
+   * into a fee. The queue is a promise chain rather than a lock because the work is already async
+   * and a lock would need a release path on every throw. A second sweep behind a first also fixes
+   * itself: `sweepToCustody` pays out the BALANCE, so by the time it runs the first has already
+   * moved what it could and this one moves whatever arrived after.
+   */
+  const sweepQueue = useRef<Promise<void>>(Promise.resolve())
+
+  const sweep = useCallback((height: number) => {
+    const to = payingInRef.current
+    const signing = keyRef.current
+    if (to === null || signing === null) return
+    sweepQueue.current = sweepQueue.current.then(async () => {
+      const outcome = await sweepToCustody(signing, to.address)
+      setSwept((prev) => [{ height, outcome }, ...prev].slice(0, 8))
+    })
+  }, [])
 
   const makeKey = useCallback(async () => {
     setNotice(null)
@@ -559,13 +697,21 @@ function EmberPanel() {
       setFollowing(false)
       return
     }
-    if (!key) return
     setNotice(null)
     try {
+      // In sweep mode there is no "Create a mining address" step to press, because the address is
+      // an implementation detail of a transfer the reader never sees — so the key is made here, on
+      // the way to starting. `keyRef` is written alongside the state because the `accepted` listener
+      // below is registered in this same pass and would otherwise close over the null.
+      const signing = key ?? (await import('../mining/account.js')).generateKey()
+      if (key === null) {
+        keyRef.current = signing
+        setKey(signing)
+      }
       const { Miner } = await import('../mining/miner.js')
       const instance = new Miner({
         rpc: emberMiningBase(),
-        key,
+        key: signing,
         duty,
         pauseOnBattery,
       }) as unknown as EmberHandle
@@ -579,9 +725,13 @@ function EmberPanel() {
       instance.addEventListener('template', (event) =>
         setHeight((event as CustomEvent).detail.height ?? null),
       )
-      instance.addEventListener('accepted', (event) =>
-        setAccepted((prev) => [(event as CustomEvent).detail, ...prev].slice(0, 8)),
-      )
+      instance.addEventListener('accepted', (event) => {
+        const detail = (event as CustomEvent).detail as { height: number }
+        setAccepted((prev) => [detail, ...prev].slice(0, 8))
+        // The whole of micro-org#299, in one line and only when there is somewhere to send it.
+        // `sweep` is a no-op in the self-custody mode, where the reward is meant to stay put.
+        sweep(detail.height)
+      })
       instance.addEventListener('rejected', (event) =>
         setNotice(`the node refused a block: ${(event as CustomEvent).detail.err}`),
       )
@@ -595,63 +745,93 @@ function EmberPanel() {
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'mining could not start')
     }
-  }, [running, key, duty, pauseOnBattery])
+  }, [running, key, duty, pauseOnBattery, sweep])
 
   return (
     <section className="wt-panel">
       <h2 className="wt-panel__title">EMBER, mined against the network</h2>
 
-      <p className="wt-note wt-note--caveat">
-        The block reward goes to an address this tab holds the key to — not to the EMBER address on
-        your CloudsForge account. EMBER's proof-of-work is signed by the key the coinbase pays, and
-        your account's key is held in custody and is not released to a web page. So mining here pays
-        the key below, and if you close this tab without saving it, anything paid to it is
-        unreachable by anyone, including us.
-      </p>
-
       {notice && <p className="wt-note wt-note--caveat">{notice}</p>}
 
-      {key === null ? (
-        <div className="wt-form__actions">
-          <button type="button" className="cf-btn cf-btn--ember" onClick={() => void makeKey()}>
-            Create a mining address
-          </button>
-        </div>
-      ) : (
+      {/*
+        Nothing at all until the address question has been answered. Not a spinner and not the
+        self-custody warning "for now": the two modes tell a reader opposite things about their own
+        money, and showing one and then swapping it for the other is worse than a moment of silence.
+      */}
+      {custodyState === 'asking' ? (
+        <p className="wt-note">Checking where mined EMBER should go on this account…</p>
+      ) : payingIn !== null ? (
         <>
+          <p className="wt-note">
+            Mined EMBER is paid into your CloudsForge EMBER balance. The network pays each block to a
+            throwaway address this tab makes, because EMBER's proof-of-work has to be signed by the
+            key the block pays — so as soon as a block is accepted, this page sends what it paid on
+            to your own EMBER deposit address. It appears in your balance once the network has built{' '}
+            <span className="cf-num">60</span> blocks on top of it, roughly fifteen minutes, which is
+            also what protects you from being credited for a block that is later reversed.
+          </p>
           <dl className="wt-facts">
-            <Fact label="Paid to" value={key.address} />
+            <Fact label="Paid into" value={payingIn.address} />
           </dl>
-          {revealed ? (
-            <p className="wt-note">
-              <span className="cf-num">{key.privHex}</span>
-            </p>
-          ) : (
-            <div className="wt-form__actions">
-              <button type="button" className="cf-btn" onClick={() => setRevealed(true)}>
-                Show the private key
-              </button>
-            </div>
-          )}
-          <label className="wt-check">
-            <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
-            <span>I have saved this private key somewhere I will still have tomorrow</span>
-          </label>
           <div className="wt-form__actions">
-            {/*
-              The one disabled control on this page, and it is disabled by a checkbox the reader
-              controls rather than by a deployment setting they cannot see — so it says "not yet"
-              to somebody who can make it "yes" in one click.
-            */}
-            <button
-              type="button"
-              className="cf-btn cf-btn--ember"
-              onClick={() => void toggle()}
-              disabled={!saved && !running}
-            >
+            <button type="button" className="cf-btn cf-btn--ember" onClick={() => void toggle()}>
               {running ? 'Stop mining' : 'Start mining EMBER'}
             </button>
           </div>
+        </>
+      ) : (
+        <>
+          <p className="wt-note wt-note--caveat">
+            The block reward goes to an address this tab holds the key to — not to the EMBER address
+            on your CloudsForge account. EMBER's proof-of-work is signed by the key the coinbase
+            pays, and your account's key is held in custody and is not released to a web page. We
+            could not get a deposit address to forward it to, so mining here pays the key below, and
+            if you close this tab without saving it, anything paid to it is unreachable by anyone,
+            including us.
+          </p>
+          {key === null ? (
+            <div className="wt-form__actions">
+              <button type="button" className="cf-btn cf-btn--ember" onClick={() => void makeKey()}>
+                Create a mining address
+              </button>
+            </div>
+          ) : (
+            <>
+              <dl className="wt-facts">
+                <Fact label="Paid to" value={key.address} />
+              </dl>
+              {revealed ? (
+                <p className="wt-note">
+                  <span className="cf-num">{key.privHex}</span>
+                </p>
+              ) : (
+                <div className="wt-form__actions">
+                  <button type="button" className="cf-btn" onClick={() => setRevealed(true)}>
+                    Show the private key
+                  </button>
+                </div>
+              )}
+              <label className="wt-check">
+                <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+                <span>I have saved this private key somewhere I will still have tomorrow</span>
+              </label>
+              <div className="wt-form__actions">
+                {/*
+                  The one disabled control on this page, and it is disabled by a checkbox the reader
+                  controls rather than by a deployment setting they cannot see — so it says "not yet"
+                  to somebody who can make it "yes" in one click.
+                */}
+                <button
+                  type="button"
+                  className="cf-btn cf-btn--ember"
+                  onClick={() => void toggle()}
+                  disabled={!saved && !running}
+                >
+                  {running ? 'Stop mining' : 'Start mining EMBER'}
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -683,6 +863,10 @@ function EmberPanel() {
         <Fact label="Blocks this tab found" value={`${accepted.length}`} />
       </dl>
 
+      {payingIn !== null && swept.length > 0 && (
+        <SweptRewards swept={swept} keyHex={key?.privHex ?? null} revealed={revealed} onReveal={() => setRevealed(true)} />
+      )}
+
       {/*
         WHICH OF THE TWO IT IS IN, RATHER THAN A SENTENCE THAT ASSUMES ONE. This paragraph used to
         state the 45-second poll as the whole truth, because it was: the stream had been deleted
@@ -700,6 +884,88 @@ function EmberPanel() {
       </p>
     </section>
   )
+}
+
+/**
+ * What became of each block's reward, and the escape hatch when one did not make it.
+ *
+ * Every outcome is rendered, including the two that moved nothing. A page that showed only the
+ * successes would be a page on which a stranded reward is invisible — and a reward stranded on a key
+ * the reader has never seen is the exact failure this whole change exists to prevent. So when any
+ * sweep has not landed, the private key becomes revealable, framed as the recovery it is.
+ */
+function SweptRewards({
+  swept,
+  keyHex,
+  revealed,
+  onReveal,
+}: {
+  swept: readonly Swept[]
+  keyHex: string | null
+  revealed: boolean
+  onReveal: () => void
+}) {
+  const stranded = swept.some((entry) => entry.outcome.kind !== 'sent')
+
+  return (
+    <div className="wt-panel__sub">
+      <h3>What happened to each reward</h3>
+      <ul className="wt-rows">
+        {swept.map((entry) => (
+          <li className="wt-row" key={`${entry.height}-${entry.outcome.kind}`}>
+            <span className="wt-row__main">
+              <span className="wt-row__title cf-num">Block {entry.height.toLocaleString('en')}</span>
+              <span className="wt-row__sub">{describeSweep(entry.outcome)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {stranded && (
+        <>
+          <p className="wt-note wt-note--caveat">
+            At least one reward is still sitting on the throwaway address this tab mined to, so it is
+            not on its way to your balance. The next block this tab finds will try again and will
+            move everything that has built up, including this. If you would rather not wait, the
+            private key to that address is below — it is a bearer credential, so anyone who has it
+            can spend what is there.
+          </p>
+          {revealed ? (
+            <p className="wt-note">
+              <span className="cf-num">{keyHex}</span>
+            </p>
+          ) : (
+            <div className="wt-form__actions">
+              <button type="button" className="cf-btn" onClick={onReveal}>
+                Show the private key for that address
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One sweep outcome as a sentence, in whole EMBER.
+ *
+ * `1e18` rather than a formatter from `lib/money.ts`: those take integer MINOR units of an asset the
+ * wallet knows about, and this amount has not been near the wallet — it is a chain quantity in wei,
+ * read off the node by `embersweep.ts`. Converting it through the money layer would imply the estate
+ * has booked it, which is exactly the thing that has not happened yet.
+ */
+function describeSweep(outcome: SweepOutcome): string {
+  const WEI = 1_000_000_000_000_000_000n
+  const ember = (value: bigint): string =>
+    `${(Number((value * 10_000n) / WEI) / 10_000).toFixed(4)} EMBER`
+  switch (outcome.kind) {
+    case 'sent':
+      return `${ember(outcome.value)} sent to your deposit address — it appears in your balance after 60 confirmations`
+    case 'too_small':
+      return `left where it is: ${ember(outcome.balance)} does not cover the ${ember(outcome.fee)} fee to move it`
+    case 'failed':
+      return `not moved — ${outcome.message}`
+  }
 }
 
 /* ══════════════════════════════ shared bits ══════════════════════════════ */
