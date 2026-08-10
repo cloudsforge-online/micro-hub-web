@@ -24,6 +24,33 @@ declare module '*/mining/account.js' {
   export function toChecksumAddress(addr: string): string
 }
 
+declare module '*/mining/tx.js' {
+  /**
+   * A signed EIP-155 legacy value transfer, ready for `eth_sendRawTransaction`.
+   *
+   * Declared because `lib/embersweep.ts` imports it from TypeScript. The implementation is
+   * JavaScript for the same reason its neighbours are: it sits directly on `secp256k1.js` and
+   * `keccak.js`, which are the byte-for-byte port, and a module boundary between them would be a
+   * boundary in the middle of one signature.
+   */
+  export function signValueTransfer(tx: {
+    readonly nonce: bigint | number
+    readonly gasPrice: bigint | number
+    readonly gasLimit: bigint | number
+    /** 20 bytes as hex, `0x`-prefixed or not. Any other length throws rather than being padded. */
+    readonly to: string
+    readonly value: bigint | number
+    /** Required. An unprotected signature is replayable on every chain that shares the key. */
+    readonly chainId: bigint | number
+    readonly priv: Uint8Array
+  }): { readonly raw: string; readonly hash: string }
+  /** RLP over byte strings and lists of them. No integer branch: see the comment on it. */
+  export function rlpEncode(item: Uint8Array | readonly unknown[]): Uint8Array
+  /** Big-endian, minimal, and zero is the EMPTY string rather than a `0x00` byte. */
+  export function toMinimalBytes(value: bigint | number): Uint8Array
+  export function hexToBytes(text: string): Uint8Array
+}
+
 declare module '*/mining/miner.js' {
   export interface MinerOptions {
     readonly rpc: string

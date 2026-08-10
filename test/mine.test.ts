@@ -33,8 +33,9 @@ import { describe, it } from 'node:test'
 import { createElement as h, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 
-import { withScreen, type Routes } from './dom.ts'
+import { withScreen, type Reply, type Routes } from './dom.ts'
 import { MinePage } from '../src/pages/mine.tsx'
+import type { DepositAssignment } from '../src/lib/money.ts'
 import { isMineable, miningBlocker, type PoolChain, type PoolSummary } from '../src/lib/pool.ts'
 import { NON_INDEX_PATHS, ROUTES } from '../src/lib/routes.ts'
 
@@ -87,7 +88,39 @@ const summary = (over: Partial<PoolSummary> = {}): PoolSummary => ({
   ...over,
 })
 
-const poolRoutes = (body: PoolSummary): Routes => ({ 'GET /v1/pool': { status: 200, body } })
+/**
+ * The custodial EMBER deposit address, as `wallet/src/deposits.ts` reports one.
+ *
+ * `watchedAt` is a real date by default because that is the ordinary case for a signed-in account,
+ * and because it is the field the page is allowed to act on: a null one means the indexer was never
+ * told to watch the address, so EMBER swept to it would arrive on chain and never be credited.
+ */
+const assignment = (over: Partial<DepositAssignment> = {}): DepositAssignment => ({
+  id: 'dep_01J000000000000000000000',
+  assetCode: 'EMBER',
+  chain: 'ember',
+  network: 'mainnet',
+  walletId: 'wal_01J000000000000000000000',
+  address: '0x1111111111111111111111111111111111111111',
+  status: 'active',
+  assignedAt: '2026-08-10T00:00:00.000Z',
+  watchedAt: '2026-08-10T00:00:01.000Z',
+  ...over,
+})
+
+/**
+ * Both routes the page reads, because since micro-org#299 it reads both.
+ *
+ * The deposit stub defaults to a WATCHED address — the ordinary signed-in case — rather than to a
+ * refusal, so a scenario that is about the pool is not silently exercising EMBER's fallback path.
+ * Every scenario that IS about the fallback overrides it explicitly and says which reason it is
+ * testing. Before this existed, `POST /v1/deposits` was unrouted and every mount in this file was
+ * relying on `dom.ts`'s "an unrouted request means the test does not know what the page does".
+ */
+const poolRoutes = (body: PoolSummary, deposit?: Reply): Routes => ({
+  'GET /v1/pool': { status: 200, body },
+  'POST /v1/deposits': deposit ?? { status: 200, body: { assignment: assignment() } },
+})
 
 /* ══════════════════════════════ 1. the address ══════════════════════════════ */
 
@@ -347,14 +380,115 @@ describe('a chain the pool has published an endpoint for', () => {
 
 /* ══════════════════════════════ 5. EMBER ══════════════════════════════ */
 
-describe('EMBER on the same page', () => {
-  it('will not start until a key exists and has been saved', async () => {
+/**
+ * ── WHAT THIS SECTION IS ABOUT, AFTER micro-org#299 ────────────────────────────────────────────
+ *
+ * This page has TWO EMBER modes and the difference between them is what a reader is told about their
+ * own money, so the assertions here are about which one is shown and, in every case, that only one
+ * is. The mode turns on the account's custodial EMBER deposit address:
+ *
+ *   - **A watched address** → the reward is swept to it, the throwaway key is never displayed, and
+ *     Start is not gated. The private-key controls MUST be absent: a page that both promises to
+ *     forward the reward and asks you to write down a bearer credential has told you two different
+ *     things, and somebody will act on the wrong one.
+ *   - **No usable address** → the old self-custody flow, exactly as it was, including the checkbox.
+ *
+ * The `watchedAt: null` case is the sharp one and gets its own scenario. There IS an address, it
+ * looks perfectly good, and sweeping to it would send EMBER on chain to somewhere the indexer was
+ * never told to watch — arriving, and never being credited. wallet's own note: "an unwatched address
+ * produces no events". Losing a sweep is recoverable; that is not.
+ */
+describe('EMBER, and where the reward is told to go', () => {
+  it('sweeps into the account when there is a watched deposit address, and shows no private key', async () => {
+    const custody = assignment({ address: '0x2222222222222222222222222222222222222222' })
     await withScreen(
       page(h(MinePage), '/mine'),
-      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary()) },
+      {
+        url: `${ORIGIN}/mine`,
+        routes: poolRoutes(summary(), { status: 200, body: { assignment: custody } }),
+      },
       async (s) => {
         await s.settle()
         // EMBER is the default selection, so this is the page as it first renders.
+        assert.match(
+          s.text(),
+          /paid into your CloudsForge EMBER balance/i,
+          'the page does not say the reward reaches the account balance, which since #299 it does',
+        )
+        // The address from THIS scenario's fixture, never read back off the page.
+        assert.match(s.text(), new RegExp(custody.address), 'the destination is not shown at all')
+
+        // The two controls of the self-custody flow, both of which would be a contradiction here.
+        assert.equal(
+          s.queryByRole('button', /Show the private key/),
+          null,
+          'a private key is offered on a page that has just promised to forward the reward for you',
+        )
+        assert.doesNotMatch(
+          s.text(),
+          /I have saved this private key/i,
+          'the reader is asked to save a key they are never shown and do not need',
+        )
+        assert.doesNotMatch(
+          s.text(),
+          /unreachable by anyone, including us/i,
+          'the self-custody warning is shown alongside the custodial one, so the page says both',
+        )
+
+        // Start, with nothing in front of it: there is no key for the reader to look after.
+        const start = s.byRole('button', /Start mining EMBER/)
+        assert.equal(
+          start.hasAttribute('disabled'),
+          false,
+          'Start is gated in a mode where there is nothing for the reader to do first',
+        )
+        s.before(
+          'paid into your CloudsForge EMBER balance',
+          'Start mining EMBER',
+          'what happens to the reward must precede the control that starts earning it',
+        )
+        s.clean('EMBER with a watched deposit address')
+      },
+    )
+  })
+
+  it('asks for the address once, and never asks for a new one', async () => {
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, routes: poolRoutes(summary()), strict: true },
+      async (s) => {
+        await s.settle()
+        const calls = s.api.matching('POST /v1/deposits')
+        assert.equal(
+          calls.length,
+          1,
+          'the deposit address was asked for more than once on a single mount — under StrictMode, ' +
+            'which is how this app really mounts',
+        )
+        // `rotate` is what mints a NEW address. wallet's own comment: defaulting to it "would mint a
+        // new address on every page load and leave a trail of addresses nobody was told about" —
+        // and this call happens on every page load, so it is precisely the caller that must not.
+        assert.deepEqual(
+          calls[0]?.json,
+          { assetCode: 'EMBER' },
+          'the mining page asked wallet to rotate the account deposit address',
+        )
+        s.clean('the deposit lookup')
+      },
+    )
+  })
+
+  it('falls back to the self-custody flow, unchanged, when there is no address to forward to', async () => {
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      {
+        // `not_depositable` is what `wallet/src/deposits.ts` answers for an asset this deployment
+        // does not take deposits in; a signed-out session and a wallet outage arrive the same way.
+        url: `${ORIGIN}/mine`,
+        routes: poolRoutes(summary(), { status: 400, body: { error: 'not_depositable' } }),
+      },
+      async (s) => {
+        await s.settle()
         assert.match(
           s.text(),
           /not to the EMBER address on your CloudsForge account/i,
@@ -368,7 +502,81 @@ describe('EMBER on the same page', () => {
           'EMBER can be started before a mining key exists, so the reward would have no payee',
         )
         assert.ok(s.queryByRole('button', /Create a mining address/), 'there is no way to make a key')
-        s.clean('EMBER before a key')
+        assert.doesNotMatch(
+          s.text(),
+          /paid into your CloudsForge EMBER balance/i,
+          'the page promises to credit the account while having no address to credit it through',
+        )
+        s.clean('EMBER with no deposit address')
+      },
+    )
+  })
+
+  it('treats an unwatched address as no address, because sending to one loses the money', async () => {
+    const unwatched = assignment({ watchedAt: null })
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      {
+        url: `${ORIGIN}/mine`,
+        routes: poolRoutes(summary(), { status: 200, body: { assignment: unwatched } }),
+      },
+      async (s) => {
+        await s.settle()
+        assert.doesNotMatch(
+          s.text(),
+          /paid into your CloudsForge EMBER balance/i,
+          'the page offered to sweep the reward to an address the indexer was never told to ' +
+            'watch. It would arrive on chain, produce no event, and never be credited — which is ' +
+            'worse than the self-custody flow it replaced, because nobody would be looking for it',
+        )
+        assert.doesNotMatch(
+          s.text(),
+          new RegExp(unwatched.address),
+          'an unwatched address is displayed as somewhere money is going',
+        )
+        assert.ok(
+          s.queryByRole('button', /Create a mining address/),
+          'neither mode is offered, so the page is unusable rather than merely degraded',
+        )
+        s.clean('EMBER with an unwatched deposit address')
+      },
+    )
+  })
+
+  it('says nothing about the reward until it knows which is true', async () => {
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      {
+        url: `${ORIGIN}/mine`,
+        // Slow enough that the mount's own flush cannot reach the answer. The scenario is the gap.
+        routes: poolRoutes(summary(), { status: 200, body: { assignment: assignment() }, delayMs: 200 }),
+      },
+      async (s) => {
+        // Deliberately no `settle()` before this: the page as it is while the question is open.
+        assert.doesNotMatch(
+          s.text(),
+          /unreachable by anyone, including us/i,
+          'the self-custody warning is shown while the answer is still in flight, and will be ' +
+            'replaced by its opposite a moment later — a reader who acted on the first was misled',
+        )
+        assert.doesNotMatch(
+          s.text(),
+          /paid into your CloudsForge EMBER balance/i,
+          'the custodial promise is made before anything has confirmed it can be kept',
+        )
+        assert.equal(
+          s.allByRole('button').filter((el) => /mining address|Start mining EMBER/i.test(s.textOf(el)))
+            .length,
+          0,
+          'a control that starts one of the two modes exists before the mode is known',
+        )
+        await s.settle(300)
+        assert.match(
+          s.text(),
+          /paid into your CloudsForge EMBER balance/i,
+          'the answer arrived and the page never acted on it',
+        )
+        s.clean('EMBER while the address is in flight')
       },
     )
   })
