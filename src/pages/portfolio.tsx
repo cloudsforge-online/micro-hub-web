@@ -21,17 +21,33 @@
  * Reads `GET /v1/portfolio` — hub-api/src/server.ts. The body is `{ portfolio: <tile> }`,
  * a single key with the tile beneath it (server.ts), not the tile at the top level.
  */
-import { useCallback } from 'react'
+import { useCallback, useId } from 'react'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
+import { EstimateMark, EstimateNotice } from '../components/estimate.tsx'
 import { Empty, Failed, Forbidden, Loading } from '../components/states.tsx'
 import { TilePanel } from '../components/tile.tsx'
 import { formatAmount, formatBps, pricedStamp, quotedStamp } from '../lib/format.ts'
 import { loadPortfolio, type Holding, type PortfolioView } from '../lib/hub.ts'
-import { allocationData, hasAllocation, holdingValue, portfolioTotal } from '../lib/portfolio.ts'
+import {
+  allocationData,
+  estimatedAssets,
+  hasAllocation,
+  holdingValue,
+  isEstimate,
+  portfolioTotal,
+} from '../lib/portfolio.ts'
 import { useResource } from '../lib/resource.ts'
 import { hasAnswer } from '../lib/tile.ts'
 
 export function PortfolioPage() {
+  /*
+    One id for the unlisted-asset statement, minted by the page rather than by the component that
+    renders it, because the elements that POINT at it are in a different section — the value cells
+    of the holdings table, below the panel the statement sits in. `useId` rather than a constant for
+    the reason `MiningControl` gives: two of the same id on one page would be a silently wrong
+    `aria-describedby` rather than a visible break.
+  */
+  const estimateId = useId()
   const load = useCallback((signal: AbortSignal) => loadPortfolio(signal), [])
   const { state, data, error, reload } = useResource(
     load,
@@ -58,6 +74,7 @@ export function PortfolioPage() {
   const view = tile.data
   const total = portfolioTotal(view)
   const stamp = pricedStamp(view.pricedAt)
+  const estimated = estimatedAssets(view)
 
   return (
     <>
@@ -124,6 +141,13 @@ export function PortfolioPage() {
           />
         </div>
         {total.caveat && <p className="wt-note wt-note--caveat">{total.caveat}</p>}
+        {/*
+          Under "Total held", because the total is a SUM that includes the estimate — a reader who
+          only looks at the one big number must still meet the statement. It is a second sentence
+          rather than a clause of `total.caveat`: that caveat is about holdings LEFT OUT of the
+          total, and this is about the kind of price one of the holdings that is IN it carries.
+        */}
+        <EstimateNotice id={estimateId} assets={estimated} />
       </TilePanel>
 
       {hasAnswer(tile) && hasAllocation(view) && (
@@ -145,7 +169,9 @@ export function PortfolioPage() {
         </section>
       )}
 
-      {hasAnswer(tile) && view.holdings.length > 0 && <HoldingsTable view={view} />}
+      {hasAnswer(tile) && view.holdings.length > 0 && (
+        <HoldingsTable view={view} estimateId={estimateId} />
+      )}
     </>
   )
 }
@@ -158,7 +184,7 @@ export function PortfolioPage() {
  * I not spend it" is the question the reserved column exists to answer
  * (hub-api/src/portfolio.ts).
  */
-function HoldingsTable({ view }: { view: PortfolioView }) {
+function HoldingsTable({ view, estimateId }: { view: PortfolioView; estimateId: string }) {
   return (
     <section className="wt-panel">
       <header className="wt-panel__head">
@@ -178,7 +204,7 @@ function HoldingsTable({ view }: { view: PortfolioView }) {
           </thead>
           <tbody>
             {view.holdings.map((holding) => (
-              <HoldingRow key={holding.assetCode} holding={holding} />
+              <HoldingRow key={holding.assetCode} holding={holding} estimateId={estimateId} />
             ))}
           </tbody>
         </table>
@@ -187,10 +213,11 @@ function HoldingsTable({ view }: { view: PortfolioView }) {
   )
 }
 
-function HoldingRow({ holding }: { holding: Holding }) {
+function HoldingRow({ holding, estimateId }: { holding: Holding; estimateId: string }) {
   const value = holdingValue(holding)
   const asOf = quotedStamp(holding.quotedAt)
   const share = formatBps(holding.allocationBps)
+  const estimated = isEstimate(holding)
 
   return (
     <tr className={value === null ? 'wt-table__row--unpriced' : undefined}>
@@ -209,7 +236,14 @@ function HoldingRow({ holding }: { holding: Holding }) {
       </td>
       <td className="cf-num">{formatAmount(holding.available) ?? holding.available}</td>
       <td className="cf-num">{formatAmount(holding.reserved) ?? holding.reserved}</td>
-      <td className="cf-num">
+      {/*
+        `aria-describedby` on the CELL, pointing at the statement in the panel above. The figure is
+        not focusable and must not become focusable — a tab stop on a read-only number is a stop a
+        keyboard user has to pass through on every row — so the association is made on the element
+        a screen reader lands on when it reads the cell, and the statement it names is ordinary
+        visible text rather than anything hidden behind an interaction.
+      */}
+      <td className="cf-num" {...(estimated ? { 'aria-describedby': estimateId } : {})}>
         {value === null ? (
           // Rule 1. No figure, and pricing's own words for why — never a dash that could be read
           // as nothing, and never a zero.
@@ -220,6 +254,8 @@ function HoldingRow({ holding }: { holding: Holding }) {
         ) : (
           <>
             {value}
+            {/* The word, for a reader who is looking at the figure rather than at the panel. */}
+            {estimated && <EstimateMark />}
             {/* Rule 2. This quote's own instant, not the summary's. */}
             {asOf && <span className="wt-asof cf-num"> {asOf}</span>}
           </>

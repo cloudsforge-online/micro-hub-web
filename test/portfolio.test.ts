@@ -21,8 +21,11 @@ import { describe, it } from 'node:test'
 import type { Holding, PortfolioView } from '../src/lib/hub.ts'
 import {
   allocationData,
+  estimateNotice,
+  estimatedAssets,
   hasAllocation,
   holdingValue,
+  isEstimate,
   portfolioTotal,
   pricedHoldings,
   unpricedHoldings,
@@ -38,6 +41,7 @@ const holding = (over: Partial<Holding> & { assetCode: string }): Holding => ({
   allocationBps: 10_000,
   quotedAt: '2026-03-14T14:22:00.000Z',
   priceReason: null,
+  priceSource: 'market',
   ...over,
 })
 
@@ -204,5 +208,79 @@ describe('allocationData', () => {
     })
     assert.equal(hasAllocation(v), false)
     assert.equal(v.holdings.length, 1)
+  })
+})
+
+/* ══════════════════════ a fiat figure no market ever agreed to ══════════════════════ */
+
+describe('the unlisted-asset statement', () => {
+  it('is driven by the price SOURCE, not by the asset code', () => {
+    // The whole point of the field. EMBER is administered today because no exchange lists it — but
+    // the day one does, pricing stops saying `administered` and this screen must stop qualifying
+    // the figure, without a release of this bundle. The two halves are asserted together because a
+    // function hard-wired to `assetCode === 'EMBER'` passes the first and fails the second.
+    const administered = holding({ assetCode: 'EMBER', priceSource: 'administered' })
+    const listed = holding({ assetCode: 'EMBER', priceSource: 'market' })
+    assert.equal(isEstimate(administered), true)
+    assert.equal(isEstimate(listed), false, 'the note is attached to an asset rather than to a price')
+  })
+
+  it('never qualifies a figure that is not there', () => {
+    // An unpriced holding renders "no honest price" and no number at all. Calling that an estimate
+    // would describe a figure the reader cannot see, and imply one exists.
+    const unpriced = holding({
+      assetCode: 'EMBER',
+      priceSource: 'administered',
+      usd: null,
+      usdScaled: null,
+    })
+    assert.equal(isEstimate(unpriced), false)
+    assert.equal(estimatedAssets(view({ holdings: [unpriced] })).length, 0)
+  })
+
+  it('leaves a contract-fixed holding alone, which is a stronger claim and not a weaker one', () => {
+    // SHARD and USD arrive with a null source: hub-api values them from `SHARDS_PER_USD` and from
+    // their own decimals, never from a quote. Treating null as "administered" would put the note on
+    // the two figures in the estate that are not estimates at all.
+    const shards = holding({ assetCode: 'SHARD', priceSource: null })
+    assert.equal(isEstimate(shards), false)
+    assert.equal(estimateNotice(estimatedAssets(view({ holdings: [shards] }))), null)
+  })
+
+  it('says exactly what is and is not being claimed, and no more', () => {
+    const notice = estimateNotice(['EMBER'])
+    assert.equal(
+      notice,
+      'EMBER is not listed on any exchange. Its value here is an estimate set by CloudsForge, ' +
+        'not a market price.',
+    )
+  })
+
+  it('carries no number and no schedule — pool-web’s standard for a statement like this', () => {
+    // `pool-web/src/components/notices.tsx`: present tense, no schedule, and accompanied by no
+    // number. A "not yet" or a "$0.0001" here would each undo the sentence in its own direction —
+    // the first by promising a listing nobody has arranged, the second by offering a second figure
+    // as if it were more reliable than the first.
+    const notice = estimateNotice(['EMBER'])
+    assert.ok(notice)
+    assert.doesNotMatch(notice, /\d/, 'the statement carries a number')
+    assert.doesNotMatch(notice, /\b(yet|soon|currently|for now|until|will be)\b/i)
+  })
+
+  it('names every administered asset, so a second one cannot hide behind the first', () => {
+    // There is one today. A sentence that named only `assets[0]` would be silently wrong the day
+    // there are two, and the wrong half is the half that keeps its unqualified figure.
+    const notice = estimateNotice(['EMBER', 'GLIMMER'])
+    assert.ok(notice)
+    assert.match(notice, /EMBER and GLIMMER are not listed on any exchange\./)
+    assert.match(notice, /estimates set by CloudsForge, not market prices\./)
+  })
+
+  it('is absent, rather than negated, when nothing on the page is an estimate', () => {
+    // "None of these is an estimate" and "there is nothing to say" are different claims, and a
+    // portfolio holding only market-priced assets supports only the second.
+    const v = view({ holdings: [holding({ assetCode: 'BTC', priceSource: 'market' })] })
+    assert.deepEqual(estimatedAssets(v), [])
+    assert.equal(estimateNotice(estimatedAssets(v)), null)
   })
 })

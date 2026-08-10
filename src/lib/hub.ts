@@ -57,6 +57,17 @@ export interface Holding {
   readonly quotedAt: string | null
   /** Present exactly when `usd` is null. */
   readonly priceReason: string | null
+  /**
+   * How the price behind `usd` was arrived at: `'market'` or `'administered'`, pricing's own word.
+   *
+   * Null where no quote produced the figure — SHARD and USD are fixed by contract and a `TOKEN:`
+   * asset has no oracle — so null means "nothing to qualify", never "unknown".
+   *
+   * **This is the field the unlisted-asset note is derived from, and it is deliberately not an
+   * asset code.** `pricing/src/rates.ts` owns the list of administered assets; a second copy of it
+   * in this bundle would be a second place to forget when the list changes.
+   */
+  readonly priceSource: string | null
 }
 
 /** One bar of the allocation chart. Mirrors `AllocationRow`, portfolio.ts. */

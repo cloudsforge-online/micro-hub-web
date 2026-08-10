@@ -578,6 +578,27 @@ body {
   font-size: var(--cf-text-2xs);
 }
 
+/*
+ * A figure priced by an operator rather than by a market — EMBER, which no exchange lists.
+ *
+ * A WORD and not a colour, an icon or a dotted underline. Colour is not a channel a printout, a
+ * screen reader or a colour-blind reader has, and a dotted underline is the convention for "hover
+ * me", which is the one interaction this note deliberately does not require: the sentence itself is
+ * ordinary visible text further up the page. See `src/components/estimate.tsx`.
+ */
+.wt-estimate {
+  color: var(--cf-fg-mute);
+  font-size: var(--cf-text-2xs);
+  margin-left: 0.35rem;
+}
+
+/* The statement itself. Same qualifying-a-number treatment as `.wt-note--caveat`, which it is
+   always rendered alongside, with no second colour: this is a standing property of the asset and
+   not a warning about something that has gone wrong. */
+.wt-note--estimate {
+  border-left-color: var(--cf-line-strong);
+}
+
 /* ------------------------------ feed ------------------------------- */
 
 .wt-feed__foot {
