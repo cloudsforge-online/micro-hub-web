@@ -24,7 +24,7 @@ import type {
   WalletRecord,
   WithdrawalRecord,
 } from '../src/lib/hub.ts'
-import type { KeyExport, RevealedKey, Withdrawal } from '../src/lib/money.ts'
+import type { KeyExport, RevealedKey, TokenSighting, Withdrawal } from '../src/lib/money.ts'
 import type { Tile } from '../src/lib/tile.ts'
 
 /* ══════════════════════════════ tiles ══════════════════════════════ */
@@ -303,4 +303,28 @@ export const errorBody = (
   requestId = 'cf-req-0042',
 ): Record<string, unknown> => ({
   error: { code, message, requestId, ...(fields.length > 0 ? { fields } : {}) },
+})
+
+/**
+ * One token that landed on a deposit address and was not credited.
+ * `GET /v1/deposits/token-sightings`, `wallet/src/deposits.ts`.
+ *
+ * `amount` is deliberately a figure no reader could confuse with a scaled one, and it is NOT a
+ * round power of ten: a scenario that asserts the raw integer reaches the page has to be able to
+ * fail when somebody divides it, and `1000000000000000000` renders as a plausible "1" either way.
+ */
+export const tokenSighting = (over: Partial<TokenSighting> = {}): TokenSighting => ({
+  id: 'ts-0000-0000-0000-000000000001',
+  assetCode: 'TOKEN:ethereum:mainnet:0xdac17f958d2ee523a2206206994597c13d831ec7',
+  tokenAddress: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+  amount: '250731000',
+  chain: 'ethereum',
+  network: 'mainnet',
+  txHash: '0x5f2c1d4e8a9b0c3d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d',
+  txUrn: 'cf:tx:ethereum:mainnet:0x5f2c1d4e',
+  explorerUrl: 'https://etherscan.io/tx/0x5f2c1d4e',
+  confirmations: 12,
+  firstSeenAt: '2026-08-09T18:04:00.000Z',
+  credited: false,
+  ...over,
 })

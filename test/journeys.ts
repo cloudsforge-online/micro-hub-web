@@ -526,6 +526,22 @@ export const SCENARIOS: readonly Scenario[] = [
       'destination field is not a closed list.',
   },
   {
+    id: 'BJ-TOKEN-UNCREDITED',
+    what: 'a token that arrived at a deposit address and was not credited is named on the page, with the raw figure the chain carried',
+    asserts: 'presentation',
+    tier: 'T1',
+    ownedBy: { path: 'wallet/src/deposits.ts', grep: 'this service does not know its decimals' },
+    caveat:
+      'Not in doc 22, which has no row for an uncredited token; it comes from micro-org#200. The ' +
+      'half NOT asserted is the human figure — what 250731000 of that token actually is — and it ' +
+      'cannot be asserted here because micro-wallet serves no formatted twin and this bundle has ' +
+      'no source for the token’s decimals. That absence is not an oversight: it is the reason the ' +
+      'deposit is uncredited in the first place, so a browser that supplied 18 would be printing a ' +
+      'number the service deliberately declined to print, on the screen where being wrong about a ' +
+      'figure is worst. What is asserted is the client half only — the digits shown are the digits ' +
+      'returned in the same run — and the explorer link carries the rest.',
+  },
+  {
     id: 'BJ-WAL-21-ABSENT',
     what: 'the five things this surface does not build are named on the page with their reasons, rather than being silently absent',
     asserts: 'presentation',

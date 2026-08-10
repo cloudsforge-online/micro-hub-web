@@ -378,6 +378,46 @@ export const assignDepositAddress = (
     body: rotate ? { assetCode, rotate: true } : { assetCode },
   })
 
+/**
+ * A token that arrived at one of this account's deposit addresses and was NOT credited.
+ *
+ * Mirrors `TokenSightingView`, `wallet/src/deposits.ts`. micro-org#200: somebody sends USDT to
+ * their ETH deposit address, the transfer confirms, and until this existed nothing in the estate
+ * said so — the money is real, held by a key custody controls, and against no ledger liability.
+ *
+ * `amount` is UNSCALED and there is deliberately no formatted twin, in the service and therefore
+ * here. Nothing in this estate carries the token's decimals — that missing fact is the reason the
+ * deposit is not credited in the first place — so dividing by 10^18 to render "0.25" would be this
+ * bundle asserting a number the service refused to assert. It is shown as the integer it is,
+ * labelled as the integer it is, beside the explorer link that shows the real figure.
+ */
+export interface TokenSighting {
+  readonly id: string
+  /** `TOKEN:<chain>:<network>:<contract>`, the estate's chain-token urn. Not a ticker. */
+  readonly assetCode: string
+  readonly tokenAddress: string
+  /** Smallest units, unscaled. See above: no decimals exist to scale it by. */
+  readonly amount: string
+  readonly chain: string
+  readonly network: string
+  readonly txHash: string
+  readonly txUrn: string
+  readonly explorerUrl: string | null
+  readonly confirmations: number
+  readonly firstSeenAt: string
+  /** Always false. Present so this cannot be mistaken for the credits list. */
+  readonly credited: false
+}
+
+/** `GET /v1/deposits/token-sightings` — `wallet/src/server.ts`. */
+export const loadTokenSightings = (
+  signal: AbortSignal,
+): Promise<{ sightings: readonly TokenSighting[]; nextCursor: string | null }> =>
+  wallet<{ sightings: readonly TokenSighting[]; nextCursor: string | null }>(
+    '/v1/deposits/token-sightings',
+    { signal },
+  )
+
 /* ══════════════════════════════ the export ceremony ══════════════════════════════ */
 
 /**

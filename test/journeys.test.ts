@@ -1336,14 +1336,26 @@ function factValue(s: Screen, term: string): string {
    The whole Wallet page — what an unread balance looks like, and what an empty one looks like.
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 
-/** The wallet page with the tiles a scenario names, and custody answering nothing. */
-const walletPageAt = (tiles: Parameters<typeof fx.dashboard>[0], exports: unknown[] = []) => ({
+/**
+ * The wallet page with the tiles a scenario names, and custody answering nothing.
+ *
+ * The token-sightings route is answered EMPTY by default rather than left unrouted. `test/dom.ts`
+ * throws on an unrouted request, and the panel that calls this one swallows a failure by design —
+ * so an unrouted default would let every wallet scenario here go green while the request that
+ * reaches a real estate was malformed. Answering it makes the empty case an observation.
+ */
+const walletPageAt = (
+  tiles: Parameters<typeof fx.dashboard>[0],
+  exports: unknown[] = [],
+  sightings: readonly unknown[] = [],
+) => ({
   element: page(h(WalletPage), '/wallet'),
   options: {
     url: `${ORIGIN}/wallet`,
     routes: {
       'GET /v1/dashboard': { body: fx.dashboard(tiles) },
       'GET /v1/exports': { body: { exports } },
+      'GET /v1/deposits/token-sightings': { body: { sightings, nextCursor: null } },
     } as Routes,
   },
 })
@@ -2132,6 +2144,99 @@ describe('BJ-ADV-20 — Send, the six hazards', () => {
         assert.ok(s.allByRole('alert').length > 0, 'the degradation is not announced')
       },
     )
+  })
+})
+
+describe('BJ-TOKEN-UNCREDITED — a token that arrived and was not credited', () => {
+  const PANEL = 'Tokens we could not credit'
+
+  /**
+   * ── WHY THE ASSERTION IS "UNDIVIDED", AND WHY THAT IS A CLIENT FACT RATHER THAN A RULE ────────
+   *
+   * micro-org#200: somebody sends USDT to their ETH deposit address. It confirms, custody holds the
+   * key, and until this panel existed nothing in the estate told the person it had happened. The
+   * money is not lost and it is also not theirs to move — which is a sentence that has to be got
+   * right, because the paragraph beside it on the same screen warns about the WRONG NETWORK, where
+   * the money IS gone. Two adjacent warnings with opposite endings.
+   *
+   * The figure is the part a browser can get wrong on its own. `micro-wallet` serves the raw
+   * integer and no formatted twin, deliberately: nothing here carries the token's decimals, and
+   * that absence is the reason the deposit is uncredited at all. So the scenario asserts the digits
+   * returned in THIS RUN appear on the page as they were returned — two observations of one value,
+   * in opposite directions, per the rule at the top of this file. The fixture's amount is not a
+   * round power of ten precisely so that a `/ 10n ** 18n` slipped in later cannot render something
+   * that still looks right.
+   */
+  it('BJ-TOKEN-UNCREDITED T1: the sighting is shown with the raw figure the service returned, marked not credited', async () => {
+    fresh()
+    const sighting = fx.tokenSighting()
+    const { element, options } = walletPageAt(
+      {
+        portfolio: fx.ok(fx.portfolio(), 'ledger+pricing'),
+        wallets: fx.ok([fx.wallet()], 'wallet'),
+      },
+      [],
+      [sighting],
+    )
+
+    await withScreen(element, options, async (s) => {
+      const body = s.textOf(panel(s, PANEL))
+
+      // 1. The figure, exactly as the service returned it in this run. Not scaled, not grouped.
+      assert.ok(
+        body.includes(sighting.amount),
+        `the raw figure the service returned is not on the page: "${body}"`,
+      )
+      // 2. And the figure AS RENDERED carries no other digits, which is the assertion (1) cannot
+      //    make on its own: a page that printed both the raw integer and a helpfully-divided
+      //    reading of it beside would satisfy (1). Digits only, so thousands separators — which
+      //    are non-digits and change nothing about the value — stay allowed, while a division or a
+      //    truncation changes the digits and fails here.
+      //
+      //    Asserting this on the ELEMENT rather than on a substring of the page is deliberate: the
+      //    first draft of this scenario compared against `amount / 10n ** 18n`, which for a
+      //    sub-decimal token amount is the string "0" — a digit that occurs in the token address,
+      //    the timestamp and the confirmation count, so the guard fired on correct output.
+      const figure = panel(s, PANEL).querySelector('.wt-row__title')
+      assert.ok(figure, 'the sighting row renders no figure element')
+      assert.equal(
+        s.textOf(figure).replace(/[^0-9]/g, ''),
+        sighting.amount,
+        'the figure on the page is not the figure the service returned, digit for digit',
+      )
+      // ...and it is LABELLED as raw, so the reader is not left to assume a scale either.
+      assert.match(s.textOf(figure), /raw units/i, 'the unscaled figure is not marked as unscaled')
+      // 3. The two facts a reader needs, in words: it is not in the balance, and it is not lost.
+      assert.match(body, /not credited/i, 'the row does not say the token was not credited')
+      assert.match(body, /not lost/i, 'the panel does not say the money still exists')
+      assert.match(body, /not part of your balance/i, 'the panel does not say it is outside the balance')
+      // 4. Announced rather than merely tinted — this is money the reader did not expect to lose
+      //    sight of.
+      assert.ok(panel(s, PANEL).querySelector('[role="alert"]'), 'the panel is not announced')
+      // 5. The transaction is quotable, because the remedy is a support request.
+      assert.ok(body.length > 0 && s.textOf(panel(s, PANEL)).includes(sighting.chain), 'the chain is not named')
+    })
+  })
+
+  /**
+   * An exception report renders nothing when there is no exception.
+   *
+   * This is the ordinary case for every user, and it is asserted rather than assumed because the
+   * opposite — a permanent panel reading "no tokens have been lost at your deposit addresses" on
+   * every visit — is a sentence that teaches people to stop reading this page, and it would make
+   * assertion (1) above pass while the panel was useless.
+   */
+  it('BJ-TOKEN-UNCREDITED T1: with nothing uncredited the panel is absent, not empty', async () => {
+    fresh()
+    const { element, options } = walletPageAt({
+      portfolio: fx.ok(fx.portfolio(), 'ledger+pricing'),
+      wallets: fx.ok([fx.wallet()], 'wallet'),
+    })
+    await withScreen(element, options, async (s) => {
+      const headings = [...s.document.querySelectorAll('h2')].map((el) => (el.textContent ?? '').trim())
+      assert.ok(!headings.includes(PANEL), 'an exception report drew itself with no exception to report')
+      assert.ok(!/not credited/i.test(s.text()), 'the page warns about uncredited tokens with none')
+    })
   })
 })
 

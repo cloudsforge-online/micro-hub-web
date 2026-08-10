@@ -199,6 +199,24 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
             else — value sent to it on any other network is lost, with nobody able to retrieve
             it.
           </p>
+          {/*
+            micro-org#200, and the paragraph above is why it is needed rather than covered. That
+            one warns about the WRONG NETWORK, which is the case where the money is genuinely gone.
+            The case that keeps happening is the wrong ASSET on the RIGHT network — USDT or USDC
+            sent to an ETH deposit address — and the two have opposite endings. That transfer
+            arrives at an address custody holds the key to, so it is not lost; it is simply not
+            credited, because nothing in this estate carries the token's decimals, there is no
+            ledger asset for it and no path to withdraw one. Saying "lost" here would be wrong and
+            saying nothing is what produced the issue.
+          */}
+          <p className="wt-note wt-note--caveat">
+            Send only <strong>{assignment.assetCode}</strong> here. A <strong>token</strong> on
+            this same network — USDT and USDC are the ones people send — will arrive and will{' '}
+            <strong>not be credited</strong>: it will not appear in your balance and it cannot be
+            withdrawn. It is not lost, and we do notice it, but getting it back is a support
+            request rather than something this account can do. If you have already sent one, it is
+            listed on the Wallet page.
+          </p>
           <p className="wt-note wt-note--caveat">
             Your <strong>managed wallet</strong> is the account whose key we look after. That is
             where your balance actually sits, and it is the one listed under Addresses further up.

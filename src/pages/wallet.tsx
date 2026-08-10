@@ -35,6 +35,7 @@ import { NotComposed, TilePanel } from '../components/tile.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { confirmationLabel, formatAmount, shortHash, utcDateTime } from '../lib/format.ts'
 import { loadDashboard, type DepositCredit, type WalletRecord, type WithdrawalRecord } from '../lib/hub.ts'
+import { loadTokenSightings, type TokenSighting } from '../lib/money.ts'
 import { absenceOf, hasAnswer } from '../lib/tile.ts'
 import { useResource } from '../lib/resource.ts'
 
@@ -116,6 +117,8 @@ export function WalletPage() {
       />
 
       <ReceivePanel holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []} />
+
+      <TokenSightingsPanel />
 
       <TilePanel
         title="Addresses"
@@ -262,6 +265,112 @@ export function WalletRow({
         {wallet.status === 'frozen' && <span className="wt-chip wt-chip--warn">frozen</span>}
         {wallet.status !== 'active' && wallet.status !== 'exported' && wallet.status !== 'frozen' && (
           <span className="wt-chip">{wallet.status}</span>
+        )}
+      </span>
+    </li>
+  )
+}
+
+const countSightings = (answer: { sightings: readonly TokenSighting[] }) => answer.sightings.length
+
+/**
+ * Tokens that arrived at this account's deposit addresses and were NOT credited — micro-org#200.
+ *
+ * The list `micro-wallet` serves at `/v1/deposits/token-sightings`. It is the only place a user can
+ * see this today: the estate also emits `wallet.deposit.token_uncredited` for micro-notify to mail,
+ * and that topic is not in the frozen registry, so the producer's relay quarantines the event and
+ * the mail does not go out until `micro-contracts` names it.
+ *
+ * ── It renders NOTHING when the list is empty, and nothing when the request fails ───────────────
+ *
+ * Empty first, and that is the ordinary case: this is an exception report, and a permanent panel
+ * saying "no tokens have been lost at your deposit addresses" on every visit is a sentence that
+ * teaches people to stop reading the page.
+ *
+ * The failure case is the deliberate one, because `lib/resource.ts` states the opposite rule —
+ * "FAILURE OUTRANKS EMPTINESS ... reporting 'nothing here' for a timeout is how an outage reads as
+ * a quiet week" — and that rule is right for a list whose absence would mislead. This one is
+ * different in a way worth writing down: the route is NEWER THAN THE DEPLOYED SERVICE. A bundle
+ * ships the moment it is merged and `micro-wallet` ships on a version bump, so between the two
+ * every call here is a 404, and an honest failure line would put a red sentence about lost money on
+ * the wallet page of every user in the estate for the whole gap — about a list that is empty for
+ * almost all of them. Silence costs a user who has one sighting a page visit; the alternative costs
+ * every user their trust in the page. What is NOT silent is the estate-side view: micro-wallet
+ * publishes `wallet_deposit_token_sightings` as a gauge, so nobody is relying on this component to
+ * know the number is non-zero.
+ */
+function TokenSightingsPanel() {
+  const load = useCallback((signal: AbortSignal) => loadTokenSightings(signal), [])
+  const { state, data } = useResource(
+    load,
+    countSightings,
+    'We could not check for uncredited token deposits.',
+  )
+  if (state !== 'ok' || !data) return null
+
+  return (
+    <section className="wt-panel">
+      <header className="wt-panel__head">
+        <h2 className="wt-panel__title">Tokens we could not credit</h2>
+      </header>
+      <p className="wt-confirm__warn" role="alert">
+        ▲ These arrived at your deposit addresses and are <strong>not part of your balance</strong>.
+        They cannot be withdrawn from here. They are not lost — the address they landed on is one we
+        hold the key to — but getting them back needs a support request, so quote the transaction
+        below. Please do not send more to that address.
+      </p>
+      <ul className="wt-rows">
+        {data.sightings.map((sighting) => (
+          <TokenSightingRow key={sighting.id} sighting={sighting} />
+        ))}
+      </ul>
+      {data.nextCursor !== null && (
+        <p className="wt-note">
+          Older ones than these exist. Support can list them all; this page shows the most recent.
+        </p>
+      )}
+    </section>
+  )
+}
+
+/**
+ * One uncredited token.
+ *
+ * The amount is the raw integer the chain carried and is LABELLED as raw, rather than divided by a
+ * power of ten. `micro-wallet` will not assert the token's decimals — its absence is the reason the
+ * deposit is not credited at all — and a front end that quietly picked 18 would be printing a
+ * figure the rest of the estate refused to print, on the one screen where being wrong about the
+ * number is worst. The explorer link is what shows the human figure, because the explorer reads the
+ * contract.
+ */
+function TokenSightingRow({ sighting }: { sighting: TokenSighting }) {
+  return (
+    <li className="wt-row wt-row--critical">
+      <span className="wt-dot wt-dot--critical" aria-hidden="true" />
+      <span className="wt-row__main">
+        <span className="wt-row__title cf-num">
+          {sighting.amount} <span className="wt-chip">raw units</span>
+        </span>
+        <span className="wt-row__sub cf-num">
+          token {shortHash(sighting.tokenAddress) ?? sighting.tokenAddress} ·{' '}
+          {shortHash(sighting.txHash) ?? sighting.txHash} ·{' '}
+          {confirmationLabel(sighting.confirmations, null)}
+        </span>
+      </span>
+      <span className="wt-row__meta">
+        <span className="wt-chip">{sighting.chain}</span>
+        <span className="wt-chip">{sighting.network}</span>
+        <span className="wt-chip wt-chip--warn">not credited</span>
+        <span className="wt-row__time cf-num">{utcDateTime(sighting.firstSeenAt)}</span>
+        {sighting.explorerUrl && (
+          <a
+            className="wt-link"
+            href={sighting.explorerUrl}
+            rel="noreferrer noopener"
+            target="_blank"
+          >
+            Explorer ↗
+          </a>
         )}
       </span>
     </li>
