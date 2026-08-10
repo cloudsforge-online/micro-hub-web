@@ -528,6 +528,9 @@ function EmberPanel() {
   const [revealed, setRevealed] = useState(false)
   const [saved, setSaved] = useState(false)
   const [running, setRunning] = useState(false)
+  // Whether the tip is reaching this tab live over `GET /events`, or the fallback poll is carrying
+  // it. Rendered rather than logged: it changes what the hashrate beside it is worth.
+  const [following, setFollowing] = useState(false)
   const [hashrate, setHashrate] = useState(0)
   const [height, setHeight] = useState<number | null>(null)
   const [accepted, setAccepted] = useState<readonly { height: number }[]>([])
@@ -553,6 +556,7 @@ function EmberPanel() {
   const toggle = useCallback(async () => {
     if (running) {
       miner.current?.stop()
+      setFollowing(false)
       return
     }
     if (!key) return
@@ -583,6 +587,9 @@ function EmberPanel() {
       )
       instance.addEventListener('error', (event) =>
         setNotice((event as CustomEvent).detail.message),
+      )
+      instance.addEventListener('follow', (event) =>
+        setFollowing(Boolean((event as CustomEvent).detail.following)),
       )
       await instance.start()
     } catch (err) {
@@ -676,10 +683,20 @@ function EmberPanel() {
         <Fact label="Blocks this tab found" value={`${accepted.length}`} />
       </dl>
 
+      {/*
+        WHICH OF THE TWO IT IS IN, RATHER THAN A SENTENCE THAT ASSUMES ONE. This paragraph used to
+        state the 45-second poll as the whole truth, because it was: the stream had been deleted
+        from this page's miner while the gateway answered 405 on `/events` (micro-org#236). Now the
+        stream is routed, the poll is a fallback, and which one is carrying the tip decides how much
+        of the hashrate above is spent on a parent that has already moved. So it is read from the
+        miner rather than written down here.
+      */}
       <p className="wt-note">
-        Work is re-read from the node every 45 seconds. A block found on work that has since been
-        superseded is refused as stale, which is expected rather than a fault: somebody else reached
-        that height first.
+        {running && !following
+          ? 'Live block updates are not getting through, so work is re-read every 10 seconds instead.'
+          : 'New blocks arrive as the node finds them, with work re-read every 45 seconds as a backstop.'}{' '}
+        A block found on work that has since been superseded is refused as stale, which is expected
+        rather than a fault: somebody else reached that height first.
       </p>
     </section>
   )

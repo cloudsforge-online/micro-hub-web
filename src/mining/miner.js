@@ -2,33 +2,42 @@
  * makes the reward yours.
  *
  * ---------------------------------------------------------------------------
- * VENDORED FROM `network-site/src/mining/miner.js`, 2026-08-09, WITH ONE CHANGE.
+ * VENDORED FROM `network-site/src/mining/miner.js`. Copied rather than imported
+ * because the two front ends are separate published bundles with separate
+ * release cadences, and a cross-repository relative import is not something
+ * either build can express. The proof-of-work half — homefire, the seed, the
+ * digest, the target comparison, the signature form — is byte for byte the file
+ * it came from, deliberately: a digest that differs from the node's in one bit is
+ * work the chain refuses while the page looks busy, and the only defence against
+ * that is not retyping it.
  *
- * Copied rather than imported because the two front ends are separate published
- * bundles with separate release cadences, and a cross-repository relative import
- * is not something either build can express. The proof-of-work half — homefire,
- * the seed, the digest, the target comparison, the signature form — is byte for
- * byte the file it came from, deliberately: a digest that differs from the
- * node's in one bit is work the chain refuses while the page looks busy, and the
- * only defence against that is not retyping it.
+ * ── THE ONE DIVERGENCE THIS COPY CARRIED, AND WHY IT IS GONE (micro-org#236) ──
  *
- * THE CHANGE: `EventSource` is gone and the 45-second refresh is now the only
- * way this miner learns the tip moved.
+ * From 2026-08-09 this copy had `EventSource` DELETED and the 45-second poll as
+ * the only way it learned the tip moved, because `/events` was not a route the
+ * mining gateway served: `cf-api-mining` forwarded `/mining/template` and
+ * `/mining/submit` and nothing else. That was true, and the reasoning around it
+ * was wrong in a way worth recording rather than quietly overwriting.
  *
- * `/events` is not a route the mining gateway serves. `deploy`'s `cf-api-mining`
- * router forwards `/mining/template` and `/mining/submit` and nothing else, so
- * `new EventSource(rpc + '/events')` from this origin gets a 404, fires `onerror`
- * and retries every few seconds for as long as the tab is open — a request
- * storm that never once delivers a block notification. See `src/lib/hosts.ts`,
- * which records the router as it was read on 2026-08-09.
+ * The deleted note said the stream "gets a 404, fires `onerror` and retries every
+ * few seconds for as long as the tab is open — a request storm". It does not. The
+ * status was 405, not 404, and more importantly A NON-200 IS FATAL TO AN
+ * `EventSource`: the browser sets `readyState` to CLOSED and does not retry. So
+ * there was never a storm — there was ONE failed request and then permanent,
+ * total silence, which is the harder failure to see and is exactly why
+ * network-site went months without noticing the same thing.
  *
- * The cost is real and worth stating rather than hiding: with a 45-second poll,
- * work up to 45 seconds stale can be mined, and any block found on it is
- * answered `stale` after the work is done. On a chain with a slow block time
- * that is a small fraction of effort; the refresh interval, not this comment, is
- * the number to change if it stops being one. `_refresh` still compares
- * `coreHash` and dispatches nothing when the template has not moved, so the poll
- * costs one request per interval and no restarted sweeps.
+ * micro-deploy now routes `/events` (`cf-api-mining-events`), hearth caps and
+ * heartbeats it (`node/src/sse.js`), and this file is back in step with the one
+ * it was vendored from: the stream is the live signal, the timer is the fallback,
+ * and the fallback's period depends on whether the stream is actually up. The
+ * cost the old note stated honestly — up to 45 seconds of work on a parent that
+ * has moved, answered `stale` after the work is done — is what that buys back.
+ *
+ * DELETING A FEATURE IS A LEGITIMATE ANSWER TO A BROKEN DEPENDENCY, AND IT HAS A
+ * PRICE: nothing was left in the codebase that would go red when the dependency
+ * came back, so the two copies drifted silently. Hence `_follow()` below, which
+ * both copies now share, and a test that drives it in each.
  * ---------------------------------------------------------------------------
  *
  * The winning digest has to be signed by the key the coinbase pays. So this
@@ -109,8 +118,15 @@ export function proofSignature(digestHex, priv) {
 
 const DEFAULT_WORKERS = () => Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
-/** How often the template is re-fetched. The one number to change; see the top of the file. */
+/** How often the template is re-fetched while `GET /events` is delivering blocks.
+ *  Belt and braces against a missed frame; the node's templates live 120 s
+ *  (`TTL_MS`, hearth/node/src/mining.js), so this is well inside. */
 const REFRESH_MS = 45_000;
+
+/** …and while it is not. The chain targets 15 s, so this is the shortest period
+ *  that is not polling for its own sake: one request per block per miner, two
+ *  orders of magnitude under `cf-mining-throttle`'s 2/s per client IP. */
+const BLIND_REFRESH_MS = 10_000;
 
 export class Miner extends EventTarget {
   /**
@@ -146,7 +162,10 @@ export class Miner extends EventTarget {
     this.rejected = 0;
     this.stale = 0;
     this._samples = [];
+    this._sse = null;
     this._refreshTimer = null;
+    this._refreshEveryMs = 0;
+    this.following = false;                  // is the tip reaching us live?
     this._visibility = () => this._applyDuty();
   }
 
@@ -159,17 +178,82 @@ export class Miner extends EventTarget {
     document.addEventListener('visibilitychange', this._visibility);
     await this._watchPower();
     await this._refresh();
-    // The only way this miner learns the tip moved. See the note at the top of
-    // the file: the gateway does not route `/events`, so the EventSource this
-    // replaced could never have delivered a single notification.
-    this._refreshTimer = setInterval(() => this._refresh().catch(() => {}), REFRESH_MS);
+    this._follow();
+  }
+
+  /* HOW THIS MINER LEARNS THE TIP MOVED, AND WHAT IT DOES WHEN IT CANNOT.
+   *
+   * The tip moving invalidates every in-flight nonce: the template's parent is
+   * gone, so every hash after that block lands is spent on work the node will
+   * answer with `stale`. Following the chain is therefore not a nicety, it is
+   * the difference between mining and burning someone's battery.
+   *
+   * `GET /events` is the live signal and the timer is the fallback. Until
+   * micro-org#236 the fallback was all there was — see the top of this file.
+   *
+   * `onopen` AND `onerror` ARE BOTH WIRED, and the timer's period DEPENDS on
+   * which of the two last fired. That is the part that keeps this honest the
+   * NEXT time something upstream refuses: a saturated node answers 503
+   * (`SSE_MAX_CLIENTS`, hearth/node/src/sse.js), the gateway's per-IP stream cap
+   * answers 429 (`cf-sse-inflight`), a buffering proxy or a phone changing
+   * networks drops it — and to an `EventSource` all of those look identical to
+   * the 405 that got the stream deleted from this copy in the first place.
+   *
+   * A `follow` EVENT RATHER THAN AN `error` ONE, because this is a STATE and not
+   * an incident. `src/pages/mine.tsx` renders `error` as a one-shot notice;
+   * a condition that lasts the whole session needs a line that lasts with it.
+   *
+   * NOT A RECONNECT LOOP. A browser that re-dials a refused stream forever is
+   * indistinguishable from the outage it is in, and both caps on this route
+   * refuse rather than queue precisely so a client can back off. One dial, then
+   * the timer, then a line on the page.
+   */
+  _follow() {
+    try {
+      this._sse = new EventSource(`${this.rpc}/events`);
+    } catch {
+      this._pollEvery(BLIND_REFRESH_MS);
+      return;
+    }
+    this._sse.onopen = () => {
+      this.following = true;
+      this._pollEvery(REFRESH_MS);
+      this.emit('follow', { following: true, everyMs: REFRESH_MS });
+    };
+    this._sse.onmessage = () => this._refresh().catch(() => {});
+    this._sse.onerror = () => {
+      /* Fires for a refusal AND for an ordinary disconnect. `readyState` is what
+       * separates them: CONNECTING means the browser is retrying by itself and
+       * this is a blip, CLOSED means it has given up and will not try again. */
+      const dead = !this._sse || this._sse.readyState === EventSource.CLOSED;
+      if (!dead) return;
+      this.following = false;
+      this._pollEvery(BLIND_REFRESH_MS);
+      this.emit('follow', { following: false, everyMs: BLIND_REFRESH_MS });
+    };
+    /* Armed AT THE DIAL, not at the first failure: `new EventSource(...)` returns
+     * before it connects, so waiting for `onerror` would leave that window
+     * unpolled — and against an endpoint that refuses, the window is the whole
+     * session. */
+    this._pollEvery(BLIND_REFRESH_MS);
+  }
+
+  /** One interval, whose period is swapped rather than joined by a second. */
+  _pollEvery(ms) {
+    if (this._refreshEveryMs === ms && this._refreshTimer) return;
+    if (this._refreshTimer) clearInterval(this._refreshTimer);
+    this._refreshEveryMs = ms;
+    this._refreshTimer = setInterval(() => this._refresh().catch(() => {}), ms);
   }
 
   stop() {
     this.running = false;
     for (const w of this.workers) { w.postMessage({ type: 'stop' }); w.terminate(); }
     this.workers = [];
+    if (this._sse) { this._sse.onerror = null; this._sse.close(); this._sse = null; }
     if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null; }
+    this._refreshEveryMs = 0;
+    this.following = false;
     if (this._battery && this._onCharging) this._battery.removeEventListener('chargingchange', this._onCharging);
     document.removeEventListener('visibilitychange', this._visibility);
     this.hashrate = 0;

@@ -77,10 +77,11 @@ export function pageOrigin(): string {
  * consumer has to do the last step itself.
  *
  * IN PRODUCTION THE TWO COLLAPSE INTO ONE HOSTNAME AND NOTHING HAS TO BE SWAPPED. Read on
- * 2026-08-09, `deploy/gateway/dynamic/estate-web.yml` carries a router `cf-api-mining` matching
- * `Host(rpc<suffix>) && (Path(/mining/template) || Path(/mining/submit))` and sends it to
+ * 2026-08-10, `deploy/gateway/dynamic/estate-web.yml` carries a router `cf-api-mining` matching
+ * `Host(rpc<suffix>) && (Path(/mining/template) || Path(/mining/submit))` and a second router
+ * `cf-api-mining-events` matching `Host(rpc<suffix>) && Path(/events)`, both sent to
  * `cf-svc-hearth-mining`, whose upstream port is 8645. So on a real deployment `https://rpc.<apex>`
- * is correct for these two paths and for nothing else — which is why this returns `hosts().rpc`
+ * is correct for those three paths and for nothing else — which is why this returns `hosts().rpc`
  * unchanged the moment the host is not a dev port.
  *
  * UNDER `pnpm dev` THERE IS NO GATEWAY, so the port has to be corrected here. The swap is written
@@ -88,14 +89,18 @@ export function pageOrigin(): string {
  * may change is the port the registry allocated to `rpc`, and a looser rule would happily rewrite
  * a hostname that merely contained the digits.
  *
- * ── AND THE THING THIS PATH MUST NOT ASSUME: SERVER-SENT EVENTS ────────────────────────────────
+ * ── SERVER-SENT EVENTS: THIS BASE NOW CARRIES THEM, AND DID NOT (micro-org#236) ────────────────
  *
- * `network-site`'s miner opens `new EventSource(`${rpc}/events`)` to follow new tips and treats the
- * 45-second timer as a backstop. The gateway router above routes EXACTLY TWO PATHS, and `/events`
- * is not one of them, so on a real deployment that stream never connects: the miner would sit on
- * a template until the timer fired. The port of that miner therefore treats the timer as the
- * PRIMARY refresh — see `src/mining/miner.js` where the change is recorded — and the SSE
- * connection is not opened at all rather than opened and silently failing.
+ * The miner opens `new EventSource(`${rpc}/events`)` to follow new tips and treats the timer as a
+ * backstop. Until 2026-08-10 the gateway routed EXACTLY TWO PATHS and `/events` was not one, so
+ * on a real deployment the stream was answered 405 by the JSON-RPC router — and a non-200 is fatal
+ * to an `EventSource`, so it failed once, silently, forever. This file's previous note recorded
+ * that, and `src/mining/miner.js` responded by DELETING the stream outright.
+ *
+ * Both halves are undone: `cf-api-mining-events` publishes the path and the miner opens it again.
+ * What is kept from that episode is the caution, in a form that cannot go stale — the miner no
+ * longer ASSUMES the stream works. It wires `onopen`/`onerror`, polls at 10 s while the stream is
+ * down and 45 s while it is up, and puts which of the two it is in on the page.
  */
 export function emberMiningBase(): string {
   const rpc = hosts().rpc
