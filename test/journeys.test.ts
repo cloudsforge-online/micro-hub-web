@@ -2424,6 +2424,100 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
 })
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
+   The strip under the bar. Not a catalogue scenario — doc 22 §3.1 is about what a human can see
+   relative to what the API returned, and this is about which STYLESHEET the row on screen is
+   wearing. It is here because this is the file that mounts the real shell in a real document, and
+   a source-text grep for `<SubNav>` would go green on an import nothing renders.
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+describe('the sections strip is the shared one, not a private copy', () => {
+  /**
+   * The stylesheets, read as text.
+   *
+   * `src/styles.css` is this app's own layer; `ui.css` is the design system's. Both are read
+   * because the claim has two halves and either half alone can be true of a broken state: the
+   * shared rules existing while a local copy still overrides them, or the local copy being gone
+   * while nothing shared has arrived. `explorer-web/test/tokens.test.ts` makes the same pair of
+   * assertions for the form controls, which moved into the design system the same way.
+   */
+  const CSS = readFileSync(at('src/styles.css'), 'utf8')
+  const UI_ROOT = [process.env['CLOUDSFORGE_UI_DIR'], at('../ui')]
+    .filter((v): v is string => Boolean(v))
+    .find((p) => existsSync(`${p}/packages/ui/src/ui.css`))
+
+  it('renders the shared landmark and shared links, in a real document', async () => {
+    fresh()
+    // THE ASSERTION THAT WOULD HAVE CAUGHT THE DEFECT THIS CHANGE CLOSES. Measured 2026-08-10:
+    // ten frontends drew this row from their own stylesheet, and nine of the ten squeezed their
+    // labels and broke them mid-word on a phone with no way to reach the ones past the edge. This
+    // repository's copy was the one that did not — and it was still a private copy, which is how
+    // the other nine came to exist. What is asserted is that the strip ON SCREEN carries the
+    // shared classes, because those are the ones `ui.css` gives `overflow-x: auto` to.
+    await withScreen(
+      h(MemoryRouter, { initialEntries: ['/'] }, h(AuthProvider, null, h(AppShell))),
+      {
+        url: `${ORIGIN}/`,
+        storage: {
+          'cf.accessToken': unsignedToken({ handle: 'savvanis', roles: ['player'] }),
+          'cf.refreshToken': 'held-refresh-token',
+        },
+        routes: {
+          'GET /auth/me': { body: { user: { id: 'u1', handle: 'savvanis', roles: ['player'] } } },
+        },
+      },
+      async (s) => {
+        await s.settle()
+
+        const strip = s.document.querySelector('nav.cf-subnav')
+        assert.ok(strip !== null, 'the sections strip on screen is not the shared `.cf-subnav`')
+        assert.ok(
+          s.document.querySelector('.cf-subnav .cf-subnav__inner') !== null,
+          'the shared landmark has no shared scroll container inside it',
+        )
+
+        // Every section link, not "at least one": a partly-adopted strip is a row where some
+        // labels wrap and some do not, which is worse than a row where none of them do.
+        const links = [...strip.querySelectorAll('a')]
+        assert.ok(links.length >= 5, `expected the section links, found ${links.length}`)
+        const unshared = links.filter((a) => !a.classList.contains('cf-subnav__link'))
+        assert.deepEqual(
+          unshared.map((a) => a.textContent),
+          [],
+          'a section link is not wearing `cf-subnav__link`, so it will not scroll on a phone',
+        )
+
+        // And the local prefix is gone from the rendered markup, in both spellings it had.
+        assert.equal(s.document.querySelector('[class*="wt-subnav"]'), null, 'a `wt-subnav` survived')
+        assert.equal(s.document.querySelector('.is-active'), null, 'the local active modifier survived')
+
+        // The current section is marked with the SHARED modifier. `/` is the index route and
+        // `end` is set on it, so exactly one link carries it.
+        const current = links.filter((a) => a.classList.contains('cf-subnav__link--current'))
+        assert.equal(current.length, 1, `expected one current section, found ${current.length}`)
+      },
+    )
+  })
+
+  it('the shared rules exist and the local copy is gone', () => {
+    // Both directions, because either alone is true of a broken state.
+    assert.doesNotMatch(CSS, /\.wt-subnav\b/, 'the local sub-nav is back beside the shared one')
+    assert.doesNotMatch(CSS, /max-width:\s*76rem/, 'the 1216px measure is back; the token is --cf-max-w')
+
+    if (UI_ROOT === undefined) {
+      // A checkout of micro-ui is not guaranteed beside this one — the same condition
+      // `test/hosts.test.ts` handles for the registry. Skipping is honest; asserting nothing
+      // while claiming to have checked is not.
+      return
+    }
+    const ui = readFileSync(`${UI_ROOT}/packages/ui/src/ui.css`, 'utf8')
+    const declared = new Set([...ui.matchAll(/\.(cf-[a-z0-9_-]+)/g)].map((m) => m[1] ?? ''))
+    for (const present of ['cf-subnav', 'cf-subnav__inner', 'cf-subnav__link', 'cf-subnav__link--current']) {
+      assert.ok(declared.has(present), `.${present} is missing from ui.css; this strip is unstyled`)
+    }
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
    The meta-tests. Doc 22 §3.2.
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 
