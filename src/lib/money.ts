@@ -185,6 +185,11 @@ const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
  *   2. **Receive already ASKS.** It reads `GET /v1/deposits/assets`, which reports `depositable`
  *      with a reason per asset, so DOGE and ETC come back `not_followed` and are never offered.
  *      That is the runtime answer this list cannot give, and it exists on the deposit side only.
+ *      BTC is the case worth watching: its node reached tip on 2026-08-10, so it will stop being
+ *      `not_followed` the moment an operator adds it to `INDEXER_CHAINS`. It does not become
+ *      offerable then — `wallet/src/observability.ts` answers `not_retrievable` until the estate
+ *      can also pay BTC out. Nothing here needs changing for that; the point is that this menu
+ *      keeps asking rather than knowing.
  *   3. **Every refusal downstream is named and reaches the user.** `fee_unavailable` renders as a
  *      503 with its request id, and `settlement/src/withdrawals.ts` classifies a
  *      `NotImplementedError` as `chain_unsupported` with `refund: 'now'` and the sentence "DOGE
@@ -348,7 +353,20 @@ export interface DepositableAsset {
   readonly assetCode: string
   readonly chain: string
   readonly depositable: boolean
-  /** `null` when depositable. Otherwise `not_followed` or `unknown` — different facts. */
+  /**
+   * `null` when depositable. Otherwise one of THREE, and they are three different facts about the
+   * deployment rather than three wordings of "no":
+   *
+   *   * `not_followed`   — the indexer follows no source for this chain. An owner's decision.
+   *   * `unknown`        — wallet could not ask the indexer and has no cached answer to fall back
+   *                        on. Transient, and the only one of the three that may fix itself.
+   *   * `not_retrievable` — the estate can WATCH the chain and has stated no way to pay its native
+   *                        asset back out, so it will not take a deposit it could not return.
+   *                        Added by micro-org#373 §6.1; read from `WALLET_FEE_QUOTES`.
+   *
+   * This type says `string` and not a union on purpose: a new reason must not break the build of a
+   * bundle already in somebody's browser. Anything unrecognised renders as plain unavailability.
+   */
   readonly reason: string | null
 }
 
