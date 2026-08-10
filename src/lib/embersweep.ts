@@ -88,6 +88,12 @@ export type SweepOutcome =
   | { readonly kind: 'sent'; readonly hash: string; readonly value: bigint; readonly to: string }
   /** The balance did not cover its own transfer fee. Nothing was sent and nothing was lost. */
   | { readonly kind: 'too_small'; readonly balance: bigint; readonly fee: bigint }
+  /**
+   * An earlier sweep is still in the mempool, so part of this balance is already committed and
+   * cannot be counted twice. Nothing was sent, nothing was lost, and the next accepted block
+   * sweeps both rewards together. See the settle loop for why this is a state and not an error.
+   */
+  | { readonly kind: 'in_flight'; readonly queued: bigint }
   | { readonly kind: 'failed'; readonly message: string }
 
 export interface SweepDeps {
@@ -143,17 +149,54 @@ export async function sweepToCustody(
     const gasPrice = BigInt(await rpcCall('eth_gasPrice', [], deps))
     const fee = gasPrice * TRANSFER_GAS
 
+    /*
+     * ── THE BALANCE AND THE NONCE MUST BE READ AT THE SAME MOMENT IN TIME ─────────────────────
+     *
+     * This loop used to read the balance at `latest` and then take the nonce at `pending`, and the
+     * two tags do not describe the same world. `eth_getTransactionCount(addr, 'pending')` consults
+     * the mempool — `getNonce` in `hearth/node/src/chain/rpcadapter.js` calls
+     * `mempool.pendingNonce()` for that tag and only for that tag — while `eth_getBalance` has no
+     * mempool path at all: its `_stateFor('pending')` returns `stateAtTip()`, which is `latest`.
+     * So the nonce knew about the sweep already in flight and the balance did not, and the value
+     * was computed as though money already committed to that transaction were still available.
+     *
+     * The owner reported it from mainnet on 2026-08-10, and the feed shows the signature exactly:
+     *
+     *   block 10,919  5.3929 EMBER sent
+     *   block 10,920  not moved — eth_sendRawTransaction: insufficient funds for gas * price + value
+     *   block 10,921  10.7859 EMBER sent          ← precisely twice 5.3929
+     *   block 10,922  not moved — insufficient funds
+     *   block 10,923  10.7859 EMBER sent
+     *
+     * Sweep T1 commits the whole balance and is broadcast. The next block credits reward R before
+     * T1 is mined, so `latest` reports (T1's value + fee) + R and T2 is signed to spend all of it.
+     * T1 executes first, leaves R, and T2 is refused for exactly the amount T1 took. Nothing is
+     * lost — the file's own rule is that a failed send leaves the balance where it is — so the
+     * block after that sweeps both rewards, which is where the doubling comes from. Then it
+     * alternates forever, and every other line the reader sees is red.
+     *
+     * The fix is not to subtract a guess. It is to refuse to compute a value while an earlier
+     * transaction is unmined, because this bundle cannot know what that transaction is spending,
+     * and to say so as a state rather than a failure. `queued > 0` is that condition, read from
+     * the two tags of the same call, and it is checked in the same loop as the balance so a sweep
+     * that only has to wait for the previous one to land waits rather than reporting anything.
+     */
     let balance = 0n
+    let queued = 0n
+    let nonce = 0n
     for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt += 1) {
       if (attempt > 0) await delay(SETTLE_DELAY_MS)
+      const mined = BigInt(await rpcCall('eth_getTransactionCount', [key.address, 'latest'], deps))
+      // `pending`, not `latest`, for the nonce that is actually signed: a sweep whose send
+      // succeeded and whose response was lost is sitting in the mempool holding one, and asking
+      // `latest` would re-use it. When `queued` is zero the two are equal by definition.
+      nonce = BigInt(await rpcCall('eth_getTransactionCount', [key.address, 'pending'], deps))
+      queued = nonce - mined
       balance = BigInt(await rpcCall('eth_getBalance', [key.address, 'latest'], deps))
-      if (balance > fee) break
+      if (queued === 0n && balance > fee) break
     }
+    if (queued > 0n) return { kind: 'in_flight', queued }
     if (balance <= fee) return { kind: 'too_small', balance, fee }
-
-    // `pending`, not `latest`: a sweep whose send succeeded and whose response was lost is sitting
-    // in the mempool holding a nonce, and asking `latest` would re-use it.
-    const nonce = BigInt(await rpcCall('eth_getTransactionCount', [key.address, 'pending'], deps))
 
     const { signValueTransfer } = await import('../mining/tx.js')
     const value = balance - fee
