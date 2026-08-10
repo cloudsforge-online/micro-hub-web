@@ -282,8 +282,24 @@ jobs:
           # reusable image job cannot make, because it requires a 200 for any deep link.
           unknown=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/nope/not/a/route || true)
           [ "$unknown" = "404" ] || { echo "::error::an unknown address returned $unknown; it must be 404"; exit 1; }
-          curl -s -m 5 http://127.0.0.1:8080/nope/not/a/route | grep -q '<div id="root">' \
-            || { echo "::error::the 404 did not serve the app shell"; exit 1; }
+          #
+          # NO PIPE INTO `grep -q` HERE, AND THAT IS THE WHOLE POINT OF THESE FOUR LINES.
+          # `curl … | grep -q PATTERN` under `set -o pipefail` is a coin flip, not a check: grep
+          # exits the instant it matches, which closes the pipe while curl is still writing the
+          # rest of the body, and curl then dies of EPIPE with status 23. pipefail reports the
+          # STEP as failed — with the message below, which says the shell was not served about a
+          # shell that was served perfectly. It is unfalsifiable from the log.
+          # It became reachable on 2026-08-09, when 163a319 put the crawler's copy INSIDE
+          # `<div id="root">`: the match moved from the last bytes of index.html to byte 7,743 of
+          # 12,163, leaving 4,420 bytes for curl to lose the race on. Measured 2026-08-10 —
+          # micro-org#347.
+          # Capturing first and matching in the shell has no pipe to break, and `case` is exact
+          # rather than a regex, so the pattern means what it looks like.
+          shell_404=$(curl -s -m 5 http://127.0.0.1:8080/nope/not/a/route || true)
+          case "$shell_404" in
+            *'<div id="root">'*) ;;
+            *) echo "::error::the 404 did not serve the app shell"; exit 1 ;;
+          esac
           echo "ok: owned routes are served, unknown addresses 404 with the shell"
       - name: Down
         if: always()
