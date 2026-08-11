@@ -29,6 +29,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ScrollToTop } from './components/scroll-to-top.tsx'
 import { AppShell } from './components/shell.tsx'
 import { AuthProvider, ProtectedRoute } from './lib/auth.tsx'
+import { DeploymentProvider } from './lib/deployment.tsx'
 import {
   ForgotPasswordPage,
   RegisterPage,
@@ -52,6 +53,16 @@ export function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
+      {/*
+        `DeploymentProvider` reads one document from this container — `/deployment.json`, which says
+        whether this estate has a mining pool API behind it at all (micro-org#406). It is here,
+        above the router, for the reason `src/lib/deployment.tsx` argues: two consumers read the
+        answer — `/mine` and the mining session in the shell that outlives it — and one fetch above
+        both is what stops them disagreeing about it on one screen. It reads nothing else, sends no
+        credential, and every failure resolves to "there is a pool", which is what every deployment
+        that has never heard of the flag serves.
+      */}
+      <DeploymentProvider>
       <AuthProvider>
         <Routes>
           <Route element={<AppShell />}>
@@ -205,6 +216,7 @@ export function App() {
           </Route>
         </Routes>
       </AuthProvider>
+      </DeploymentProvider>
     </BrowserRouter>
   )
 }

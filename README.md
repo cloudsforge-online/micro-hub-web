@@ -179,6 +179,27 @@ all — a `.env.example` is where a `.env` comes from. The four hostnames the ap
 surface registry, and the only per-deployment value in the image is the release sha, which is a
 build argument that names the artefact rather than telling it where it is running.
 
+#### `POOL_API_PRESENCE` — one container variable, and it is not a build argument
+
+The single exception, and it does not bend the rule above: it is read by the **container**, not by
+the build, so one image serves every estate.
+
+```
+POOL_API_PRESENCE=absent    # this estate runs no mining pool API
+POOL_API_PRESENCE=present   # the image's own default, and the meaning of every other value
+```
+
+nginx renders it into `GET /deployment.json` at container start (`deployment.inc.template`, expanded
+by the stock nginx entrypoint), `src/lib/deployment.tsx` reads it once above the router, and `/mine`
+uses it to tell a **deliberate absence** apart from an **outage**. On `absent` the page explains that
+this network has no pool, links to the network that has one, makes no `/v1/pool` request at all —
+and still offers EMBER, which is mined against hearth and never went through the pool.
+
+Only the exact string `absent` means absence. Everything else, the empty string included, means
+there is a pool, so an estate that has never heard of the flag behaves exactly as it always has.
+Set on `hub-web` in `deploy/compose/docker-compose.estate.yml`, from `compose/<network>.env`.
+micro-org#406.
+
 ---
 
 ## Layout

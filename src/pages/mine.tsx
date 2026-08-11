@@ -59,11 +59,23 @@
  * paraphrase: the argument rests on a measurement, measurements age, and a second copy here would
  * be the one that goes stale. It is listed, explained, pointed at the Stratum address when there is
  * one, and given no Start control — the same three rules as every other refusal on this page.
+ *
+ * ── AND THE NETWORK THAT HAS NO POOL AT ALL (micro-org#406) ───────────────────────────────────
+ *
+ * A fourth refusal, one level up: not a chain the pool will not serve, but an estate with no pool
+ * service in it. Measured on testnet 2026-08-11, `GET /v1/pool` there is a permanent 502, and this
+ * page turned that into a full-page failure — so EMBER, which does not go through micro-pool at
+ * all, was unreachable behind an error about micro-pool. `src/lib/deployment.tsx` is how the page
+ * now knows the difference between an absence and an outage; `MinePage` renders the difference; and
+ * NEITHER of them takes EMBER away. That last clause is the whole fix and it is the one a later
+ * edit is most likely to undo by putting a `<Failed>` back at the top.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Failed, Forbidden, Loading } from '../components/states.tsx'
+import { Forbidden, Loading } from '../components/states.tsx'
+import { usePoolApi } from '../lib/deployment.tsx'
 import type { SweepOutcome } from '../lib/embersweep.ts'
+import { unlabelledPoolUrl } from '../lib/hosts.ts'
 import { browserMiningReason, loadPool, loadShares, loadWorkers, mergedUnavailability, miningBlocker, stratumUrl, type MergedChain, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
@@ -76,7 +88,45 @@ const EMBER = 'ember'
 /** How often the credited-work panel re-reads the pool. See the comment on the effect. */
 const CREDIT_POLL_MS = 30_000
 
+/**
+ * The page, in front of the one question it cannot answer for itself.
+ *
+ * ── WHY THIS SPLIT EXISTS (micro-org#406) ─────────────────────────────────────────────────────
+ *
+ * MEASURED 2026-08-11 on `hub-testnet.cloudsforge.online/mine`: `GET /v1/pool` against
+ * `pool-testnet.<apex>` answers **502**, permanently, because this estate runs no pool container at
+ * all — `profiles: ["pool"]` in the estate compose file, and `compose/testnet.env` does not name
+ * that profile. This page then rendered `<Failed>` FOR THE WHOLE PAGE, so a reader on the network
+ * where EMBER is the only thing a browser can usefully mine was shown an error about a service they
+ * had not asked for, with a Try again button that could never succeed, and no way through to the
+ * miner that works.
+ *
+ * Two rules follow, and the second is the one that is easy to lose in a later edit:
+ *
+ *   1. **A deliberate absence is explained, not reported as a fault.** `src/lib/deployment.tsx`
+ *      reads `/deployment.json` from this container, so the page knows the difference between "this
+ *      network has no pool" and "the pool is down", and says the one that is true.
+ *   2. **Neither of them costs the reader EMBER.** The pool's absence removes the pool. It does not
+ *      remove the picker, the EMBER panel, the sweep, or the Start button — those go through
+ *      hearth, not through micro-pool, and nothing about them depends on this read.
+ *
+ * `MineScreen` below therefore renders with `summary: null`, and every branch of this component
+ * hands it something to say about the pool rather than replacing the page with it.
+ */
 export function MinePage() {
+  const presence = usePoolApi()
+
+  // One same-origin round trip, and the same loading state the page has always shown. Deciding
+  // early costs nothing and firing `GET /v1/pool` first would land it on the 502 this exists to
+  // stop rendering — see `poolApiWorthAsking` in src/lib/deployment.tsx.
+  if (presence === 'unknown') return <Loading label="Reading what this deployment can mine" />
+  if (presence === 'absent') return <MineScreen summary={null} pool={<NoPoolHere />} />
+  return <MineWithPool />
+}
+
+/** The page on a deployment that has a pool API to read. Its own component, so the hook below it
+ * is not conditional on the answer above. */
+function MineWithPool() {
   const load = useCallback((signal: AbortSignal) => loadPool(signal), [])
   const { state, data, error, reload } = useResource(
     load,
@@ -85,6 +135,21 @@ export function MinePage() {
     () => 1,
     'We could not read what this deployment can mine.',
   )
+
+  if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
+  if (state === 'failed' && error) {
+    // NOT `<Failed>` for the whole page, which is what this was and what micro-org#406 is about.
+    // A pool that is down is a pool panel that says so; it is not a reason to withhold EMBER, and
+    // the retry is offered where the thing that failed is described rather than where the reader
+    // was trying to go.
+    return <MineScreen summary={null} pool={<PoolUnreachable notice={error.message} onRetry={reload} />} />
+  }
+  if (state === 'loading' || !data) return <Loading label="Reading what this deployment can mine" />
+
+  return <MineScreen summary={data} pool={null} />
+}
+
+function MineScreen({ summary, pool }: { summary: PoolSummary | null; pool: ReactNode }) {
   /*
    * The page opens on what it was ASKED for, then on whatever is already being mined, then EMBER.
    *
@@ -109,11 +174,8 @@ export function MinePage() {
     return session.chain?.chain ?? EMBER
   })
 
-  if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
-  if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Reading what this deployment can mine" />
-
-  const chain = data.chains.find((candidate) => candidate.chain === selected) ?? null
+  const chains = summary?.chains ?? []
+  const chain = chains.find((candidate) => candidate.chain === selected) ?? null
   // EMBER is the answer for "EMBER" and for anything the pool did not name — see `?chain=` above.
   // Normalised here rather than in the state so the picker's `aria-checked` cannot disagree with
   // the panel below it.
@@ -130,21 +192,107 @@ export function MinePage() {
         </p>
       </header>
 
-      <ChainPicker summary={data} selected={ember ? EMBER : selected} onSelect={setSelected} />
+      <ChainPicker chains={chains} hasPool={summary !== null} selected={ember ? EMBER : selected} onSelect={setSelected} />
 
-      {ember ? <EmberPanel /> : chain ? <PoolPanel chain={chain} summary={data} /> : null}
+      {/*
+        Above the EMBER panel rather than below it, and rendered whether or not EMBER is the
+        selection. Whatever is wrong with the pool is the reason the picker is short, so it belongs
+        where the reader's eye already is; and a reader who arrived from the bar's hand-off with
+        `?chain=ltc` on a network with no pool would otherwise see the EMBER panel with no
+        explanation of why it is not the one they asked for.
+      */}
+      {pool}
+
+      {ember ? <EmberPanel /> : chain && summary ? <PoolPanel chain={chain} summary={summary} /> : null}
     </>
+  )
+}
+
+/* ══════════════════════════════ what happened to the pool ══════════════════════════════ */
+
+/**
+ * THIS NETWORK HAS NO POOL, AND SAYING SO IS THE WHOLE FEATURE (micro-org#406).
+ *
+ * Not an error, not a retry, and not a promise that it is coming. The pool is one estate's
+ * deliberate configuration — `COMPOSE_PROFILES` in `compose/testnet.env` does not name the `pool`
+ * profile, and micro-pool would refuse to boot against this estate's mainnet nodes if it did — so
+ * the honest rendering is a sentence, and the useful one is a sentence with the address of the
+ * network that DOES run it.
+ *
+ * The link is `unlabelledPoolUrl()` and is null more often than a reader expects: on localhost, on
+ * a preview deployment, and on the unadorned estate itself, where "there is no pool here" is either
+ * an operator's choice or a misconfiguration and pointing back at this same network would be a link
+ * to nowhere. Both shapes are rendered and both are asserted in test/mine.test.ts, because the
+ * copy has to be true in both — a sentence that says "it runs on the main network" is false when
+ * it is BEING READ on the main network.
+ */
+function NoPoolHere() {
+  const elsewhere = unlabelledPoolUrl()
+  return (
+    <section className="wt-panel">
+      <h2 className="wt-panel__title">This network does not run a mining pool</h2>
+      <p className="wt-note">
+        {elsewhere
+          ? 'Nothing on this network hands out pool work or counts shares, and that is deliberate rather than a fault: the pool is deployed on the main network. Follow the link below to reach it.'
+          : 'Nothing on this network hands out pool work or counts shares. That is a deployment setting rather than a fault, and it is not something this page can change.'}
+      </p>
+      <p className="wt-note">
+        EMBER below is unaffected. It is mined directly against this network’s own chain, in this
+        tab, and it does not go through the pool at all.
+      </p>
+      {elsewhere && (
+        <p>
+          <a className="cf-btn cf-btn--ember" href={elsewhere}>
+            Open the CloudsForge mining pool
+          </a>
+        </p>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The pool exists on this deployment and did not answer.
+ *
+ * A DIFFERENT SENTENCE FROM THE ONE ABOVE, ON PURPOSE. This one is a fault, it may well be over by
+ * the time it is read, and the reader's move is to try again — so it keeps the retry that
+ * `<Failed>` used to give the whole page. What it does not keep is the whole page: EMBER does not
+ * go anywhere near micro-pool, and an outage there is not a reason to withhold it.
+ */
+function PoolUnreachable({ notice, onRetry }: { notice: string; onRetry: () => void }) {
+  return (
+    <section className="wt-panel">
+      <h2 className="wt-panel__title">The pool could not be read</h2>
+      <p className="wt-note">{notice}</p>
+      <p className="wt-note">
+        EMBER below is unaffected — it is mined directly against this network’s own chain and does
+        not go through the pool.
+      </p>
+      <p>
+        <button type="button" className="cf-btn" onClick={onRetry}>
+          Try again
+        </button>
+      </p>
+    </section>
   )
 }
 
 /* ══════════════════════════════ the picker ══════════════════════════════ */
 
+/**
+ * `chains` rather than the summary, and `hasPool` rather than an empty list, because the two empty
+ * states are different claims. A pool that answered with no chains is a pool with nothing
+ * configured; no pool at all is `NoPoolHere` above, and the note this picker used to print for both
+ * ("the pool answered with no chains") would have been a report of an answer nobody received.
+ */
 function ChainPicker({
-  summary,
+  chains,
+  hasPool,
   selected,
   onSelect,
 }: {
-  summary: PoolSummary
+  chains: readonly PoolChain[]
+  hasPool: boolean
   selected: string
   onSelect: (chain: string) => void
 }) {
@@ -166,7 +314,7 @@ function ChainPicker({
             </span>
           </button>
         </li>
-        {summary.chains.map((chain) => (
+        {chains.map((chain) => (
           <li key={chain.chain}>
             <button
               type="button"
@@ -195,7 +343,7 @@ function ChainPicker({
           </li>
         ))}
       </ul>
-      {summary.chains.length === 0 && (
+      {hasPool && chains.length === 0 && (
         <p className="wt-note">
           The pool answered with no chains at all, so there is nothing to mine through it from here.
           EMBER above is unaffected — it does not go through the pool.

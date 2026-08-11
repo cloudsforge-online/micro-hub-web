@@ -301,9 +301,62 @@ jobs:
             *) echo "::error::the 404 did not serve the app shell"; exit 1 ;;
           esac
           echo "ok: owned routes are served, unknown addresses 404 with the shell"
+      # ── THE DEPLOYMENT DOCUMENT, AND THE ENVIRONMENT IS WHAT DECIDES IT ─────────────────────
+      #
+      # micro-org#406. `/mine` learns whether this estate has a mining pool from
+      # `GET /deployment.json`, which nginx renders at CONTAINER START from `POOL_API_PRESENCE`.
+      # Three things are checked here that no unit test can see, and the first one is why this step
+      # exists at all: MEASURED 2026-08-11 on micro-pool-web's identical mechanism, an image with
+      # the variable UNSET did not serve a wrong document — it EXITED 1 with
+      # `nginx: [emerg] unknown "pool_api_presence" variable`, because envsubst substitutes only
+      # variables that are set and has no `${VAR:-default}`. The `ENV` line in the Dockerfile is the
+      # fix; this is what would have caught its absence.
+      - name: The deployment document is served, and the environment is what decides it
+        run: |
+          set -euo pipefail
+
+          # 1. AN IMAGE NOBODY HAS CONFIGURED STARTS, AND SAYS THERE IS A POOL.
+          docker run -d --name ci-hub-web-default -p 127.0.0.1:8081:8080 hub-web:ci
+          for attempt in $(seq 1 20); do
+            code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/deployment.json || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          [ "${code:-}" = "200" ] || { echo "::error::an unconfigured image answered ${code:-nothing} for /deployment.json"; docker logs --tail 60 ci-hub-web-default; exit 1; }
+          default=$(curl -s -m 5 http://127.0.0.1:8081/deployment.json)
+          case "$default" in
+            *'"poolApi":"absent"'*) echo "::error::an unconfigured image reports NO POOL: $default"; exit 1 ;;
+            *'"poolApi"'*) ;;
+            *) echo "::error::the document has no poolApi field: $default"; exit 1 ;;
+          esac
+          type=$(curl -s -m 5 -o /dev/null -w '%{content_type}' http://127.0.0.1:8081/deployment.json)
+          case "$type" in
+            application/json*) ;;
+            *) echo "::error::/deployment.json was served as $type"; exit 1 ;;
+          esac
+
+          # 2. THE FLAG IS WHAT CHANGES IT, and only the container's environment is different.
+          docker run -d --name ci-hub-web-absent -p 127.0.0.1:8082:8080 -e POOL_API_PRESENCE=absent hub-web:ci
+          for attempt in $(seq 1 20); do
+            code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/deployment.json || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          [ "${code:-}" = "200" ] || { echo "::error::the configured image answered ${code:-nothing}"; docker logs --tail 60 ci-hub-web-absent; exit 1; }
+          absent=$(curl -s -m 5 http://127.0.0.1:8082/deployment.json)
+          case "$absent" in
+            *'"poolApi":"absent"'*) ;;
+            *) echo "::error::POOL_API_PRESENCE=absent did not reach the document: $absent"; exit 1 ;;
+          esac
+
+          # 3. AND IT CHANGES NOTHING ELSE. The flag is a sentence on one panel, not a deploy mode.
+          shell=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/mine || true)
+          [ "$shell" = "200" ] || { echo "::error::/mine answered $shell on a deployment with no pool"; exit 1; }
+
+          echo "ok: default=$default absent=$absent"
       - name: Down
         if: always()
-        run: docker rm -f ci-hub-web || true
+        run: docker rm -f ci-hub-web ci-hub-web-default ci-hub-web-absent || true
 
   hygiene:
     # The org's reusable secret check. Cheap, and it catches the failure that cannot be undone: a

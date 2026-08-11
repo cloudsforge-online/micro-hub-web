@@ -68,6 +68,13 @@ const appSource = read('src/app.tsx')
  * The provider reads `GET /v1/pool` for the bar as well, so every scenario here sees that route
  * called twice. Only the ticket route is counted below, and deliberately: the count that matters is
  * of the CREDENTIAL, not of a public description of the pool.
+ *
+ * ── AND WHAT IS DELIBERATELY *NOT* MOUNTED HERE (micro-org#406) ───────────────────────────────
+ *
+ * `DeploymentProvider`. Every scenario in this file is about a deployment that HAS a pool, and
+ * `usePoolApi()` answers `present` outside the provider — which is exactly the behaviour this page
+ * had before that provider existed, and is why not one line below had to change when it appeared.
+ * The other answer, and the whole of what it changes, is `test/deployment.test.ts`.
  */
 const page = (element: ReactElement, path: string): ReactElement =>
   h(
