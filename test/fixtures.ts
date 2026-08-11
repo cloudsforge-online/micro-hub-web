@@ -118,8 +118,9 @@ export const portfolio = (over: Partial<PortfolioView> = {}): PortfolioView => (
   pricingComplete: true,
   holdings: [holding()],
   allocation: [],
-  shards: '0',
-  ember: '2500000000000000000',
+  // EMBER always leads, then whatever else is held — hub-api's order, mirrored here so a fixture
+  // cannot assert a row the service would never send.
+  coins: [{ assetCode: 'EMBER', amount: '2500000000000000000', amountFormatted: '2.5' }],
   ...over,
 })
 

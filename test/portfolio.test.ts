@@ -52,8 +52,7 @@ const view = (over: Partial<PortfolioView>): PortfolioView => ({
   pricingComplete: true,
   holdings: [],
   allocation: [],
-  shards: '0',
-  ember: '0',
+  coins: [{ assetCode: 'EMBER', amount: '0', amountFormatted: '0' }],
   ...over,
 })
 

@@ -70,6 +70,22 @@ export interface Holding {
   readonly priceSource: string | null
 }
 
+/**
+ * One coin with a tile of its own. Mirrors `CoinTile`, hub-api/src/portfolio.ts.
+ *
+ * WHICH coins these are is hub-api's decision, not this bundle's, and the list arrives already in
+ * the order to render. Filtering it here — for a retired asset, say, or for a minted token whose
+ * decimals nobody publishes — would put a second copy of `contracts-chain`'s asset vocabulary in a
+ * browser bundle that ships on its own cadence, and the first asset wound down would be right in
+ * the service and wrong on the screen with nothing failing in between. Same argument as
+ * `priceSource` below, settled the same way.
+ */
+export interface CoinTile {
+  readonly assetCode: string
+  readonly amount: string
+  readonly amountFormatted: string
+}
+
 /** One bar of the allocation chart. Mirrors `AllocationRow`, portfolio.ts. */
 export interface AllocationRow {
   readonly label: string
@@ -88,8 +104,8 @@ export interface PortfolioView {
   readonly pricingComplete: boolean
   readonly holdings: readonly Holding[]
   readonly allocation: readonly AllocationRow[]
-  readonly shards: string
-  readonly ember: string
+  /** The coins to give a tile of their own, in hub-api's order. EMBER always leads. */
+  readonly coins: readonly CoinTile[]
 }
 
 /* ─────────────────────────────── wallet ────────────────────────────────── */

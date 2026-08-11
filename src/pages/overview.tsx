@@ -105,16 +105,23 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
             {...(stamp ? { pricedAt: stamp } : {})}
           />
           {/*
-            Unchanged on purpose, and not an instance of the retired-asset mislabel micro-org#227
-            swept the estate for. `portfolio.shards` is the ledger's own SHARD liability, summed by
-            `hub-api/src/portfolio.ts` off the balances whose `assetCode` is `SHARD`, so the label
-            names what the number is rather than dressing something else up as it. Re-denominating
-            it is micro-org#226 — an open owner decision that changes the ledger first and this
-            tile afterwards. The argument in full, with the mainnet measurement behind it, is on
-            the same tile in `pages/portfolio.tsx`.
+            The coins, as hub-api ordered them: EMBER first because it is this platform's own
+            chain, then whatever this account actually holds, largest first. There is no fixed
+            list here on purpose — see `CoinTile` in lib/hub.ts.
+
+            This replaced a hard-coded "Shards" tile. The number under it was true, and that was
+            not the problem: SHARD is retired, nothing new may be denominated in it, and it was
+            occupying the space on the estate's most-read screen where somebody's Bitcoin should
+            have been. A tile is a promotion, and a wound-down asset does not get one.
           */}
-          <StatTile label="Shards" value={formatAmount(portfolio.shards)} emptyLabel="None held" />
-          <StatTile label="EMBER" value={formatAmount(portfolio.ember)} emptyLabel="None held" />
+          {portfolio.coins.map((coin) => (
+            <StatTile
+              key={coin.assetCode}
+              label={coin.assetCode}
+              value={formatAmount(coin.amountFormatted)}
+              emptyLabel="None held"
+            />
+          ))}
           <StatTile
             label="Assets"
             value={portfolio.holdings.length === 0 ? null : String(portfolio.holdings.length)}
