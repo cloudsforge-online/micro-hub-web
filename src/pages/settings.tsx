@@ -15,12 +15,12 @@
  * ── Notification preferences are a stated hole ─────────────────────────────────────────────────
  *
  * `notify` serves `GET /preferences` and `PUT /preferences`, and it is not reachable from here at
- * all — not because of a missing token but because `notify` has no entry in the surface registry
- * (`@cloudsforge/ui/surfaces`), so `cloudsforgeHosts()` cannot produce a URL for it, and it is not
- * one of hub-api's seven upstreams either, which is why the `notifications` tile of every
- * dashboard is permanently `unavailable` (hub-api/src/dashboard.ts). Two things are
- * missing, both small, and both named here rather than papered over with a switch that does
- * nothing.
+ * all: `notify` has no entry in the surface registry (`@cloudsforge/ui/surfaces`), so
+ * `cloudsforgeHosts()` cannot produce a URL for it, and hub-api composes notifications but
+ * exposes no preferences route of its own. One of the two things this paragraph used to name has
+ * since been done — `notify` IS an upstream of hub-api now, and the `notifications` tile it made
+ * permanently `unavailable` is composed (micro-org #415). The remaining hole is stated here rather
+ * than papered over with a switch that does nothing.
  */
 import { Link } from 'react-router-dom'
 import { useSession } from '../lib/auth.tsx'
@@ -88,9 +88,9 @@ export function SettingsPage() {
           The <code>notify</code> service owns notification preferences and serves them at{' '}
           <code>GET /preferences</code> and <code>PUT /preferences</code>. Forge Hub cannot reach
           it: <code>notify</code> has no entry in the CloudsForge surface registry, so there is no
-          hostname to resolve at runtime, and it is not one of hub-api&rsquo;s seven upstreams, so
-          the notifications tile on every dashboard reports itself unavailable with that reason
-          rather than being quietly dropped. A registry entry and one upstream client fix both.
+          hostname to resolve at runtime, and hub-api — which now reads notifications themselves,
+          and shows the newest of them on your Overview — exposes no route for the preferences
+          behind them. A registry entry, or one more route on hub-api, closes it.
         </p>
       </NotComposed>
 

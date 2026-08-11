@@ -4,12 +4,12 @@
  * ── Why this page renders even when half of it failed ──────────────────────────────────────────
  *
  * `GET /v1/dashboard` answers 200 with holes, never 500 (`hub-api/src/dashboard.ts`), and the
- * arithmetic behind that is why: seven upstreams at 99.9% composed with a shared failure mode give
- * a page at 99.3%, which is three hours a month of downtime on the estate's most visible surface
- * caused entirely by how it was assembled. hub-api's seven degradation tests are the exit
- * criterion. **A client that renders a failure state because one tile is unavailable throws all of
- * that away** — so the only thing that produces a failure state here is a rejection, which after
- * the above can only mean the session or hub-api itself.
+ * arithmetic behind that is why: eight upstreams at 99.9% composed with a shared failure mode give
+ * a page at 99.2%, which is more than five hours a month of downtime on the estate's most visible
+ * surface caused entirely by how it was assembled. hub-api's per-upstream degradation tests are
+ * the exit criterion. **A client that renders a failure state because one tile is unavailable
+ * throws all of that away** — so the only thing that produces a failure state here is a rejection,
+ * which after the above can only mean the session or hub-api itself.
  *
  * The layout follows design-system.md §6, in its order and for its stated reasons:
  *
@@ -17,6 +17,10 @@
  *   2. "Needs you" as the primary call to action, one card per source, each degrading alone.
  *   3. Wallet lifecycle state visible in the list rather than behind a detail view.
  *   4. Activity as a preview of the last four, with one link out.
+ *   5. Notifications, the newest few and the unread total — last because it is the only region
+ *      here that is purely informational, and because it was absent altogether until micro-org
+ *      #415: the tile it draws was a hard-coded `unavailable`, which put a permanent
+ *      "notifications is not showing current data" banner at the top of this page for every user.
  */
 import { useCallback, useId } from 'react'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
@@ -26,7 +30,7 @@ import { EstimateNotice } from '../components/estimate.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { ActivityRow } from './activity.tsx'
 import { WalletRow } from './wallet.tsx'
-import { formatAmount, formatBps, pricedStamp } from '../lib/format.ts'
+import { formatAmount, formatBps, pricedStamp, utcTime } from '../lib/format.ts'
 import { loadDashboard, type Dashboard, type NextAction } from '../lib/hub.ts'
 import { allocationData, estimatedAssets, hasAllocation, portfolioTotal } from '../lib/portfolio.ts'
 import { useResource } from '../lib/resource.ts'
@@ -228,6 +232,9 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         </TilePanel>
       </div>
 
+      {/* ── 5. Notifications ──────────────────────────────────────────────────────────────── */}
+      <NotificationsPanel tile={tiles.notifications} />
+
       {/*
         The single-account story, said once on the surface that owns it. Every name below is a real
         product in the shared surface registry the bar and the footer are also built from, so this
@@ -290,6 +297,64 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         </ul>
       </section>
     </>
+  )
+}
+
+/**
+ * Notifications — the newest few, and the unread total.
+ *
+ * ── Why this panel did not exist until now ─────────────────────────────────────────────────────
+ *
+ * hub-api's `notifications` tile was a constant `unavailable`, so `dashboard.degraded` contained
+ * it on every response and `DegradedBanner` above printed "notifications is not showing current
+ * data. Everything else on this page is." on every signed-in Overview in the estate — the exact
+ * sentence the defect was reported as. There was nothing to render, so nothing rendered, and the
+ * banner was the only trace of a feature notify had been serving all along: 172 notifications for
+ * 85 users on mainnet at the time it was measured (2026-08-11, micro-org #415).
+ *
+ * ── Two things this component must not do ──────────────────────────────────────────────────────
+ *
+ * It must not build a sentence. `title` arrives written and substituted from notify's
+ * `templates.ts`, the one place in the estate a user-visible sentence is authored; composing one
+ * here from `templateId` would be a second copy free to drift.
+ *
+ * It must not link a row whose `href` is null. Null is not "no destination yet" — it is notify
+ * saying the destination IS the single-use credential it has already redacted, so a link would
+ * point at `/[redacted]` while looking like it works. The row is shown, unlinked.
+ */
+function NotificationsPanel({ tile }: { tile: Dashboard['tiles']['notifications'] }) {
+  const { unread, items } = tile.data
+  return (
+    <TilePanel
+      title="Notifications"
+      tile={tile}
+      action={
+        // The count, not a link out: there is no inbox page in this app yet, and a link to one
+        // that does not exist is worse than none. `unread` is the whole inbox rather than
+        // `items.length`, which is why it can exceed the number of rows below.
+        unread > 0 ? <span className="wt-chip wt-chip--warn cf-num">{unread} unread</span> : null
+      }
+      empty={<p className="wt-note">Nothing has been sent to you yet.</p>}
+    >
+      {items.length === 0 ? null : (
+        <ul className="wt-rows">
+          {items.map((item) => (
+            <li className="wt-row" key={item.id}>
+              <span className="wt-row__time cf-num">{utcTime(item.createdAt)}</span>
+              <span className="wt-row__main">
+                <span className="wt-row__title">
+                  {item.href === null ? item.title : <Link to={item.href}>{item.title}</Link>}
+                </span>
+                <span className="wt-row__sub">{item.category}</span>
+              </span>
+              <span className="wt-row__meta">
+                {item.readAt === null && <span className="wt-chip wt-chip--warn">New</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </TilePanel>
   )
 }
 

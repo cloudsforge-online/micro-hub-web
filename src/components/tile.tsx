@@ -109,9 +109,14 @@ export function DegradedBanner({ sentence }: { sentence: string | null }) {
  * from "failed", which is the same three-way distinction `components/states.tsx` makes for a
  * request, applied to a capability.
  *
- * The alternative — omitting the region — is worse in the specific way hub-api's own
- * `notifications` tile documents: "a client given no tile at all shows nothing and nobody notices
- * the feature is missing" (dashboard.ts).
+ * The alternative — omitting the region — is worse in the specific way hub-api's `notifications`
+ * tile used to document: "a client given no tile at all shows nothing and nobody notices the
+ * feature is missing". That tile has since been composed, and its own history is the caveat to
+ * keep with this component: a stated hole is only honest while it stays a hole. hub-api's
+ * `notifications` tile said "not composed" for months, in the voice of a degraded tile, and so
+ * every Overview in the estate carried an incident banner about a feature that was working
+ * upstream the whole time (micro-org #415). Use this for a capability that does not exist; never
+ * for one nobody has got round to wiring.
  */
 export function NotComposed({ title, children }: { title: string; children: ReactNode }) {
   return (
