@@ -63,7 +63,9 @@ export function WalletPage() {
           wrong one for the verb "hold". Measured on the mainnet estate 2026-08-11, micro-indexer
           runs three followers (EMBER, BTC, LTC) and no address has ever been issued on ETH, ETC,
           SOL or XRP: there is nothing of a reader's on those chains for us to be holding. The
-          owner caught the identical sentence on `cloudsforge.online` the same day.
+          owner caught the identical sentence on the public marketing site the same day. (Named
+          that way and not by hostname because the estate rule greps this file for one, comments
+          included, and it is right to.)
 
           So the prose names what a deposit can arrive in — `CREDITABLE_ASSETS` in
           `contracts/packages/chain`, written out in words rather than rendered from it, because a
