@@ -42,18 +42,29 @@
  *
  * ── AND THE ONE URL IT WILL NOT CONSTRUCT ─────────────────────────────────────────────────────
  *
- * A pool chain is mineable if and only if `websocketEndpoint` is a string, and that string is used
+ * A pool chain is mineable only if `websocketEndpoint` is a string, and that string is used
  * verbatim. A chain without one is LISTED — the pool really does mine it and hiding it would be its
  * own small lie — with a plain sentence saying browser mining has not been published on this
  * deployment, and no Start button at all. Not a disabled one that looks broken, not one that opens
  * a socket to a guess. micro-org#285 is the defect where a plausible endpoint was derived from
  * `window.location` and published, and it cost somebody a day of debugging their own machine.
+ *
+ * ── AND THE CHAIN THAT IS MINED HERE AND STILL REFUSED (micro-org#360) ────────────────────────
+ *
+ * BTC is the case an endpoint check cannot describe. The pool mines it, hardware points at its
+ * Stratum port, and shares are credited the same way — but a browser is refused it on purpose,
+ * because at about 793 EH/s of ASICs (measured 2026-08-11 at height 961,966) a tab produces shares
+ * that can never become a block. That refusal is the CHAIN'S, so it comes from the pool, in the
+ * pool's words, through `browserMining.reason`, and this page prints that string rather than a
+ * paraphrase: the argument rests on a measurement, measurements age, and a second copy here would
+ * be the one that goes stale. It is listed, explained, pointed at the Stratum address when there is
+ * one, and given no Start control — the same three rules as every other refusal on this page.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import type { SweepOutcome } from '../lib/embersweep.ts'
-import { loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
+import { browserMiningReason, loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
 import type { PoolMinerSnapshot } from '../mining/pool-miner.ts'
@@ -171,10 +182,12 @@ function ChainPicker({
                 {chain.algorithm} through the pool
                 {/*
                   Listed and honestly labelled rather than hidden, and labelled with WHICH of the
-                  two reasons applies: one of them is an operator decision and the other is a node
-                  catching up, and a reader deciding whether to come back tomorrow needs to know
-                  which they are looking at.
+                  three reasons applies. A reader deciding whether to come back tomorrow needs to
+                  know which they are looking at: one is what the chain IS and will never lift, one
+                  is an operator decision that could, and the third is a node catching up that will
+                  lift itself within the hour.
                 */}
+                {miningBlocker(chain) === 'hardware-only' ? ' · mining hardware only' : ''}
                 {miningBlocker(chain) === 'unpublished' ? ' · not available in a browser here' : ''}
                 {miningBlocker(chain) === 'not-ready' ? ' · no work right now' : ''}
               </span>
@@ -225,12 +238,34 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
       <section className="wt-panel">
         <h2 className="wt-panel__title">{chain.name}</h2>
         {/*
-          The whole of the blocked state, in both of its flavours. NO Start control exists in either
-          branch — a disabled button says "not now" and never says why, one pointed at an
+          The whole of the blocked state, in all three of its flavours. NO Start control exists in
+          any branch — a disabled button says "not now" and never says why, one pointed at an
           unpublished chain would have to invent an address, and one pointed at a chain with no
           template would spend a real ticket to earn a 503 on the upgrade.
+
+          The `hardware-only` branch prints the POOL'S sentence, not one written here. It is the
+          only branch that does, and the reason is that this refusal rests on measurements — a
+          network hash rate, a date, a block height — which age. The pool is where they are taken
+          and where they are kept current; a paraphrase in this file would be a second copy that
+          silently goes stale. `stratumEndpoint` is offered beside it when the operator published
+          one, because the honest next move for this reader is real hardware, not a different tab.
         */}
-        {blocker === 'unpublished' ? (
+        {blocker === 'hardware-only' ? (
+          <>
+            <p className="wt-note">{browserMiningReason(chain) ?? ''}</p>
+            {typeof chain.stratumEndpoint === 'string' && chain.stratumEndpoint !== '' ? (
+              <p className="wt-note">
+                Mining hardware can point at <code className="cf-num">{chain.stratumEndpoint}</code>{' '}
+                and its shares are credited to your account in the same way a browser's would be.
+              </p>
+            ) : (
+              <p className="wt-note">
+                This deployment publishes no Stratum address for {chain.asset} either, so there is
+                nowhere to point hardware from outside it yet.
+              </p>
+            )}
+          </>
+        ) : blocker === 'unpublished' ? (
           <p className="wt-note">
             Browser mining has not been published on this deployment for {chain.name}. The pool mines{' '}
             {chain.name} and accepts shares for it, but the operator has not published a WebSocket
