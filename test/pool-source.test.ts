@@ -139,3 +139,98 @@ describe('the pool source this client was written against', () => {
     assert.deepEqual([...loaded].sort(), ['pow.ts', 'session.ts', 'validate.ts', 'vardiff.ts', 'work.ts'])
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE JSON SHAPE OF `/v1/pool`, WHICH TYPESCRIPT CANNOT CHECK AND WHICH WAS WRONG FOR WEEKS.
+ *
+ * `loadPool()` casts an `unknown` body to `PoolSummary`. Nothing verifies the cast at runtime and
+ * nothing can verify it at compile time across a repository boundary, so a field this app declares
+ * with the wrong TYPE typechecks perfectly, passes a suite full of this app's own fixtures, and is
+ * wrong only against the live service — where the symptom is a blank, not an error.
+ *
+ * That is not hypothetical. `stratumEndpoint` was declared `string | null` here while micro-pool
+ * has always sent `{ host, port } | null`, and `src/pages/mine.tsx` gated the hardware address on
+ * `typeof … === 'string'`. The page would therefore have kept telling the reader with real mining
+ * hardware that no Stratum address exists on the day an operator published one — and `mine.test.ts`
+ * asserted the branch with a string fixture the service cannot produce, so the suite was green
+ * about a rendering that could never occur.
+ *
+ * So the shapes are read out of micro-pool's own source as text. Coarse, and the honest check
+ * available across the boundary: it cannot prove a type, but it catches the rename and the
+ * scalar-versus-object mistake, which are the two that actually happen.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+describe('the /v1/pool response shape this app casts to', () => {
+  /** This app's own declarations, for comparison against micro-pool's. */
+  const client = readFileSync(new URL('../src/lib/pool.ts', import.meta.url), 'utf8')
+
+  /** The `readonly name: type` pairs of one exported interface, in declaration order. */
+  function interfaceFields(source: string, name: string): [string, string][] {
+    const body = new RegExp(`(?:export )?interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(source)?.[1]
+    assert.ok(body, `${name} is no longer an interface in the source this test reads`)
+    return [...body.matchAll(/^\s*(?:readonly )?(\w+)\??:\s*([^\n]+?);?\s*$/gm)]
+      .filter((match) => !(match[2] as string).startsWith('//'))
+      .map((match) => [match[1] as string, (match[2] as string).replace(/;$/, '').trim()])
+  }
+
+  /**
+   * THE ONE THAT WAS WRONG. `stratumEndpoint` is an object of two fields, not a URL string.
+   *
+   * Asserted against `pool/src/env.ts`'s declaration rather than against a copy of it here, so the
+   * day micro-pool changes the pair this goes red in the repository that has to react to it.
+   */
+  it('declares stratumEndpoint with the two fields micro-pool publishes, not a string', () => {
+    const service = interfaceFields(poolSource('env.ts'), 'StratumEndpoint')
+    assert.deepEqual(
+      service,
+      [
+        ['host', 'string'],
+        ['port', 'number'],
+      ],
+      'micro-pool changed StratumEndpoint — re-point src/lib/pool.ts at whatever it sends now',
+    )
+    assert.deepEqual(
+      interfaceFields(client, 'StratumEndpoint'),
+      service,
+      'this app’s StratumEndpoint no longer matches micro-pool’s, so composed addresses are wrong',
+    )
+    // And the field on the chain is that object, not a scalar. This is the exact assertion whose
+    // absence let a `string | null` declaration survive against a service that never sends one.
+    assert.match(
+      client,
+      /readonly stratumEndpoint: StratumEndpoint \| null/,
+      'stratumEndpoint is declared as something other than the object micro-pool sends',
+    )
+  })
+
+  /**
+   * The merged chain, which is the one field on this response with no observable consequence.
+   *
+   * Every other field on a chain changes a number on screen if it is misread. `merged` changes
+   * nothing: a pool merge-mining Dogecoin reports the same hashrate, shares and difficulty as one
+   * that is not, so a client that dropped the field entirely — which this one did — looks identical
+   * in every test written against its own fixtures. The only defence is reading the server.
+   */
+  it('reads every field of the merged chain micro-pool publishes', () => {
+    const server = poolSource('server.ts')
+    // `merged: status.merged ? { … } : null` — the ternary's consequent, which is the only place
+    // the wire field names are written down.
+    const block = /merged: status\.merged\s*\?\s*\{([\s\S]*?)\n\s*\}\s*\n?\s*:/.exec(server)?.[1]
+    assert.ok(
+      block,
+      'the `merged` object literal is no longer in pool/src/server.ts where this test reads it — ' +
+        'RE-POINT THIS CHECK. A parser that cannot find its subject asserts nothing while ' +
+        'reporting a pass, which is worse than a red one.',
+    )
+    const published = [...block.matchAll(/^\s*(\w+):/gm)].map((match) => match[1] as string).sort()
+    const declared = interfaceFields(client, 'MergedChain')
+      .map(([name]) => name)
+      .sort()
+    assert.deepEqual(
+      declared,
+      published,
+      'micro-pool publishes a merged-chain field this app does not read, or the reverse',
+    )
+  })
+})
