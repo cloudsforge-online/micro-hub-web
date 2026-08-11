@@ -104,36 +104,35 @@ export function PortfolioPage() {
             {...(stamp ? { pricedAt: stamp } : {})}
           />
           {/*
-            ── THE SHARDS TILE IS UNCHANGED ON PURPOSE. micro-org#226 ──────────────────────────
+            ── THERE IS NO SHARDS TILE, AND THE BALANCE IS STILL NOT HIDDEN ────────────────────
 
-            SHARD is retired (`RETIRED_ASSETS`, `contracts/packages/chain/src/index.ts`) and the
-            estate has swept its user surfaces for the name (micro-org#227). This tile is not one
-            of the surfaces that sweep was for. Those were copy that said "Shards" over data that
-            was something else — USD cents, EMBER, a season reward. `view.shards` is the LEDGER'S
-            OWN SHARD LIABILITY: `hub-api/src/portfolio.ts` sums the balances whose `assetCode` is
-            `SHARD` out of ledger's `GET /accounts/:subject/balances` and sends the total under
-            that name. The label therefore says exactly what the number is.
+            This row used to carry a fixed "Shards" tile beside a fixed "EMBER" one. The Shards
+            number was TRUE — `hub-api/src/portfolio.ts` summed the ledger's own SHARD balances
+            and the label said so — and the argument for keeping it, written here at length, was
+            that relabelling a ledger unit on a screen is a lie about money.
 
-            Measured on mainnet 2026-08-09 (micro-org#226): 13 user liability accounts hold 13,000
-            SHARD between them, against a single custody account of 13,000. Small, and beacon and
-            test residue rather than real users — but real ledger rows. Relabelling this tile would
-            tell whoever holds them that their balance is denominated in a unit the ledger does not
-            record, and would put a number on screen that no posting supports.
+            That argument still holds, and it is not what changed. SHARD is retired
+            (`RETIRED_ASSETS`, `contracts/packages/chain/src/index.ts`): nothing new may be
+            denominated in it, so no reader of this page can ever be paid in one again. A HEADLINE
+            TILE IS A PROMOTION, and promoting a wound-down unit to the top of the portfolio — in
+            the two slots where somebody's Bitcoin and Litecoin belong — is a statement about what
+            matters here, not about what the ledger holds.
 
-            `mint/src/migrations.ts` (`retire_shard_pricing`) states the general form of this in
-            its own words: the customer's screen said "Pay 2,500 Shards" and it was TRUE, "which is
-            why the screen could not be fixed by relabelling it, and why this migration is the
-            fix". The same holds here. The unit is a property of the ledger, so it changes in the
-            service that posts to the ledger and this tile follows — it does not lead.
-
-            That change is micro-org#226, which is an open OWNER decision and not a find-and-
-            replace: the two migrations that have retired a SHARD price went to USD cents and
-            refused EMBER by name, and the grant leg pays users who cannot hold USD, so the payout
-            path is unbuilt. `trade-web`, `worlds-web/src/pages/title.tsx` and
-            `admin-web/src/pages/engagement.tsx` are held for the same reason.
+            So the tiles are now `view.coins`, which hub-api derives from the holdings themselves
+            and orders EMBER-first. Nothing is concealed by this: a retired holding is still a real
+            ledger row, and it still appears in "Every holding" below with its amount, its value
+            and its share. Measured on mainnet 2026-08-11: 13 user liability accounts hold 1,000
+            SHARD each against a single custody account of 13,000, and testnet holds none. Those
+            rows keep their table line. What they lose is the top of the page.
           */}
-          <StatTile label="Shards" value={formatAmount(view.shards)} emptyLabel="None held" />
-          <StatTile label="EMBER" value={formatAmount(view.ember)} emptyLabel="None held" />
+          {view.coins.map((coin) => (
+            <StatTile
+              key={coin.assetCode}
+              label={coin.assetCode}
+              value={formatAmount(coin.amountFormatted)}
+              emptyLabel="None held"
+            />
+          ))}
           <StatTile
             label="Assets"
             value={view.holdings.length === 0 ? null : String(view.holdings.length)}
