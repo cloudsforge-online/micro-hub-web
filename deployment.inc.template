@@ -1,0 +1,19 @@
+# WHAT THIS DEPLOYMENT IS, AS OPPOSED TO WHAT THIS IMAGE IS. ONE LINE, AND THE ARGUMENT FOR IT IS
+# IN nginx.conf UNDER "IS THERE A MINING POOL ON THIS DEPLOYMENT AT ALL?".
+#
+# The argument is kept THERE and not here for a mechanical reason worth knowing before editing this
+# file: the stock nginx entrypoint runs envsubst over every /etc/nginx/templates/*.template before
+# nginx starts, and envsubst rewrites every variable reference it finds, comments included. A file
+# that is a template is a file whose prose is not safe. So this one holds a single directive naming
+# a single variable, and nothing else — no nginx runtime variable may ever appear in it, because
+# envsubst would eat that too.
+#
+# POOL_API_PRESENCE IS DEFAULTED IN THE Dockerfile, and that is not decoration. envsubst
+# substitutes only the variables that are actually set; an unset one is left here verbatim, reaches
+# nginx as an nginx variable reference, and nginx refuses to start — measured 2026-08-11 on
+# micro-pool-web's identical mechanism, where the container exited 1. So the image sets it.
+#
+# Only the exact string `absent` tells src/lib/deployment.tsx there is no pool behind this estate.
+# Every other value, the empty string included, means there is one. See nginx.conf for why that
+# asymmetry is the whole safety of the mechanism.
+return 200 '{"poolApi":"${POOL_API_PRESENCE}"}';

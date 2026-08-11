@@ -5,7 +5,7 @@
  * addresses `http://localhost:3010` when served from localhost and `https://hub.<apex>` when
  * served from the apex. Nothing here reads a build-time constant; see the note in vite.config.ts.
  */
-import { cloudsforgeHosts, type CloudsForgeHosts, type SurfaceKey } from '@cloudsforge/ui'
+import { cloudsforgeHosts, envLabel, splitEnvLabel, surface, type CloudsForgeHosts, type SurfaceKey } from '@cloudsforge/ui'
 
 /**
  * The surface this application IS.
@@ -51,6 +51,53 @@ export function hosts(): CloudsForgeHosts {
 export function apiBase(): string {
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   return resolveApiBase(origin, cloudsforgeHosts(), PRODUCT)
+}
+
+/**
+ * THE MINING POOL ON THE UNADORNED ENVIRONMENT — the one address this app composes that is not on
+ * the network it is being served from.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `cloudsforgeHosts()` answers "where are my siblings", and every one of its answers is on THIS
+ * environment. It has no way to say "and where is the pool on the environment that has one", which
+ * is exactly the sentence `/mine` needs on a network with no pool (micro-org#406,
+ * `src/lib/deployment.tsx`): telling somebody the pool does not run here without telling them
+ * where it does run is half an answer.
+ *
+ * Derived rather than written down, because the `rules` job in CI greps `src/` for a literal apex
+ * and is right to — an image that names one estate is an image that works on one estate, which is
+ * the build-time environment this repository refuses, wearing a hat. So the apex comes off the
+ * address of the page, and the first label is recomposed with `envLabel(subdomain, '')`, the
+ * registry's own inverse of `splitEnvLabel()`. That is what makes this produce the name the
+ * registry would have produced rather than a second opinion about how the estate is named.
+ *
+ * ── NULL IS THE ANSWER MORE OFTEN THAN A CALLER EXPECTS, AND EVERY CASE IS DELIBERATE ─────────
+ *
+ *   * A HOSTNAME WHOSE FIRST LABEL NAMES NO ENVIRONMENT: localhost, a preview deployment, a
+ *     tunnel, a two-label apex. `cloudsforgeHosts()` refuses to guess an apex from those and so
+ *     does this — a composed `https://pool.<whatever-this-is>` resolves to nothing, and a "the pool
+ *     is over here" link that fails is worse than no link, because the reader concludes the pool is
+ *     gone rather than that the page is confused.
+ *   * THE UNADORNED ENVIRONMENT ITSELF, where `hub.<apex>` has no environment label to strip. The
+ *     composed address would be this same estate's pool, which is the one this page has just been
+ *     told is not there. That state is either an operator's choice or a misconfiguration, and the
+ *     honest rendering is the explanation with no link. `src/pages/mine.tsx` renders exactly that,
+ *     with different words, and both are asserted.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+export function unlabelledSurfaceUrl(hostname: string, key: SurfaceKey): string | null {
+  const parts = hostname.split('.')
+  // `> 2` for the same reason `cloudsforgeHosts()` requires it: a two-label hostname IS an apex and
+  // has no first label to spend on a subdomain or an environment.
+  if (parts.length <= 2) return null
+  if (splitEnvLabel(parts[0] ?? '') === null) return null
+  const apex = parts.slice(1).join('.')
+  return `https://${envLabel(surface(key).subdomain, '')}.${apex}`
+}
+
+/** The pool console on the unadorned environment, resolved now, or null. See above for every null. */
+export function unlabelledPoolUrl(): string | null {
+  return unlabelledSurfaceUrl(typeof window === 'undefined' ? '' : window.location.hostname, 'pool')
 }
 
 /** The page origin, or a stable placeholder when there is no document (tests, prerender). */

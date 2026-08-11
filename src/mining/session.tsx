@@ -118,6 +118,7 @@ import { useSession } from '../lib/auth.tsx'
 import { sweepToCustody, type SweepOutcome } from '../lib/embersweep.ts'
 import { emberMiningBase } from '../lib/hosts.ts'
 import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
+import { poolApiWorthAsking, usePoolApi } from '../lib/deployment.tsx'
 import { isMineable, loadPool, type PoolChain, type PoolSummary } from '../lib/pool.ts'
 import { PoolMiner, type PoolMinerOptions, type PoolMinerSnapshot } from './pool-miner.ts'
 
@@ -358,6 +359,9 @@ export interface MiningProviderProps {
 
 export function MiningProvider({ children, create, createEmber }: MiningProviderProps) {
   const { account } = useSession()
+  // Whether this estate has a pool API behind it at all. `present` outside `DeploymentProvider`,
+  // which is the behaviour this provider has always had — see src/lib/deployment.tsx.
+  const presence = usePoolApi()
   const [summary, setSummary] = useState<PoolSummary | null>(null)
   const [settled, setSettled] = useState(false)
   const [snapshot, setSnapshot] = useState<PoolMinerSnapshot | null>(null)
@@ -382,6 +386,25 @@ export function MiningProvider({ children, create, createEmber }: MiningProvider
    * is still open.
    */
   useEffect(() => {
+    /*
+     * NOT ASKED AT ALL ON A DEPLOYMENT WITH NO POOL (micro-org#406).
+     *
+     * `pool-testnet.<apex>/v1/pool` answers 502 on every estate that does not run the `pool`
+     * compose profile, permanently and by design, and this effect runs on EVERY page of this app
+     * because the bar's Start control lives above the router. So the failure path below was a
+     * doomed cross-origin request per page load, per reader, forever — and `settled: true` with a
+     * null summary, which is the same state this now reaches without asking.
+     *
+     * `unknown` also declines, and that is the point rather than an accident: it lasts one
+     * same-origin round trip against this container, and a request fired during it lands on the 502
+     * anyway. What the reader loses is nothing — the bar has no pool chain to offer until this
+     * resolves either way.
+     */
+    if (!poolApiWorthAsking(presence)) {
+      setSummary(null)
+      setSettled(presence === 'absent')
+      return
+    }
     const controller = new AbortController()
     let live = true
     loadPool(controller.signal).then(
@@ -399,7 +422,7 @@ export function MiningProvider({ children, create, createEmber }: MiningProvider
       live = false
       controller.abort()
     }
-  }, [])
+  }, [presence])
 
   const signedIn = account.signedIn
 
