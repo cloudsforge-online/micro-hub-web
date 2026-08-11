@@ -226,10 +226,39 @@ export interface EntitlementsView {
   readonly subscriptions: readonly BillingSubscription[]
 }
 
-/** Mirrors `Notifications`, dashboard.ts. Permanently unavailable — see the README. */
+/**
+ * Mirrors `NotificationRecord`, upstreams.ts (notify's `GET /notifications`).
+ *
+ * `title` IS THE SENTENCE, already written and already substituted, and nothing in this bundle may
+ * compose one from `templateId` and `params`. notify's `templates.ts` is the single place a
+ * user-visible sentence is written in this estate; a second rendering here would be a copy free to
+ * drift, and it would drift in the one direction nobody notices — the old wording still reads
+ * fine.
+ *
+ * `href` is RELATIVE and may be null. Null means there is nowhere honest to point: the row's link
+ * is a single-use credential which notify has already redacted, so a link would go to `/[redacted]`
+ * and look like a working one. Render the row without a link rather than dropping it.
+ */
+export interface NotificationRecord {
+  readonly id: string
+  readonly userId: string
+  readonly category: string
+  readonly priority: string
+  readonly templateId: string
+  readonly title: string
+  readonly href: string | null
+  readonly params: Record<string, unknown>
+  readonly locale: string
+  readonly subjectUrn: string | null
+  readonly createdAt: string
+  readonly readAt: string | null
+}
+
+/** Mirrors `Notifications`, dashboard.ts. */
 export interface NotificationsView {
+  /** Unread across the whole inbox, not within `items`. A badge, not a length. */
   readonly unread: number
-  readonly items: readonly never[]
+  readonly items: readonly NotificationRecord[]
 }
 
 /* ───────────────────────── activity and prices ─────────────────────────── */

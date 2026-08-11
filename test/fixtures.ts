@@ -20,6 +20,7 @@ import type {
   DashboardTiles,
   DepositCredit,
   Holding,
+  NotificationRecord,
   PortfolioView,
   WalletRecord,
   WithdrawalRecord,
@@ -138,6 +139,30 @@ export const wallet = (over: Partial<WalletRecord> = {}): WalletRecord => ({
   verifiedAt: null,
   exportedAt: null,
   retiredAt: null,
+  ...over,
+})
+
+/**
+ * One notification, as notify serves it through hub-api.
+ *
+ * `title` is populated because notify renders it: the SPA is handed the sentence rather than a
+ * template id and a parameter bag, so a fixture carrying only `templateId` would let a scenario
+ * pass against a page that had composed its own wording. `href` is relative, and null is a real
+ * value — see `NotificationRecord` in src/lib/hub.ts.
+ */
+export const notification = (over: Partial<NotificationRecord> = {}): NotificationRecord => ({
+  id: 'ntf-0000-0000-0000-000000000001',
+  userId: USER_ID,
+  category: 'security',
+  priority: 'high',
+  templateId: 'security.new_device',
+  title: 'A new device signed in',
+  href: '/security',
+  params: { device: 'Firefox on Linux' },
+  locale: 'en-GB',
+  subjectUrn: null,
+  createdAt: '2026-08-03T09:14:00.000Z',
+  readAt: null,
   ...over,
 })
 
