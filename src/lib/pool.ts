@@ -69,6 +69,24 @@ export interface PoolChain {
    * distinction the operator did not make.
    */
   readonly websocketEndpoint?: string | null
+  /**
+   * WHETHER THIS CHAIN IS OFFERED TO BROWSERS AT ALL, AND — WHEN IT IS NOT — WHY NOT IN WORDS.
+   *
+   * This is not the same question as `websocketEndpoint`, and collapsing the two is the mistake it
+   * exists to prevent. A null endpoint means the OPERATOR has published no browser address: a
+   * deployment setting, true today, possibly false next week. `available: false` with a reason means
+   * the POOL refuses the chain to browsers as a matter of what the chain is, and no deployment
+   * setting will change it. BTC is the case: measured 2026-08-11 at height 961,966, its network runs
+   * at about 793 EH/s of purpose-built SHA-256 silicon, so a tab would produce shares this pool
+   * could never turn into a block. `pool/src/chains.ts` holds the decision and the sentence; this
+   * page prints the pool's sentence rather than composing one of its own, so the two can never
+   * drift apart into two different explanations of the same refusal.
+   *
+   * Optional, because a deployment running a micro-pool older than this field omits the key
+   * entirely. Absent means "this pool has no opinion", which is treated as no refusal — the older
+   * behaviour, where such a chain falls through to the endpoint check, is preserved exactly.
+   */
+  readonly browserMining?: { readonly available: boolean; readonly reason: string | null }
   readonly connections: number
   readonly height: number | null
   readonly networkDifficulty: number | null
@@ -105,8 +123,12 @@ export function loadPool(signal?: AbortSignal): Promise<PoolSummary> {
 /**
  * Why a browser cannot be pointed at this chain, or null if it can. The one place it is decided.
  *
- * TWO REASONS, AND THEY ARE NOT THE SAME SENTENCE TO A READER.
+ * THREE REASONS, AND THEY ARE NOT THE SAME SENTENCE TO A READER.
  *
+ *   * `hardware-only` — the pool mines this chain, and refuses it to browsers on purpose. Not an
+ *     operator setting and not a fault: BTC's network is 793 EH/s of ASICs (measured 2026-08-11),
+ *     and a tab cannot earn a share worth paying for. The reason travels FROM THE SERVER, so this
+ *     app never has to keep its own copy of that argument in sync with the pool's.
  *   * `unpublished` — the operator has published no browser address. Nothing the reader does will
  *     change it, today or in an hour.
  *   * `not-ready` — the pool holds no template for this chain, so it has no work to hand out. In
@@ -118,21 +140,51 @@ export function loadPool(signal?: AbortSignal): Promise<PoolSummary> {
  *     not a reason to delete the branch: it is what a reader sees in the minutes after a node
  *     restarts, and it fixes itself.
  *
- * A chain the operator has not configured is a THIRD case and is not either of these — it simply
- * does not appear in the response, so nothing renders and nothing needs a reason. That is why BTC
- * is absent from the page today rather than showing as blocked.
+ * A chain the operator has not configured at all is a FOURTH case and is none of these — it simply
+ * does not appear in the response, so nothing renders and nothing needs a reason.
  *
- * Both are refused BEFORE a socket is opened, because the alternative is a Start button whose only
- * effect is a `503` on the upgrade — `pool/src/wsstratum.ts` refuses a chain that is not serving —
- * and a button that fails identically for a permanent cause and a temporary one teaches a reader
- * nothing about which they are looking at.
+ * All three are refused BEFORE a socket is opened, because the alternative is a Start button whose
+ * only effect is a `503` on the upgrade — `pool/src/wsstratum.ts` refuses a chain that is not
+ * serving — and a button that fails identically for a permanent cause and a temporary one teaches a
+ * reader nothing about which they are looking at.
+ *
+ * ── ORDER IS PART OF THE CONTRACT ──────────────────────────────────────────────────────────────
+ *
+ * `hardware-only` is checked FIRST, and it has to be. A chain refused to browsers also carries no
+ * browser endpoint — the pool gives it no ticket redeemer, so there is nothing to publish — which
+ * means the endpoint check would match too, and it would match with the WRONG sentence: "the
+ * operator has not published an address" invites the reader to wait for a deployment change that is
+ * never coming. The permanent reason must win over the incidental one.
  */
-export type MiningBlocker = 'unpublished' | 'not-ready'
+export type MiningBlocker = 'hardware-only' | 'unpublished' | 'not-ready'
 
 export function miningBlocker(chain: PoolChain): MiningBlocker | null {
+  if (chain.browserMining && !chain.browserMining.available && chain.browserMining.reason !== null) {
+    return 'hardware-only'
+  }
   if (typeof chain.websocketEndpoint !== 'string' || chain.websocketEndpoint === '') return 'unpublished'
   if (!chain.ready) return 'not-ready'
   return null
+}
+
+/**
+ * The pool's own sentence for why a browser is refused this chain, or null if it did not give one.
+ *
+ * Deliberately not defaulted to a sentence written here. A local fallback would be the estate's
+ * second opinion on a question the pool already answered, and the first time the two disagree — the
+ * pool's numbers are dated and measured, this app's would be whatever was true when it was
+ * typed — the reader gets the stale one. When the pool says nothing, the page says nothing
+ * chain-specific, which is honest.
+ *
+ * Note the guard: `available: false` with a null reason is a refusal WITHOUT an explanation, and it
+ * is treated by `miningBlocker` as no refusal at all rather than as a silent one. That is the shape
+ * micro-pool sends for a chain it does serve (`{available: false, reason: null}` when the listener
+ * simply has no identity configured), and rendering it as "hardware only" would libel Litecoin.
+ */
+export function browserMiningReason(chain: PoolChain): string | null {
+  const stance = chain.browserMining
+  if (!stance || stance.available) return null
+  return typeof stance.reason === 'string' && stance.reason !== '' ? stance.reason : null
 }
 
 /** Can a browser be pointed at this chain right now? */

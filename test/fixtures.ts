@@ -368,11 +368,16 @@ export const tokenSighting = (over: Partial<TokenSighting> = {}): TokenSighting 
  * shared default that each of them overrode would be a fixture in name only, and the mining page is
  * the one surface where the pool's shape IS the subject.
  *
- * The default describes ONE MINEABLE CHAIN, which is the estate as measured on 2026-08-10: LTC has
- * a published browser endpoint and a template, and BTC and DOGE are listed but answer `not-ready`
- * because their nodes are still in initial block download. That is also the state in which the bar's
- * control has something to offer, so a scenario that wanted a refusal has to say so rather than
- * inheriting one.
+ * The default describes ONE MINEABLE CHAIN, which is the estate as measured on 2026-08-11: LTC has
+ * a published browser endpoint and a template, and it is the only chain a browser is offered. That
+ * is also the state in which the bar's control has something to offer, so a scenario that wanted a
+ * refusal has to say so rather than inheriting one.
+ *
+ * `browserMining` is deliberately ABSENT from this default rather than set to `{available: true}`.
+ * A pool older than micro-org#360 omits the key, and the default fixture is the place that keeps
+ * this app honest about tolerating one: with it absent, every scenario built on this fixture is
+ * exercising the compatibility path, and `test/mine.test.ts` — which varies the field on purpose —
+ * is where the field's own behaviour is pinned.
  */
 export const poolChain = (over: Partial<PoolChain> = {}): PoolChain => ({
   chain: 'ltc',

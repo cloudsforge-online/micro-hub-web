@@ -1,9 +1,9 @@
 {
   "name": "@cloudsforge/hub-web",
-  "version": "2.5.19",
+  "version": "2.5.20",
   "packageManager": "pnpm@11.9.0",
   "private": true,
-  "description": "Forge Hub — the CloudsForge control centre. Dashboard, portfolio, wallet, activity, security and settings.",
+  "description": "Forge Hub \u2014 the CloudsForge control centre. Dashboard, portfolio, wallet, activity, security and settings.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --import @cloudsforge/ui/test-loader --test test/*.test.ts"
   },
-  "//test": "--import @cloudsforge/ui/test-loader is what lets test/dom.ts render REAL components from the design system. link: symlinks micro-ui's WORKING TREE, whose own node_modules holds the react it needs to test itself, and Node resolves a bare specifier from the importing file's REALPATH — so @cloudsforge/ui's components find that second copy, share no dispatcher with ours, and every hook they call throws \"Cannot read properties of null (reading 'useState')\". Shipping dist did not change that: dist/index.js has the same realpath as src/index.tsx. The loader is vite's resolve.dedupe supplied to the Node test runner, which has none of its own, and it ships from the package that owns the second copy so it resolves OUR react from process.cwd(). Delete the flag and test/journeys.test.ts goes red, not quiet.",
-  "//": "@cloudsforge/ui is consumed from a sibling path because it is not published yet. It becomes a registry version ('^1.0.0') the day it is, and nothing else here changes — the Dockerfile's uipkg build context and the second checkout in ci.yml go with it. The specifier is link: rather than file: because link: symlinks the working tree, so an edit in the design system is visible here without a republish; pnpm PACKS a file: directory instead, and a packed copy goes stale the moment micro-ui is touched. JSON has no comment syntax, hence this key.",
+  "//test": "--import @cloudsforge/ui/test-loader is what lets test/dom.ts render REAL components from the design system. link: symlinks micro-ui's WORKING TREE, whose own node_modules holds the react it needs to test itself, and Node resolves a bare specifier from the importing file's REALPATH \u2014 so @cloudsforge/ui's components find that second copy, share no dispatcher with ours, and every hook they call throws \"Cannot read properties of null (reading 'useState')\". Shipping dist did not change that: dist/index.js has the same realpath as src/index.tsx. The loader is vite's resolve.dedupe supplied to the Node test runner, which has none of its own, and it ships from the package that owns the second copy so it resolves OUR react from process.cwd(). Delete the flag and test/journeys.test.ts goes red, not quiet.",
+  "//": "@cloudsforge/ui is consumed from a sibling path because it is not published yet. It becomes a registry version ('^1.0.0') the day it is, and nothing else here changes \u2014 the Dockerfile's uipkg build context and the second checkout in ci.yml go with it. The specifier is link: rather than file: because link: symlinks the working tree, so an edit in the design system is visible here without a republish; pnpm PACKS a file: directory instead, and a packed copy goes stale the moment micro-ui is touched. JSON has no comment syntax, hence this key.",
   "dependencies": {
     "@cloudsforge/ui": "link:../ui/packages/ui",
     "react": "^19.0.0",

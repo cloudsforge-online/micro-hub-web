@@ -36,7 +36,7 @@
  * threads deliver appreciably less than two while making the machine unusable and the fans audible.
  * This is the memory-hardness working exactly as Colin Percival designed it, on the wrong side.
  */
-import { miningBlocker, type PoolChain } from '../lib/pool.ts'
+import { browserMiningReason, miningBlocker, type PoolChain } from '../lib/pool.ts'
 import { StratumClient, type ShareOutcome, type StratumStatus } from '../lib/stratum-client.ts'
 import type { StratumJob, Subscription } from '../lib/stratum.ts'
 import type { WorkerInbound, WorkerOutbound } from './pool-worker.ts'
@@ -160,11 +160,11 @@ export class PoolMiner {
   /**
    * Start, or refuse in a sentence.
    *
-   * A chain the pool has not published a WebSocket endpoint for is refused HERE as well as being
-   * disabled in the page, because the two protect different things: the page's disabled control is
-   * what a reader sees, and this is what stops a future caller from constructing an endpoint out of
-   * `window.location` — the defect micro-org#285 exists to record. There is no code path in this
-   * file that builds a URL.
+   * A chain the pool refuses to browsers, or has published no WebSocket endpoint for, is refused
+   * HERE as well as being disabled in the page, because the two protect different things: the
+   * page's disabled control is what a reader sees, and this is what stops a future caller from
+   * constructing an endpoint out of `window.location` — the defect micro-org#285 exists to record.
+   * There is no code path in this file that builds a URL.
    */
   async start(): Promise<void> {
     if (this.#running) return
@@ -172,13 +172,19 @@ export class PoolMiner {
     const blocker = miningBlocker(this.chain)
     if (blocker !== null || typeof endpoint !== 'string') {
       this.#status = 'failed'
-      // The page does not render a Start control in either case, so reaching this is a caller's
+      // The page renders no Start control in any of these cases, so reaching this is a caller's
       // mistake rather than a reader's — which is exactly why it names the cause instead of failing
       // with one sentence that fits both.
       this.#detail =
         blocker === 'not-ready'
           ? `the pool has no work for ${this.chain.name} right now`
-          : `browser mining has not been published on this deployment for ${this.chain.name}`
+          : blocker === 'hardware-only'
+            ? // The pool's own sentence, not a paraphrase — it carries dated measurements this file
+              // has no way to keep current. `?? ` cannot fire in practice, since `hardware-only` is
+              // returned only when a reason is present, but a `string` is what the field is.
+              (browserMiningReason(this.chain) ??
+              `${this.chain.name} is mined by hardware here, not in a browser`)
+            : `browser mining has not been published on this deployment for ${this.chain.name}`
       this.#emit()
       return
     }

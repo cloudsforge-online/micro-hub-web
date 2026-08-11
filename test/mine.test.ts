@@ -37,7 +37,7 @@ import { withScreen, type Reply, type Routes } from './dom.ts'
 import { MinePage } from '../src/pages/mine.tsx'
 import { AuthProvider } from '../src/lib/auth.tsx'
 import type { DepositAssignment } from '../src/lib/money.ts'
-import { isMineable, miningBlocker, type PoolChain, type PoolSummary } from '../src/lib/pool.ts'
+import { browserMiningReason, isMineable, miningBlocker, type PoolChain, type PoolSummary } from '../src/lib/pool.ts'
 import { NON_INDEX_PATHS, ROUTES } from '../src/lib/routes.ts'
 import { MiningProvider } from '../src/mining/session.tsx'
 
@@ -360,6 +360,147 @@ describe('a chain the pool has published but has no work for', () => {
           'a mining ticket was minted for a chain with no work',
         )
         s.clean('the chain with no work')
+      },
+    )
+  })
+})
+
+/* ══════════════════════════════ 3c. refused to browsers on purpose ══════════════════════════════ */
+
+/**
+ * The third blocked state — micro-org#360 — and the only one that is about the CHAIN rather than
+ * about this deployment.
+ *
+ * BTC is mined here. Hardware points at the Stratum port and its shares are credited exactly like
+ * anyone else's. What it is not is a thing a tab can do: measured 2026-08-11 at height 961,966, the
+ * Bitcoin network ran at about 793 EH/s of purpose-built SHA-256 silicon against a difficulty of
+ * 1.2748e14, so a browser would produce shares this pool could never turn into a block or a payout.
+ * `pool/src/chains.ts` decides that and `GET /v1/pool` reports it as
+ * `browserMining: {available: false, reason}`.
+ *
+ * TWO THINGS THIS SECTION HOLDS, AND THE SECOND IS THE SUBTLE ONE.
+ *
+ * The first is that the refusal is rendered as a refusal with a reason, not as an absence: BTC stays
+ * in the picker, because a chain that silently vanishes leaves the reader unable to ask why.
+ *
+ * The second is the ORDER. A refused chain also carries no `websocketEndpoint` — the pool hands it
+ * no ticket redeemer, so there is nothing to publish — which means the `unpublished` branch would
+ * match it too, and it would match with a sentence that is false in the way that matters: "the
+ * operator has not published an address" tells the reader to wait for a deployment change that is
+ * never coming. So the fixtures here deliberately carry BOTH conditions, and assert the permanent
+ * reason wins.
+ */
+describe('a chain the pool refuses to browsers on purpose', () => {
+  /** Both conditions true at once — which is exactly the shape micro-pool sends for BTC. */
+  const hardwareOnly = () =>
+    chain({
+      chain: 'btc',
+      name: 'Bitcoin',
+      asset: 'BTC',
+      algorithm: 'sha256d',
+      websocketEndpoint: null,
+      stratumEndpoint: null,
+      browserMining: {
+        available: false,
+        reason:
+          'Bitcoin is mined here by hardware over stratum, not in a browser. Its network runs at ' +
+          'about 793 EH/s of purpose-built SHA-256 silicon.',
+      },
+    })
+
+  it('is the hardware-only blocker, not the unpublished one, when both would match', () => {
+    assert.equal(
+      miningBlocker(hardwareOnly()),
+      'hardware-only',
+      'a chain refused to browsers was reported as merely unpublished, which tells the reader to ' +
+        'wait for an operator change that is never coming',
+    )
+    assert.equal(isMineable(hardwareOnly()), false)
+    // And the ordering is not an accident of this fixture: give it an endpoint and a template and
+    // the refusal must still win, because the refusal is about the chain.
+    assert.equal(
+      miningBlocker(
+        chain({
+          ...hardwareOnly(),
+          websocketEndpoint: 'wss://pool.example.test/v1/pool/stratum/btc',
+          ready: true,
+        }),
+      ),
+      'hardware-only',
+    )
+  })
+
+  it('treats a refusal with no reason as no refusal at all', () => {
+    // `{available: false, reason: null}` is what micro-pool sends for LTC when the listener simply
+    // has no identity configured — a deployment fact, already covered by `unpublished`. Rendering
+    // it as "hardware only" would libel a chain a browser is perfectly good at.
+    const ltc = chain({ browserMining: { available: false, reason: null } })
+    assert.equal(miningBlocker(ltc), null, 'a served chain was reported as refused')
+    assert.equal(browserMiningReason(ltc), null)
+    // An older pool omits the key entirely, and must behave exactly as it did before this existed.
+    assert.equal(miningBlocker(chain()), null)
+    assert.equal(browserMiningReason(chain()), null)
+  })
+
+  it('prints the pool’s own sentence, and offers no way to start', async () => {
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [chain(), hardwareOnly()] })) },
+      async (s) => {
+        await s.settle()
+        assert.ok(
+          s.queryByRole('radio', /Bitcoin/),
+          'a chain the pool mines was hidden rather than refused with a reason, which leaves ' +
+            'nobody able to ask why',
+        )
+        await s.click(s.byRole('radio', /Bitcoin/))
+        await s.settle()
+
+        // The pool's sentence, verbatim from the fixture — not a paraphrase this app keeps its own
+        // stale copy of. The measurement is the load-bearing part and it ages.
+        assert.match(
+          s.text(),
+          /793 EH\/s of purpose-built SHA-256 silicon/,
+          'the page does not print the pool’s reason, so the refusal reads as an unexplained ' +
+            'absence and the measurement behind it is invisible',
+        )
+        assert.doesNotMatch(
+          s.text(),
+          /has not been published on this deployment/i,
+          'a permanent refusal is described as a deployment setting somebody could change',
+        )
+        assert.equal(
+          s.allByRole('button').filter((el) => /start/i.test(s.textOf(el))).length,
+          0,
+          'a Start control was rendered for a chain no browser may mine',
+        )
+        assert.equal(
+          s.api.matching('POST /v1/pool/ticket').length,
+          0,
+          'a mining ticket — a single-use credential — was minted for a chain that refuses browsers',
+        )
+        s.clean('the hardware-only chain')
+      },
+    )
+  })
+
+  it('points hardware at the Stratum endpoint when the operator published one', async () => {
+    const published = { ...hardwareOnly(), stratumEndpoint: 'stratum+tcp://pool.example.test:3333' }
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [published] })) },
+      async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', /Bitcoin/))
+        await s.settle()
+        // The honest next move for this reader is hardware, and the address is the one the operator
+        // published — never one derived from `window.location` (micro-org#285).
+        assert.match(
+          s.text(),
+          /stratum\+tcp:\/\/pool\.example\.test:3333/,
+          'the page refuses the browser without naming the thing that does work',
+        )
+        s.clean('the hardware-only chain with a published stratum endpoint')
       },
     )
   })
