@@ -310,10 +310,15 @@ describe('a chain with no published WebSocket endpoint', () => {
  * The second blocked state, and the reason it is not folded into the first.
  *
  * A chain can have a perfectly good published endpoint and still have nothing to hand out: the
- * pool's node for it holds no block template, which today means BTC, whose bitcoind was measured on
- * 2026-08-09 at 885,650 of 961,712 blocks and still in initial block download. `pool/src/wsstratum.ts`
- * refuses the upgrade with a 503 in that case, so a Start button here would spend a real mining
- * ticket — a single-use credential — to earn a connection failure.
+ * pool's node for it holds no block template. The example this used to give was BTC, whose bitcoind
+ * was measured on 2026-08-09 at 885,650 of 961,712 blocks and still in initial block download —
+ * expired since. bitcoind reached tip on 2026-08-10, and measured 2026-08-11 the pool serves btc
+ * with `ready: true` and refuses it to browsers through `browserMining` instead, which is a
+ * different state with a different sentence. So this one describes nothing on mainnet today and is
+ * driven entirely from a fixture, which is the right way round: it is what a reader sees in the
+ * minutes after a node restarts, and a test for it must not need a node to be restarting.
+ * `pool/src/wsstratum.ts` refuses the upgrade with a 503 in that case, so a Start button here would
+ * spend a real mining ticket — a single-use credential — to earn a connection failure.
  *
  * The distinction is worth a separate state because the two lead to different behaviour from the
  * reader: one is an operator decision that will not change by waiting, and the other resolves

@@ -3018,8 +3018,10 @@ describe('BJ-MINE — browser mining is reachable from wherever you are', () => 
     fresh()
     // THE SCENARIO FOR THE DEFECT ITSELF (micro-org#362). The owner's report: "by default mine bar
     // start ltc instead of ember". It did, and it was not a bug in a branch — the bar had no EMBER
-    // branch at all, and `summary.chains.find(isMineable)` is LTC and only LTC on this estate,
-    // because bitcoind and dogecoind are still in initial block download.
+    // branch at all, and `summary.chains.find(isMineable)` is LTC and only LTC on this estate.
+    // Still true on 2026-08-11, for a changed reason: `POOL_CHAINS=ltc,btc`, bitcoind is at tip and
+    // the pool holds a BTC template, but it refuses the chain to browsers (micro-org#360) so
+    // `isMineable` passes over it. DOGE is not served at all.
     //
     // The fixture publishes a perfectly good, perfectly startable LTC endpoint on purpose. Nothing
     // here refuses the pool; the pool is simply not what one press is for.

@@ -133,12 +133,14 @@ export function loadPool(signal?: AbortSignal): Promise<PoolSummary> {
  *     change it, today or in an hour.
  *   * `not-ready` — the pool holds no template for this chain, so it has no work to hand out. In
  *     practice this is a node still downloading its chain. The example this comment used to give
- *     was bitcoind mid-IBD on 2026-08-09, and it has expired twice over: bitcoind reached tip on
- *     2026-08-10, and mainnet's pool no longer offers BTC at all — measured 2026-08-11,
- *     `POOL_CHAINS=ltc` and `GET /v1/pool` returns exactly one chain, `ltc`, `ready: true`. So
- *     `not-ready` currently describes nothing on this deployment, which is the healthy state and
- *     not a reason to delete the branch: it is what a reader sees in the minutes after a node
- *     restarts, and it fixes itself.
+ *     was bitcoind mid-IBD on 2026-08-09, and it has expired: bitcoind reached tip on 2026-08-10,
+ *     and mainnet's pool now SERVES BTC rather than withholding it — measured 2026-08-11,
+ *     `POOL_CHAINS=ltc,btc` and `GET /v1/pool` returns both chains with `ready: true`, `ltc` at
+ *     height 3,157,960. BTC is still unstartable from a browser, but by `hardware-only` and not by
+ *     this branch, which is the whole reason the two are separate answers. So `not-ready` currently
+ *     describes nothing on this deployment, which is the healthy state and not a reason to delete
+ *     the branch: it is what a reader sees in the minutes after a node restarts, and it fixes
+ *     itself.
  *
  * A chain the operator has not configured at all is a FOURTH case and is none of these — it simply
  * does not appear in the response, so nothing renders and nothing needs a reason.

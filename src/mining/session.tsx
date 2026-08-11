@@ -45,11 +45,15 @@
  *     the reason, so the reader arrives at the two self-custody screens rather than at a key they
  *     never agreed to hold. `mining/bar.ts` owns those four sentences.
  *
- * **It never falls back to a pool chain.** LTC is the first chain `isMineable` returns on this
- * deployment (bitcoind and dogecoind are still in initial block download, so the pool holds no
- * template for either) and it was what a bare press started, which is the defect: the estate's own
- * chain was the one thing the bar would not mine. A pool chain is now started only by naming it —
- * `start(chain)` from the mining page's picker, which is what the picker is for.
+ * **It never falls back to a pool chain.** LTC is still the first chain `isMineable` returns on
+ * this deployment, but not for the reason this used to give. Measured 2026-08-11 at bitcoin height
+ * 961,975: mainnet runs `POOL_CHAINS=ltc,btc`, bitcoind reached tip on 2026-08-10, and the pool
+ * holds a template for BTC — `ready: true`. `isMineable` skips it anyway, because the pool refuses
+ * the chain to browsers (`browserMining.available` false) and sends it to mining hardware over
+ * Stratum instead (micro-org#360). dogecoind is still in initial block download and the pool does
+ * not serve DOGE at all. So LTC was what a bare press started, which is the defect: the estate's
+ * own chain was the one thing the bar would not mine. A pool chain is now started only by naming
+ * it — `start(chain)` from the mining page's picker, which is what the picker is for.
  *
  * ── AND THE POOL'S TROUBLES ARE NO LONGER THE BAR'S ───────────────────────────────────────────
  *

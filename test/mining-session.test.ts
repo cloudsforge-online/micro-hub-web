@@ -12,8 +12,9 @@
  *      here, and the difference between "started EMBER" and "started the pool's first startable
  *      chain" is one line in this module. It used to be the second (micro-org#362): the estate's
  *      own chain was the one thing its own bar would not mine, on a deployment where the pool's
- *      first startable chain is LTC and only LTC because bitcoind and dogecoind are still in
- *      initial block download.
+ *      first startable chain is LTC and only LTC. Still LTC and only LTC on 2026-08-11, for a
+ *      changed reason: `POOL_CHAINS=ltc,btc`, bitcoind is at tip and the pool holds a BTC template,
+ *      but the chain is refused to browsers (micro-org#360) so `isMineable` passes over it.
  *   2. **How many miners exist.** The EMBER miner used to live in `EmberPanel`'s local state, so
  *      the mining page owned one and — once the bar could start EMBER — the bar would own another.
  *      Two `Miner`s grinding at once is not a cosmetic duplicate: it is double the machine's load
