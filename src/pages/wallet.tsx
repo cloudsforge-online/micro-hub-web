@@ -56,20 +56,33 @@ export function WalletPage() {
       <header className="wt-page__head">
         <h1 className="wt-page__title">Wallet</h1>
         {/*
-          The list is the assets `micro-wallet` will move — `CHAIN_ASSETS` in `lib/money.ts` —
-          written out in words rather than rendered from it, because a sentence assembled from an
-          array reads like one and this is the first paragraph on the page. It moves when that
-          array moves: Dogecoin and Ethereum Classic were added on 2026-08-08 with the estate's
-          `feat/assets-doge-etc` and this sentence went with them. What it does NOT claim is that
-          every one of them can be sent today — see `lib/money.ts` on why that is a fact about the
-          deployment rather than about the asset, and why the panels below are gated on a real
-          balance and on what the service answers rather than on this prose.
+          THIS LIST WAS `CHAIN_ASSETS` FROM `lib/money.ts` AND IT IS NOT ANY MORE (micro-org#421).
+
+          It read "We hold EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and
+          XRP for you" — the eight assets Send OFFERS, which is the right list for a menu and the
+          wrong one for the verb "hold". Measured on the mainnet estate 2026-08-11, micro-indexer
+          runs three followers (EMBER, BTC, LTC) and no address has ever been issued on ETH, ETC,
+          SOL or XRP: there is nothing of a reader's on those chains for us to be holding. The
+          owner caught the identical sentence on the public marketing site the same day. (Named
+          that way and not by hostname because the estate rule greps this file for one, comments
+          included, and it is right to.)
+
+          So the prose names what a deposit can arrive in — `CREDITABLE_ASSETS` in
+          `contracts/packages/chain`, written out in words rather than rendered from it, because a
+          sentence assembled from an array reads like one and this is the first paragraph on the
+          page. Dogecoin is named as NEXT rather than held, which is what it is: the code is
+          written and this estate's node is still catching up.
+
+          The MENU below is unchanged and stays eight, for the reason `lib/money.ts` argues at
+          length — a chain that is offered and refused with a reason is honest, and the panels are
+          gated on a real balance and on what the service answers rather than on this prose. What
+          changed is only the sentence that used the menu to make a custody claim.
         */}
         <p className="wt-page__lede">
-          We hold EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and XRP for
-          you, so sending, receiving and spending across CloudsForge take no key handling on your
-          part. Send anything out and the network fee is taken from the amount rather than added to
-          it, and the figure that will actually land is shown before you commit.
+          We hold EMBER, Bitcoin and Litecoin for you — Dogecoin is next — so sending, receiving and
+          spending across CloudsForge take no key handling on your part. Send anything out and the
+          network fee is taken from the amount rather than added to it, and the figure that will
+          actually land is shown before you commit.
         </p>
         {/*
           Every depth here is `confirmations` from `contracts/packages/chain/src/index.ts`, which is
