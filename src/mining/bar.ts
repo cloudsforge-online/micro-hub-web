@@ -10,10 +10,14 @@
  *
  * EMBER, when EMBER can be started safely, and otherwise NOTHING. This function used to end with
  * an unconditional `idle` whose `onStart` started `summary.chains.find(isMineable)` — the pool's
- * first startable chain, which on this deployment is LTC and only LTC, because bitcoind and
- * dogecoind are still in initial block download. So the bar's one press mined Litecoin, and the
- * estate's own chain was the one thing it would not mine. `mining/session.tsx` carries the full
- * argument and the mainnet measurement behind it.
+ * first startable chain, which on this deployment is still LTC and only LTC, though no longer for
+ * the reason first written here. bitcoind reached tip on 2026-08-10 and mainnet has served BTC
+ * since release 2026.08.16; measured 2026-08-11 at height 961,975 the pool answers `btc` with
+ * `ready: true` AND `browserMining: {available: false}`, because BTC is offered to mining HARDWARE
+ * over Stratum and refused to a browser on purpose (micro-org#360). dogecoind is still in initial
+ * block download and the pool does not serve DOGE at all. So the bar's one press mined Litecoin,
+ * and the estate's own chain was the one thing it would not mine. `mining/session.tsx` carries the
+ * full argument and the mainnet measurement behind it.
  *
  * The judgement that used to keep EMBER out of the bar — starting it mints a bearer key the reader
  * never read about — is true only when the reward has to STAY on that key. When the account has a
