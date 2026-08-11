@@ -781,12 +781,16 @@ export function RegisterPage() {
         {/*
           The same list as the Wallet page's lede, and it has to stay the same list: two surfaces
           naming different assets is a discrepancy a reader notices before they notice either
-          claim. Both follow `CHAIN_ASSETS` in `lib/money.ts`, which follows `micro-wallet`.
+          claim. Both followed `CHAIN_ASSETS` in `lib/money.ts` and both now follow
+          `CREDITABLE_ASSETS` in `contracts/packages/chain` — see the wallet page for why the verb
+          "hold" may not take the Send menu's list (micro-org#421). This is the page where somebody
+          decides to sign up, so it is the worse of the two places to have named five chains we
+          have never issued them an address on.
         */}
         <p className="wt-note">
-          This is the only account you will need. It carries one balance across every product,
-          holds EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and XRP for
-          you, and keeps a single record of everything you have done. Setting it up costs nothing.
+          This is the only account you will need. It carries one balance across every product, holds
+          EMBER, Bitcoin and Litecoin for you with Dogecoin next, and keeps a single record of
+          everything you have done. Setting it up costs nothing.
         </p>
         {refusal && <RefusalNotice refusal={refusal} />}
 
