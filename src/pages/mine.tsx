@@ -93,8 +93,8 @@ const CREDIT_POLL_MS = 30_000
  *
  * ── WHY THIS SPLIT EXISTS (micro-org#406) ─────────────────────────────────────────────────────
  *
- * MEASURED 2026-08-11 on `hub-testnet.cloudsforge.online/mine`: `GET /v1/pool` against
- * `pool-testnet.<apex>` answers **502**, permanently, because this estate runs no pool container at
+ * MEASURED 2026-08-11 on the TESTNET hub's `/mine`: `GET /v1/pool` against that estate's
+ * `pool-<env>.<apex>` answers **502**, permanently, because this estate runs no pool container at
  * all — `profiles: ["pool"]` in the estate compose file, and `compose/testnet.env` does not name
  * that profile. This page then rendered `<Failed>` FOR THE WHOLE PAGE, so a reader on the network
  * where EMBER is the only thing a browser can usefully mine was shown an error about a service they

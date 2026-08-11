@@ -4,8 +4,8 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * This is the only thing this bundle learns from its container rather than from `window.location`,
  * from hub-api or from another surface's API, and it took a measured defect to justify the
- * exception. micro-org#406, 2026-08-11: `hub-testnet.cloudsforge.online/mine` could not load pool
- * status, because `GET https://pool-testnet.cloudsforge.online/v1/pool` answers **502** and always
+ * exception. micro-org#406, 2026-08-11: the TESTNET hub's `/mine` could not load pool status,
+ * because `GET /v1/pool` against that estate's own pool surface answers **502** and always
  * will. `MinePage` renders `<Failed>` for the whole page when that read fails, so the one thing on
  * this page that has nothing to do with the pool — EMBER, mined directly against the network in
  * this tab — was unreachable behind an error about a service the reader was not asking for.
@@ -16,6 +16,11 @@
  * Traefik has no backend to forward `/v1` to. That is deliberate and permanent — micro-pool
  * validates `POOL_NETWORK` against what the node reports and requires a node URL and a payout
  * address per chain, so a pool started on a testnet estate refuses to boot.
+ *
+ * (Hostnames are described here, never written out. The `rules` job in CI greps `src/` for a
+ * literal estate apex and does NOT strip comments — deliberately, because a rule you can evade by
+ * writing the string in a comment is a rule that ends up written in comments — and this bundle is
+ * not served only by the estate this defect was measured on.)
  *
  * ── WHAT THIS PAGE OWES A READER THAT `pool-web` DOES NOT ─────────────────────────────────────
  *
