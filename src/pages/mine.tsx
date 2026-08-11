@@ -64,7 +64,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import type { SweepOutcome } from '../lib/embersweep.ts'
-import { browserMiningReason, loadPool, loadShares, loadWorkers, miningBlocker, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
+import { browserMiningReason, loadPool, loadShares, loadWorkers, mergedUnavailability, miningBlocker, stratumUrl, type MergedChain, type PoolChain, type PoolShare, type PoolSummary, type PoolWorker } from '../lib/pool.ts'
 import { useResource } from '../lib/resource.ts'
 import { hashesPerDifficulty } from '../lib/stratum.ts'
 import type { PoolMinerSnapshot } from '../mining/pool-miner.ts'
@@ -253,10 +253,12 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
         {blocker === 'hardware-only' ? (
           <>
             <p className="wt-note">{browserMiningReason(chain) ?? ''}</p>
-            {typeof chain.stratumEndpoint === 'string' && chain.stratumEndpoint !== '' ? (
+            {stratumUrl(chain) !== null ? (
               <p className="wt-note">
-                Mining hardware can point at <code className="cf-num">{chain.stratumEndpoint}</code>{' '}
-                and its shares are credited to your account in the same way a browser's would be.
+                Mining hardware can point at <code className="cf-num">{stratumUrl(chain)}</code>{' '}
+                with your payout address as the username — <code className="cf-num">&lt;address&gt;.&lt;worker&gt;</code>,
+                split on the first dot — and any password at all, which the pool never reads. Its
+                shares are credited in the same way a browser's would be.
               </p>
             ) : (
               <p className="wt-note">
@@ -282,6 +284,7 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
             has work to hand out.
           </p>
         )}
+        <MergedNote chain={chain} />
         <PoolFacts chain={chain} summary={summary} />
       </section>
     )
@@ -322,10 +325,86 @@ function PoolPanel({ chain, summary }: { chain: PoolChain; summary: PoolSummary 
         snapshot={snapshot}
       />
 
+      <MergedNote chain={chain} />
+
       {snapshot && <PoolNumbers chain={chain} snapshot={snapshot} summary={summary} />}
       <PoolFacts chain={chain} summary={summary} />
       {snapshot?.account && <Credited chain={chain.chain} account={snapshot.account} />}
     </section>
+  )
+}
+
+/**
+ * The chain this one's work is ALSO worth, and whether that is true at this moment.
+ *
+ * ── WHY THIS IS ON THE BROWSER-MINING PAGE AND NOT ONLY ON THE POOL CONSOLE ───────────────────
+ *
+ * Because merge mining is invisible. It changes nothing a miner does, nothing they configure and
+ * nothing in any other number on this page: a tab hashing scrypt for Litecoin against a pool with
+ * `POOL_LTC_AUX_CHAINS=doge` produces the identical hashrate, the identical shares and the
+ * identical difficulty as one hashing against a pool without it. The only difference is what a
+ * solved block is worth, and there is no measurement of that on screen. So a reader who is never
+ * told simply never finds out — and a reader who hears about it elsewhere goes looking for the
+ * configuration they must have missed, which does not exist.
+ *
+ * Rendered in BOTH panel states, including the blocked one. A chain a browser may not mine can
+ * still be merge-mining for the hardware pointed at it, and the paragraph above about pointing
+ * firmware at a Stratum address is the paragraph a reader most needs this beside.
+ *
+ * ── THE THREE STATES, AND WHY THE MIDDLE ONE IS THE POINT ─────────────────────────────────────
+ *
+ *   1. no merged chain (null or absent) — nothing is rendered. Silence is the honest answer, and a
+ *      "no merge mining here" line would be noise on every deployment that has none.
+ *   2. configured and committing — you are mining both, and the work in your tab right now says so.
+ *   3. configured and NOT committing — somebody configured it and the aux node is not cooperating.
+ *      This is the estate's own state today, and it is the state a page could most easily get
+ *      wrong: `committed` is read off micro-pool's live job registry rather than off its
+ *      configuration, so printing state 2 here would be claiming an asset the miner is not earning.
+ *
+ * What it does NOT say, in any state, is that the merged chain pays anything. Payouts are not
+ * implemented for either chain, the note above this one says so for the parent, and a second asset
+ * named without that caveat repeated is a second asset a reader reads as money.
+ */
+function MergedNote({ chain }: { chain: PoolChain }) {
+  const merged: MergedChain | null = chain.merged ?? null
+  if (merged === null) return null
+
+  return (
+    <div className="wt-panel__sub">
+      <h3>
+        {merged.name} is merge-mined from this work
+      </h3>
+      <p className="wt-prose">
+        The pool commits a {merged.name} block header into the {chain.name} coinbase, so one
+        {' '}{chain.algorithm} solution can be a block on both chains at the same instant.{' '}
+        <strong>There is nothing to configure.</strong> No second address, no second worker, no
+        second connection and no extra hashing — if you are mining {chain.asset} here you are
+        already doing it, and every number on this page is unchanged by it.
+      </p>
+      {merged.committed ? (
+        <p className="wt-prose">
+          The work being handed out right now carries the commitment.{' '}
+          {merged.height !== null && (
+            <>
+              The pool is building on {merged.name} height{' '}
+              <span className="cf-num">{merged.height.toLocaleString('en')}</span>.{' '}
+            </>
+          )}
+          {/*
+            Said in the same breath as the good news, because "you are also mining DOGE" is the
+            sentence most likely to be read as "you are also earning DOGE". Neither chain pays.
+          */}
+          It is worth no more than the parent is: nothing is paid out on either chain yet.
+        </p>
+      ) : (
+        <p className="wt-note wt-note--caveat">
+          It is not happening at the moment.{' '}
+          {mergedUnavailability(merged.unavailability, merged.name)} Your {chain.name} mining is
+          unaffected — every number on this page is still true, and this is the one thing that is
+          not happening.
+        </p>
+      )}
+    </div>
   )
 }
 

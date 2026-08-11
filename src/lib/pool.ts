@@ -36,6 +36,56 @@ const pool = <T,>(path: string, opts?: RequestOptions): Promise<T> => request<T>
 
 /* ══════════════════════════════ GET /v1/pool ══════════════════════════════ */
 
+/**
+ * Where a miner points hardware: both halves, published together or not at all.
+ *
+ * Mirrors `pool/src/env.ts`'s interface of the same name field for field. `test/pool-source.test.ts`
+ * reads that declaration out of micro-pool's source and compares it with this one, because the two
+ * being the same shape is a claim about another repository and this file is not allowed to merely
+ * assert it.
+ */
+export interface StratumEndpoint {
+  readonly host: string
+  readonly port: number
+}
+
+/**
+ * THE SECOND CHAIN THIS ONE'S WORK IS ALSO WORTH, OR NULL BECAUSE NOBODY CONFIGURED ONE.
+ *
+ * Dogecoin under Litecoin, by AuxPoW: the pool commits the Dogecoin header into the Litecoin
+ * coinbase, so one scrypt solution can be a block on both chains at the same instant. A miner
+ * already pointed at Litecoin — including a browser tab on this page — is already merge-mining, and
+ * that is exactly why it has to be SAID somewhere. There is no second address, no second worker, no
+ * second connection and no extra hashrate; nothing appears in any number on this page to hint at
+ * it, so a merged chain that is not printed is a merged chain the miner never learns about.
+ *
+ * Null and `committed: false` are different answers and collapsing them is the mistake to avoid.
+ * Null means this deployment merge-mines nothing at all. `committed: false` means an operator
+ * configured it and it is not currently happening — the estate's own state on 2026-08-11, where the
+ * AuxPoW path is merged in micro-pool and `POOL_LTC_AUX_CHAINS` stays unset while dogecoind is
+ * still in initial block download. A panel that showed "you are also mining DOGE" for the second
+ * case would be telling a miner they are earning an asset they are not.
+ *
+ * Optional as well as nullable, because a deployment running a micro-pool older than the AuxPoW
+ * work omits the key entirely, and absent means the same thing as null: nothing merged, say nothing.
+ */
+export interface MergedChain {
+  readonly chain: string
+  readonly name: string
+  readonly asset: string
+  /** True only while the jobs the pool is handing out right now actually carry this commitment. */
+  readonly committed: boolean
+  /**
+   * Why it is not committing, in micro-pool's own vocabulary — `syncing`, `no-peers`, `refused` or
+   * `unreachable`. Typed as a bare string, like `chain`, so the service growing a fifth reason is
+   * not a type error in a repository whose only job is to display it. See `mergedUnavailability()`.
+   */
+  readonly unavailability: string | null
+  readonly height: number | null
+  /** The aux chain's difficulty measured on the PARENT'S proof of work — its only meaningful unit. */
+  readonly networkDifficulty: number | null
+}
+
 export interface PoolChain {
   readonly chain: string
   readonly name: string
@@ -44,8 +94,34 @@ export interface PoolChain {
   readonly algorithm: PowAlgorithm
   /** The port the Stratum listener BINDS. Honest about itself, useless as half of an address. */
   readonly stratumPort: number
-  /** A published `stratum+tcp://…`, or null. For firmware, not for this page. */
-  readonly stratumEndpoint: string | null
+  /**
+   * WHERE FIRMWARE POINTS, AS TWO FIELDS — OR NULL BECAUSE NO OPERATOR HAS PUBLISHED ONE.
+   *
+   * ── THIS WAS TYPED `string | null` AND THE SERVICE HAS NEVER SENT A STRING ────────────────────
+   *
+   * `pool/src/env.ts` declares `interface StratumEndpoint { host: string; port: number }` and
+   * `stratumEndpointOf()` returns that object or null; `pool/src/server.ts` copies it into
+   * `/v1/pool` verbatim. So the wire value is an OBJECT, and the declaration here was a claim about
+   * another repository that the other repository has never satisfied.
+   *
+   * TypeScript could not catch it — the response is `unknown` until it is cast — and the failure was
+   * therefore silent and, worse, LATENT. `src/pages/mine.tsx` gated the hardware address on
+   * `typeof chain.stratumEndpoint === 'string'`, which is false for an object, so the page would
+   * have gone on printing "this deployment publishes no Stratum address for BTC either" on the
+   * exact day an operator published one — telling the one reader who has real hardware, and for
+   * whom that address is the only useful thing on the page, that it does not exist. Nothing would
+   * have gone red: `test/mine.test.ts` asserted the branch with a fixture string
+   * (`'stratum+tcp://pool.example.test:3333'`) that micro-pool cannot produce, so the suite was
+   * checking that the app renders a value the service never sends.
+   *
+   * The pair is all-or-nothing BY CONSTRUCTION on the service side — `stratumEndpointOf` returns
+   * null unless it has both halves — for the reason micro-org#285 records: a host with no port, or
+   * a port with no host, composes into a connection string that looks complete and cannot connect,
+   * and its owner debugs their own hardware for an evening instead of asking a question. So this
+   * page composes the URL from the two halves it was given (`stratumUrl()` below) and NEVER from
+   * `window.location`, `stratumPort`, or half of either.
+   */
+  readonly stratumEndpoint: StratumEndpoint | null
   /**
    * THE COMPLETE `wss://…` URL, OR NULL. THE ONE FIELD THIS PAGE MUST NOT SECOND-GUESS.
    *
@@ -98,6 +174,56 @@ export interface PoolChain {
   readonly workersInWindow: number
   /** Hashes per second across the whole pool for this chain, over `windowSeconds`. */
   readonly hashrateEstimate: number
+  /** The chain merge-mined from this one's work, or null/absent when there is none. */
+  readonly merged?: MergedChain | null
+}
+
+/**
+ * The address firmware is pointed at, composed from the two halves the service published.
+ *
+ * Null in, null out — and null is the ordinary answer, true of this estate on 2026-08-11 for both
+ * chains. What this function must never do is fill in a missing half from anything on this page:
+ * the console's hostname is served through a Cloudflare Tunnel and then Traefik, neither of which
+ * forwards a raw TCP stream, and `stratumPort` is the inside of a port mapping onto a listener
+ * bound to loopback. Both would compose an address that looks right and cannot connect, which is
+ * micro-org#285 and is worse than printing nothing.
+ */
+export function stratumUrl(chain: PoolChain): string | null {
+  const endpoint = chain.stratumEndpoint
+  if (!endpoint || !endpoint.host || !Number.isFinite(endpoint.port)) return null
+  return `stratum+tcp://${endpoint.host}:${endpoint.port}`
+}
+
+/**
+ * Why a configured merged chain is not being committed, expanded into a sentence.
+ *
+ * micro-pool reports `syncing`, `no-peers`, `refused` or `unreachable`. Each is precise and means
+ * nothing to somebody who has just been told they are not earning an asset, and the difference
+ * between "wait" and "tell an operator" is the whole value of the field being published at all.
+ *
+ * An unrecognised word is rendered VERBATIM inside a sentence rather than swallowed, so the service
+ * growing a fifth reason degrades to showing it rather than to showing nothing — which would put
+ * the page back in the state this field exists to end: not committing, no reason given.
+ *
+ * The wording is deliberately the same as `pool-web/src/lib/format.ts`'s. Two CloudsForge surfaces
+ * explaining the same pool state in two different vocabularies is how a reader concludes one of
+ * them is broken.
+ */
+export function mergedUnavailability(reason: string | null, name: string): string {
+  switch (reason) {
+    case 'syncing':
+      return `The ${name} node is still downloading its chain. Until it has caught up it will not hand out work to merge, and it does not know how long that will take.`
+    case 'no-peers':
+      return `The ${name} node has no peers. It is running, but a block found against the work it would give is a block nobody could be told about.`
+    case 'refused':
+      return `The ${name} node refused to give the pool work to merge. It is reachable and it is answering — this needs an operator rather than time.`
+    case 'unreachable':
+      return `The pool cannot reach the ${name} node at all. This needs an operator rather than time.`
+    case null:
+      return `The pool did not say why, which is itself worth reporting to an operator.`
+    default:
+      return `The pool gave the reason “${reason}”, which this page does not have a longer explanation for.`
+  }
 }
 
 export interface PoolSummary {

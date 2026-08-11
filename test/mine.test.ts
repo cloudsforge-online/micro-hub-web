@@ -490,7 +490,12 @@ describe('a chain the pool refuses to browsers on purpose', () => {
   })
 
   it('points hardware at the Stratum endpoint when the operator published one', async () => {
-    const published = { ...hardwareOnly(), stratumEndpoint: 'stratum+tcp://pool.example.test:3333' }
+    // The shape micro-pool actually sends: `pool/src/env.ts`'s `StratumEndpoint`, an object of a
+    // host and a port. This fixture was the STRING `'stratum+tcp://pool.example.test:3333'` for as
+    // long as `src/lib/pool.ts` mistyped the field, so the test passed while asserting that the app
+    // renders a value the service has never produced — and the page's real behaviour on a published
+    // endpoint (print nothing, and claim there is none) went unmeasured.
+    const published = { ...hardwareOnly(), stratumEndpoint: { host: 'pool.example.test', port: 3333 } }
     await withScreen(
       page(h(MinePage), '/mine'),
       { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary({ chains: [published] })) },
@@ -560,6 +565,131 @@ describe('a chain the pool has published an endpoint for', () => {
         assert.match(text, /51\.2 kH\/s/, 'the pool hashrate is shown without a unit')
         assert.match(text, /Payouts implemented/, 'the payout flag is not stated as a fact')
         s.clean('the numbers')
+      },
+    )
+  })
+})
+
+/* ══════════════════════════════ 4b. the merged chain ══════════════════════════════ */
+
+/**
+ * MERGE MINING IS INVISIBLE, WHICH IS THE ENTIRE REASON THESE ASSERTIONS EXIST.
+ *
+ * A tab hashing scrypt against a pool that merge-mines Dogecoin produces exactly the same hashrate,
+ * exactly the same shares and exactly the same difficulty as one hashing against a pool that does
+ * not. Nothing in `PoolNumbers`, `PoolFacts` or `Projection` moves. So there is no number on this
+ * page that could go wrong if the page said nothing at all — the failure mode is silence, and
+ * silence is what shipped: `merged` was absent from `PoolChain` entirely, so the one estate surface
+ * where a person actually starts mining Litecoin never mentioned the second chain their work was
+ * worth. Only `pool-web` did, and that is the console for people who already have hardware.
+ *
+ * The three states are asserted separately because the middle one is the one a page gets wrong by
+ * being optimistic, and it is the estate's own state today: AuxPoW is merged in micro-pool and
+ * `POOL_LTC_AUX_CHAINS` is unset while dogecoind is in initial block download, so `/v1/pool`
+ * answers `merged: null` on mainnet and would answer `committed: false` the moment it is switched
+ * on with the node still behind.
+ */
+describe('a chain with a merge-mined chain under it', () => {
+  const doge = (over: Partial<NonNullable<PoolChain['merged']>> = {}) => ({
+    chain: 'doge',
+    name: 'Dogecoin',
+    asset: 'DOGE',
+    committed: true,
+    unavailability: null,
+    height: 5_600_001,
+    networkDifficulty: 12_345_678,
+    ...over,
+  })
+
+  it('says nothing at all when the pool merge-mines nothing', async () => {
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(summary()) },
+      async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', /Litecoin/))
+        await s.settle()
+        // Silence, not a "no merge mining here" line. The default fixture carries no `merged` key
+        // at all, which is also what a micro-pool older than the AuxPoW work sends.
+        assert.doesNotMatch(s.text(), /merge-mined|Dogecoin/i, 'a pool with no aux chain invented one')
+        s.clean('no merged chain')
+      },
+    )
+  })
+
+  it('tells a browser miner they are already mining it, and that there is nothing to configure', async () => {
+    const merged = summary({ chains: [chain({ merged: doge() })] })
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(merged) },
+      async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', /Litecoin/))
+        await s.settle()
+        const text = s.text()
+        assert.match(text, /Dogecoin is merge-mined from this work/i, 'the merged chain is not named')
+        assert.match(
+          text,
+          /nothing to configure/i,
+          'a reader told about a second chain is left looking for the setting they must have missed',
+        )
+        assert.match(text, /no extra hashing/i, 'merge mining is allowed to read as free extra work')
+        // The second asset must not arrive without the caveat the first one carries. A named asset
+        // with no "nothing is paid" beside it is read as money by everybody who sees it.
+        assert.match(text, /nothing is paid out on either chain yet/i, 'the merged chain implies a payout')
+        s.clean('a committed merged chain')
+      },
+    )
+  })
+
+  it('distinguishes configured-and-not-committing from mining it, and gives the pool’s reason', async () => {
+    const merged = summary({
+      chains: [chain({ merged: doge({ committed: false, unavailability: 'syncing', height: null }) })],
+    })
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(merged) },
+      async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', /Litecoin/))
+        await s.settle()
+        const text = s.text()
+        assert.match(text, /not happening at the moment/i, 'a chain that is not being mined is claimed as mined')
+        assert.match(
+          text,
+          /still downloading its chain/i,
+          'the pool published a reason and the page dropped it',
+        )
+        assert.match(
+          text,
+          /Litecoin mining is unaffected/i,
+          'an aux-chain fault is allowed to read as the parent being broken',
+        )
+        assert.doesNotMatch(
+          text,
+          /carries the commitment/i,
+          'the work in flight is claimed to carry a commitment it does not',
+        )
+        s.clean('a configured but uncommitted merged chain')
+      },
+    )
+  })
+
+  it('renders an unrecognised reason verbatim rather than swallowing it', async () => {
+    const merged = summary({
+      chains: [chain({ merged: doge({ committed: false, unavailability: 'wedged' }) })],
+    })
+    await withScreen(
+      page(h(MinePage), '/mine'),
+      { url: `${ORIGIN}/mine`, storage: SIGNED_IN, routes: poolRoutes(merged) },
+      async (s) => {
+        await s.settle()
+        await s.click(s.byRole('radio', /Litecoin/))
+        await s.settle()
+        // micro-pool is free to grow a fifth reason. A page that dropped it would go back to
+        // reporting the state this field exists to end: not committing, no reason given.
+        assert.match(s.text(), /wedged/, 'a reason this page has no sentence for was dropped silently')
+        s.clean('an unrecognised merged reason')
       },
     )
   })
