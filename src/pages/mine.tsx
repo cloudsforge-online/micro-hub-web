@@ -850,7 +850,7 @@ function EmberPanel() {
   const [saved, setSaved] = useState(false)
 
   const key = session.emberKey
-  const { hashrate, height, accepted, swept, following, notice } = session.emberSnapshot
+  const { hashrate, height, acceptedTotal, swept, following, notice } = session.emberSnapshot
   // Scoped to the EMBER miner rather than to the session, so this panel does not report a pool
   // chain's session as its own — the same scoping `PoolPanel` does with `session.chain`.
   const running = session.target === 'ember' && session.running
@@ -986,7 +986,8 @@ function EmberPanel() {
       <dl className="wt-facts">
         <Fact label="Hashrate, measured here" value={rate(hashrate)} />
         <Fact label="Chain height being mined" value={height === null ? 'not read yet' : `${height.toLocaleString('en')}`} />
-        <Fact label="Blocks this tab found" value={`${accepted.length}`} />
+        {/* A counter, not the length of a capped list — which is why this used to stop at 8. */}
+        <Fact label="Blocks this tab found" value={`${acceptedTotal}`} />
       </dl>
 
       {payingIn !== null && swept.length > 0 && (
