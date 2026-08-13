@@ -98,7 +98,7 @@ function useBarMining(): MiningControlProps | undefined {
             subject: 'ember',
             readout: {
               hashrate: session.emberSnapshot.hashrate,
-              accepted: session.emberSnapshot.accepted.length,
+              accepted: session.emberSnapshot.acceptedTotal,
             },
           }
         : { subject: 'pool', readout: session.snapshot }

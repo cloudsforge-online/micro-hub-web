@@ -207,8 +207,19 @@ export interface EmberSnapshot {
   readonly hashrate: number
   /** The height being mined, or null before the first template is read. */
   readonly height: number | null
-  /** Most recent first, capped — the page shows a list, not a ledger. */
-  readonly accepted: readonly { readonly height: number }[]
+  /**
+   * How many blocks this tab has found, ALL of them.
+   *
+   * This replaces an `accepted` array that was capped at `EMBER_HISTORY` (8) as a display buffer
+   * and then COUNTED by two surfaces — "Blocks this tab found" on the mine page and the shell
+   * bar's badge. Both therefore stopped at 8: a tab that had found thirty blocks reported eight,
+   * on the single number the mining page exists to report.
+   *
+   * The array is gone rather than kept beside this, because nothing ever rendered it. It existed
+   * only to be measured, which is exactly what made the wrong measurement available. A counter
+   * cannot be truncated, so the defect cannot come back.
+   */
+  readonly acceptedTotal: number
   readonly swept: readonly Swept[]
   /** Is the tip arriving live over `GET /events`, or is the fallback poll carrying it? */
   readonly following: boolean
@@ -219,13 +230,13 @@ const EMBER_IDLE: EmberSnapshot = {
   running: false,
   hashrate: 0,
   height: null,
-  accepted: [],
+  acceptedTotal: 0,
   swept: [],
   following: false,
   notice: null,
 }
 
-/** How many accepted blocks and sweep outcomes are kept. The page shows a recent list. */
+/** How many sweep outcomes are kept. The page shows a recent list of them. */
 const EMBER_HISTORY = 8
 
 export interface MiningSession {
@@ -631,10 +642,7 @@ export function MiningProvider({ children, create, createEmber }: MiningProvider
         )
         instance.addEventListener('accepted', (event) => {
           const detail = (event as CustomEvent).detail as { height: number }
-          setEmberSnapshot((prev) => ({
-            ...prev,
-            accepted: [detail, ...prev.accepted].slice(0, EMBER_HISTORY),
-          }))
+          setEmberSnapshot((prev) => ({ ...prev, acceptedTotal: prev.acceptedTotal + 1 }))
           // The whole of micro-org#299, in one line and only when there is somewhere to send it.
           // `sweep` is a no-op in the self-custody mode, where the reward is meant to stay put.
           sweep(detail.height)
