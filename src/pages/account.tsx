@@ -204,6 +204,9 @@ type Stage =
 export function SignInPage() {
   const returnTo = useReturnTo()
   const complete = useCompletion()
+  // Set by `attemptSilentSignIn` (@cloudsforge/ui), never by a person following a link.
+  const [searchParams] = useSearchParams()
+  const silent = searchParams.get('silent') === '1'
 
   const [stage, setStage] = useState<Stage>({ at: 'password' })
   const [identifier, setIdentifier] = useState('')
@@ -260,7 +263,22 @@ export function SignInPage() {
     if (handedOff.current) return
     const accessToken = getAccessToken()
     const refreshToken = getRefreshToken()
-    if (!hasSession() || !accessToken || !refreshToken) return
+    if (!hasSession() || !accessToken || !refreshToken) {
+      // ── ANSWERING A SILENT PROBE ──────────────────────────────────────────────────────────────
+      //
+      // `silent=1` means no human asked for this page: another surface found the shared hint
+      // cookie, guessed there was a session here, and sent the browser to collect it. There is
+      // none. Showing the sign-in form would be the defect the probe exists to avoid, in reverse
+      // — a reader who never asked to sign in, staring at a login screen they did not navigate
+      // to. So bounce straight back saying so, and let the caller clear its hint.
+      if (silent) {
+        handedOff.current = true
+        const back = new URL(returnTo)
+        back.hash = 'cf_sso=none'
+        window.location.assign(back.toString())
+      }
+      return
+    }
     handedOff.current = true
     const granted: SessionGranted = {
       kind: 'session',
@@ -271,7 +289,7 @@ export function SignInPage() {
     }
     setStage({ at: 'handing-off', to: returnTo })
     void finish(granted)
-  }, [finish, returnTo])
+  }, [finish, returnTo, silent])
 
   /**
    * One credential attempt per press, on both steps of this form.
