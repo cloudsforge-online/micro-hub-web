@@ -349,6 +349,17 @@ export interface Screen {
   tabbables(): Element[]
   /** Let effects, promises and timers settle. */
   settle(ms?: number): Promise<void>
+  /**
+   * Do something OUTSIDE React that React reacts to, and flush.
+   *
+   * Every other verb here is a user gesture, which is what a scenario should nearly always use.
+   * This one is for the few pieces of state that a browser changes without a click — module state
+   * a provider subscribes to (`lib/viewed.ts`'s network switch, read above the router where no
+   * remount reaches it). Calling such a setter bare leaves React's update outside `act`, which
+   * `clean()` reports as an unexplained console error, so the scenario would fail on a warning
+   * rather than on its subject.
+   */
+  fromOutside(fn: () => void): Promise<void>
   /** Re-render with a different element, keeping the same document. */
   rerender(element: ReactElement): Promise<void>
   /** Navigate, the way the back button does, and flush. */
@@ -860,6 +871,12 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
       return screen.focused()
     },
     settle: flush,
+    async fromOutside(fn) {
+      await act(async () => {
+        fn()
+      })
+      await flush()
+    },
     async rerender(next) {
       await act(async () => {
         root.render(wrap(next))
