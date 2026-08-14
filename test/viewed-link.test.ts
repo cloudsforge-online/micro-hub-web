@@ -93,3 +93,42 @@ describe('the network a link arrived carrying', () => {
     assert.deepEqual(browser.assigned, [])
   })
 })
+
+/**
+ * AND THE CHOICE SURVIVES A RELOAD, BECAUSE THE ADDRESS BAR CARRIES IT.
+ *
+ *     "if we have testnet selected and we refresh the page it goes to mainnet"   — 2026-08-14
+ *
+ * Every case above passed while that was true and none of them could have caught it: they all read
+ * the module memory that a reload throws away. The mechanism is `keepNetworkInTheAddressBar` in
+ * `@cloudsforge/ui/network-view`, tested there against a full history stub; what these two cases
+ * pin is THIS module's wiring to it — that the switch writes, and that a fresh load at what was
+ * written is viewing what the reader had on screen.
+ */
+describe('the viewed network survives a reload', () => {
+  it('is written into the address bar when the reader switches', async () => {
+    const browser = installWindow('https://hub.cloudsforge.online/wallet')
+    seq += 1
+    const m = (await import(`../src/lib/viewed.ts?case=${seq}`)) as typeof import('../src/lib/viewed.ts')
+    m.setViewedNetwork('testnet')
+    // In place: a switch is not a place in the reader's history.
+    assert.deepEqual(browser.replaced, ['/wallet?net=testnet'])
+  })
+
+  it('and a fresh load at that address is viewing testnet — the reload, end to end', async () => {
+    const m = await loadAt('https://hub.cloudsforge.online/wallet?net=testnet')
+    assert.equal(m.viewedNetwork(), 'testnet')
+    assert.equal(m.viewedApiOrigin(), 'https://hub-testnet.cloudsforge.online')
+  })
+
+  it('and switching back leaves the URL as it was found', async () => {
+    const browser = installWindow('https://hub.cloudsforge.online/wallet')
+    seq += 1
+    const m = (await import(`../src/lib/viewed.ts?case=${seq}`)) as typeof import('../src/lib/viewed.ts')
+    m.setViewedNetwork('testnet')
+    m.setViewedNetwork('mainnet')
+    // The parameter means "not what the hostname says", so on a mainnet page its absence IS
+    // mainnet — and the reader who switches back has the address they arrived with.
+    assert.deepEqual(browser.replaced, ['/wallet?net=testnet', '/wallet'])
+  })
+})
