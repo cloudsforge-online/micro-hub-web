@@ -117,6 +117,7 @@ import {
 import { useSession } from '../lib/auth.tsx'
 import { sweepToCustody, type SweepOutcome } from '../lib/embersweep.ts'
 import { emberMiningBase } from '../lib/hosts.ts'
+import { viewedSurfaceUrl } from '../lib/viewed.ts'
 import { assignDepositAddress, type DepositAssignment } from '../lib/money.ts'
 import { poolApiWorthAsking, usePoolApi } from '../lib/deployment.tsx'
 import { isMineable, loadPool, type PoolChain, type PoolSummary } from '../lib/pool.ts'
@@ -481,9 +482,13 @@ export function MiningProvider({ children, create, createEmber }: MiningProvider
    *
    * `watchedAt === null` means the indexer has not been told to watch it, so a deposit to it arrives
    * on chain and is never credited. The `chain` check is belt and braces against an assignment for
-   * something that is not the chain this browser mines; `hosts()` derives the wallet host and the
-   * RPC host from the same apex, so the two cannot be different DEPLOYMENTS, but they can be
-   * different assets.
+   * something that is not the chain this browser mines; `viewedSurfaceUrl` derives the wallet host
+   * and the RPC host from the same network, so the two cannot be different DEPLOYMENTS, but they
+   * can be different assets.
+   *
+   * That "same network" used to be "same apex", which was true only while the hostname decided it.
+   * Under the combined view the switcher decides, so both go through `lib/viewed.ts` — and they go
+   * through it in the same render, which is what keeps them from disagreeing mid-session.
    */
   const payingIn =
     custody !== null && custody.watchedAt !== null && custody.chain === EMBER_CHAIN ? custody : null
@@ -621,7 +626,10 @@ export function MiningProvider({ children, create, createEmber }: MiningProvider
           setEmberKey(signing)
         }
         const options: EmberMinerOptions = {
-          rpc: emberMiningBase(),
+          // The viewed network's Hearth, not the serving hostname's — the same resolution the
+          // deposit address above came through, which is what keeps a sweep on the chain that
+          // minted its destination. See `lib/hosts.ts` on `emberMiningBase`.
+          rpc: emberMiningBase(viewedSurfaceUrl('rpc')),
           key: signing,
           duty: dutyRef.current,
           pauseOnBattery: pauseRef.current,

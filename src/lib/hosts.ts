@@ -148,8 +148,21 @@ export function pageOrigin(): string {
  * What is kept from that episode is the caution, in a form that cannot go stale — the miner no
  * longer ASSUMES the stream works. It wires `onopen`/`onerror`, polls at 10 s while the stream is
  * down and 45 s while it is up, and puts which of the two it is in on the page.
+ *
+ * ── WHY THE JSON-RPC BASE IS AN ARGUMENT AND NOT `hosts().rpc` ────────────────────────────────
+ *
+ * It used to read `hosts().rpc` itself, and under the combined view (micro-org#459) that is no
+ * longer a question this file can answer: `hosts()` resolves from the page's hostname, and both
+ * networks are now served from the mainnet hostnames. The caller knows which network the reader is
+ * looking at — `lib/viewed.ts` — and hands it in. Taking the base rather than fetching it also
+ * keeps this module free of that dependency, which would otherwise be a cycle, and makes the one
+ * thing this function actually does testable without a hostname.
+ *
+ * The choice MATTERS, and `mining/session.tsx` says why beside `payingIn`: the reward is swept to
+ * a deposit address minted by the wallet, and if the chain being mined and the wallet that minted
+ * that address are on different networks, the sweep sends real EMBER to an address nothing on that
+ * chain is watching. The two must resolve through the same network, always.
  */
-export function emberMiningBase(): string {
-  const rpc = hosts().rpc
+export function emberMiningBase(rpc: string): string {
   return rpc.endsWith(':8545') ? `${rpc.slice(0, -':8545'.length)}:8645` : rpc
 }
