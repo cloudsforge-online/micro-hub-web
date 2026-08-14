@@ -25,6 +25,7 @@ import { PRODUCT } from '../lib/hosts.ts'
 import { MAX_SEARCH_LENGTH } from '../lib/hub.ts'
 import { NAV, PUBLIC_ROUTES, ROUTES, isIndexable } from '../lib/routes.ts'
 import { useSession } from '../lib/auth.tsx'
+import { setViewedNetwork, viewedNetwork, type ViewedNetwork } from '../lib/viewed.ts'
 import { EMBER_MINE_HREF, barMining } from '../mining/bar.ts'
 import { MiningProvider, useMining } from '../mining/session.tsx'
 
@@ -117,6 +118,10 @@ function useBarMining(): MiningControlProps | undefined {
 
 function Chrome() {
   const { account, signIn, signOut } = useSession()
+  // The viewed network: in-tab memory, defaulting to the hostname's own (micro-org#459).
+  // setViewedNetwork runs first in the switcher handler so the remounted tree reads the new
+  // value on its very first render.
+  const [viewed, setViewed] = useState<ViewedNetwork>(viewedNetwork())
   const mining = useBarMining()
 
   return (
@@ -140,6 +145,11 @@ function Chrome() {
         a live session rather than `miningOnHub()`: the miner runs on this origin, so this is the
         only bundle that can observe or stop it. See `mining/session.tsx`.
       */}
+      {/* In-app network context (micro-org#459, the combined view). The choice lives in
+          lib/viewed.ts — memory only, never storage — and the key on the Outlet below is the
+          refetch mechanism: a switch remounts the page tree against the viewed network's estate,
+          bearer forwarded (one identity, the net claim is service-only). The band follows the
+          SELECTED network, so testnet balances under a mainnet address bar are unmistakable. */}
       <CloudsForgeBar
         current={PRODUCT}
         account={account}
@@ -147,6 +157,13 @@ function Chrome() {
         onSignOut={signOut}
         rightSlot={account.signedIn ? <SearchField /> : undefined}
         mining={mining}
+        networkSwitch={{
+          selected: viewed,
+          onSelect: (n) => {
+            setViewedNetwork(n)
+            setViewed(n)
+          },
+        }}
       />
       {/*
         `SubNav` from @cloudsforge/ui, rather than the `.wt-subnav` this file used to write itself.
@@ -198,7 +215,7 @@ function Chrome() {
         the two cannot disagree.
       */}
       <MainRegion className="wt-main">
-        <Outlet />
+        <Outlet key={viewed} />
       </MainRegion>
 
       {/*

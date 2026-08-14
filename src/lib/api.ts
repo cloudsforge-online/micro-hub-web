@@ -9,6 +9,7 @@
  * valid session.
  */
 import { consumeAuthCallback, signInRedirect, signOutRedirect } from '@cloudsforge/ui'
+import { viewedApiOrigin } from './viewed.ts'
 import { APP_NAME, apiBase, hosts, pageOrigin } from './hosts.ts'
 import { report } from './obs.ts'
 
@@ -406,8 +407,17 @@ export async function request<T>(base: string, path: string, opts: RequestOption
 }
 
 /** This app's own API: relative in production, the registry's dev port under `pnpm dev`. */
-export const api = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
-  request<T>(apiBase(), path, opts)
+/**
+ * This app's own API — and the SIBLING ESTATE's when the reader views the other network
+ * (micro-org#459, the combined view). Unlike the read-only surfaces the bearer IS forwarded:
+ * hub's data is the reader's own, one identity mints their token, and the `net` claim lives on
+ * service tokens only so a person's token crosses. Until the testnet estate trusts the shared
+ * identity, a cross-estate read answers 401 and pages render their ordinary error states.
+ */
+export const api = <T,>(path: string, opts?: RequestOptions): Promise<T> => {
+  const crossEstate = viewedApiOrigin()
+  return request<T>(crossEstate === '' ? apiBase() : crossEstate, path, opts)
+}
 
 /** Nimbus, which is cross-origin from everywhere. */
 export const nimbus = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
