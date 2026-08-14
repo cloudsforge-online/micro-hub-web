@@ -1545,6 +1545,16 @@ describe('BJ-WAL — Receive', () => {
       {
         url: `${ORIGIN}/wallet`,
         routes: {
+          /*
+            The panel reads twice on mount before anything is pressed — the menu of depositable
+            assets, and the addresses this account already holds. Both are arranged here, at their
+            emptiest, because this scenario is about the address the POST returns and nothing else:
+            an unrouted read throws inside the stub, and a scenario that let it would be asserting
+            against a degraded panel it never set up. `test/deposit-addresses.test.ts` is where the
+            held-address list is the subject.
+          */
+          'GET /v1/deposits/assets': { body: { assets: [] } },
+          'GET /v1/deposits': { body: { assignments: [] } },
           'POST /v1/deposits': {
             body: {
               assignment: {
@@ -1580,6 +1590,8 @@ describe('BJ-WAL — Receive', () => {
       {
         url: `${ORIGIN}/wallet`,
         routes: {
+          'GET /v1/deposits/assets': { body: { assets: [] } },
+          'GET /v1/deposits': { body: { assignments: [] } },
           'POST /v1/deposits': {
             body: {
               assignment: {
@@ -1614,6 +1626,8 @@ describe('BJ-WAL — Receive', () => {
       {
         url: `${ORIGIN}/wallet`,
         routes: {
+          'GET /v1/deposits/assets': { body: { assets: [] } },
+          'GET /v1/deposits': { body: { assignments: [] } },
           'POST /v1/deposits': {
             body: {
               assignment: {
@@ -2337,7 +2351,11 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
             page(h(ReceivePanel, { holdings: [fx.holding()] }), '/wallet'),
             {
               url: `${ORIGIN}/wallet`,
-              routes: { 'POST /v1/deposits': { status: 503, requestId, body: fx.errorBody('x', 'No.', [], requestId) } },
+              routes: {
+                'GET /v1/deposits/assets': { body: { assets: [] } },
+                'GET /v1/deposits': { body: { assignments: [] } },
+                'POST /v1/deposits': { status: 503, requestId, body: fx.errorBody('x', 'No.', [], requestId) },
+              },
             },
             async (s) => {
               await s.click(s.byRole('button', /deposit address/i))

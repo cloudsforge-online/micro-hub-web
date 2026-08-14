@@ -410,6 +410,11 @@ for (const strict of [false, true]) {
           strict,
           confirm: true,
           routes: {
+            // The panel's two mount reads, arranged empty. This scenario counts POSTs and nothing
+            // else, and an unrouted GET throws inside the stub — which would have it counting
+            // presses against a panel it never set up.
+            'GET /v1/deposits/assets': { body: { assets: [] } },
+            'GET /v1/deposits': { body: { assignments: [] } },
             [path]: (_w, n) => ({
               // A DIFFERENT address each time, which is what a second rotation really produces.
               body: { assignment: { ...depositAssignment, id: `dep-${n}`, address: `0xrotated${n}` } },

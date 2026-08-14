@@ -907,6 +907,14 @@ body {
   font-size: var(--cf-text-md);
 }
 
+/* The first subsection in a panel sits directly under the panel's own header, which already draws
+   the line. A second rule there reads as an empty section between the two. */
+.wt-panel__sub--first {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 /* Arithmetic a reader is invited to check, so it is set at reading width rather than as a note. */
 .wt-prose {
   margin: 0 0 var(--cf-space-sm);
