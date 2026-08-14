@@ -40,17 +40,30 @@
  * with the `cf-cors` middleware. That is a deploy change, it is recorded in this repository's
  * README, and it is not something this bundle can paper over with a different URL.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
-import { hosts } from './hosts.ts'
 import { IDEMPOTENCY_HEADER } from './idempotency.ts'
 import { request, type RequestOptions } from './api.ts'
+import { viewedSurfaceUrl } from './viewed.ts'
 
-/** The wallet service. Cross-origin from Hub, always. */
+/**
+ * ── BOTH BASES FOLLOW THE VIEWED NETWORK, AND THEY HAVE TO MOVE TOGETHER ──────────────────────
+ *
+ * `viewedSurfaceUrl` and not `hosts()`, because `hosts()` answers from the page's HOSTNAME and the
+ * combined view (micro-org#459) serves both networks from the mainnet hostnames. Left on `hosts()`
+ * these two would have read mainnet balances and minted mainnet deposit addresses onto a screen
+ * wearing the testnet band, with a Send form beside them — see `lib/viewed.ts` for the whole of it.
+ *
+ * They move as a pair on purpose. Custody holds the key, the wallet holds the balance that key
+ * moves, and a withdrawal is one operation split across the two services: a signature from one
+ * estate against a balance on the other is not a degraded read, it is a broken transaction.
+ */
+
+/** The wallet service, on the viewed network. Cross-origin from Hub, always. */
 const wallet = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
-  request<T>(hosts().pay, path, opts)
+  request<T>(viewedSurfaceUrl('pay'), path, opts)
 
 /** Custody — the key service. Also cross-origin, and it is the one that holds private keys. */
 const custody = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
-  request<T>(hosts().keyvault, path, opts)
+  request<T>(viewedSurfaceUrl('keyvault'), path, opts)
 
 /* ══════════════════════════════ which assets move on a chain ══════════════════════════════ */
 

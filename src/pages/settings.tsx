@@ -26,10 +26,12 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../lib/auth.tsx'
 import { NotComposed } from '../components/tile.tsx'
 import { APP_NAME, PRODUCT, hosts } from '../lib/hosts.ts'
+import { viewedNetwork, viewedSurfaceUrl } from '../lib/viewed.ts'
 
 export function SettingsPage() {
   const { account } = useSession()
   const resolved = hosts()
+  const viewed = viewedNetwork()
 
   return (
     <>
@@ -97,23 +99,47 @@ export function SettingsPage() {
       {/*
         Resolved hosts, on screen. It is the fastest way to answer "which environment am I talking
         to" without a console, and it is only ever a list of public base URLs.
+
+        ── IT NOW HAS TO ANSWER TWO QUESTIONS, BECAUSE THERE ARE TWO ANSWERS ──────────────────
+
+        Until the combined view (micro-org#459) the hostname decided everything and one list was
+        the whole truth. It is not any more: the switcher moves the money services and the chain to
+        the viewed network while identity and the error ingest deliberately stay on the estate
+        serving this bundle (`lib/viewed.ts` says which and why). A single list would therefore be
+        wrong about half its rows for any reader who had switched — on the ONE panel whose entire
+        purpose is to be trusted for that answer, which is exactly the defect the `account` row
+        below was already fixed for once.
       */}
       <section className="wt-panel">
         <header className="wt-panel__head">
           <h2 className="wt-panel__title">Resolved hosts</h2>
         </header>
         <p className="wt-note">
-          Worked out from <code>{window.location.hostname}</code> as each call is made. This build
-          carries no environment inside it: one identical image serves a laptop, a preview and the
-          live site, which is what lets a release be promoted rather than rebuilt for each.
+          Worked out from <code>{window.location.hostname}</code> and the network you are viewing,
+          as each call is made. This build carries no environment inside it: one identical image
+          serves a laptop, a preview and the live site, which is what lets a release be promoted
+          rather than rebuilt for each.
         </p>
         <dl className="wt-facts wt-facts--mono">
+          <dt>Viewing</dt>
+          <dd>{viewed}</dd>
           <dt>This surface ({PRODUCT})</dt>
           <dd>{resolved[PRODUCT]}</dd>
           <dt>Wallet (a path inside Hub)</dt>
           <dd>{resolved.wallet}</dd>
-          <dt>Nimbus (tokens)</dt>
-          <dd>{resolved.nimbus}</dd>
+          {/*
+            The four that follow the switcher. `viewedSurfaceUrl` is the same call the code paths
+            make, not a re-derivation of it — a diagnostics panel that computes its own answer is a
+            panel that can agree with itself while disagreeing with the request that was sent.
+          */}
+          <dt>Balances and deposits</dt>
+          <dd>{viewedSurfaceUrl('pay')}</dd>
+          <dt>Custody (keys)</dt>
+          <dd>{viewedSurfaceUrl('keyvault')}</dd>
+          <dt>Mining pool</dt>
+          <dd>{viewedSurfaceUrl('pool')}</dd>
+          <dt>Hearth (JSON-RPC)</dt>
+          <dd>{viewedSurfaceUrl('rpc')}</dd>
           {/*
             `signin`, not `account`. This row is labelled "sign-in" and showed the reserved
             `account.<apex>` hostname, which has no DNS record — so a reader checking which
@@ -122,11 +148,18 @@ export function SettingsPage() {
           */}
           <dt>Account (sign-in)</dt>
           <dd>{resolved.signin}</dd>
+          <dt>Nimbus (tokens)</dt>
+          <dd>{resolved.nimbus}</dd>
           <dt>Lantern (error ingest)</dt>
           <dd>{resolved.lantern}</dd>
           <dt>Reported as</dt>
           <dd>{APP_NAME}</dd>
         </dl>
+        <p className="wt-note">
+          The last four do not move when you switch networks, and that is deliberate. Your sign-in
+          and your token belong to the estate that issued them, and errors from this page are filed
+          against the deployment that served it.
+        </p>
       </section>
     </>
   )

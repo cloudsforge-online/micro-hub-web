@@ -28,11 +28,22 @@
  * which is precisely the distinction that makes the ticket unsafe in both.
  * ═════════════════════════════════════════════════════════════════════════════════════════════ */
 import { ApiError, request, type RequestOptions } from './api.ts'
-import { hosts } from './hosts.ts'
+import { viewedSurfaceUrl } from './viewed.ts'
 import type { PowAlgorithm } from './stratum.ts'
 
-/** Everything here goes to `pool.<apex>`, which the surface registry resolves at runtime. */
-const pool = <T,>(path: string, opts?: RequestOptions): Promise<T> => request<T>(hosts().pool, path, opts)
+/**
+ * Everything here goes to `pool<suffix>.<apex>` on the VIEWED network, which the surface registry
+ * resolves at runtime.
+ *
+ * Not `hosts().pool`: under the combined view both networks are served from the mainnet hostnames,
+ * so the page's own hostname stopped being an answer to "which pool". It matters here more than it
+ * looks. `GET /v1/pool` is where the stratum endpoint on screen comes from (micro-org#285 took that
+ * string away from `window.location` for exactly this class of reason), and a ticket is minted by
+ * one pool and spent on one pool's socket — pointing the two at different estates would hand a
+ * reader connection details for a pool their ticket is worthless at.
+ */
+const pool = <T,>(path: string, opts?: RequestOptions): Promise<T> =>
+  request<T>(viewedSurfaceUrl('pool'), path, opts)
 
 /* ══════════════════════════════ GET /v1/pool ══════════════════════════════ */
 

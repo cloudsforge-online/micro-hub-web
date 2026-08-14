@@ -59,7 +59,7 @@
  *     double-spends the reward into a fee. A failed send leaves the balance where it is, and the
  *     next accepted block sweeps both.
  * ══════════════════════════════════════════════════════════════════════════════════════════════ */
-import { hosts } from './hosts.ts'
+import { viewedSurfaceUrl } from './viewed.ts'
 
 /**
  * A plain value transfer to an externally-owned account, exactly. Not an estimate.
@@ -97,7 +97,12 @@ export type SweepOutcome =
   | { readonly kind: 'failed'; readonly message: string }
 
 export interface SweepDeps {
-  /** The JSON-RPC base — `hosts().rpc`, port 8545, NOT the 8645 REST base the miner uses. */
+  /**
+   * The JSON-RPC base — the `rpc` surface on the VIEWED network, port 8545, NOT the 8645 REST base
+   * the miner uses. Defaulted rather than required because the sweep is fired from an `accepted`
+   * event listener registered once per session, and a base captured there would be the network the
+   * reader was looking at when they pressed Start rather than the one the reward belongs to.
+   */
   readonly rpc?: string
   readonly fetch?: typeof globalThis.fetch
   /** Overridable so a test does not spend five seconds proving it waited. */
@@ -111,7 +116,7 @@ export async function rpcCall(
   deps: SweepDeps = {},
 ): Promise<string> {
   const doFetch = deps.fetch ?? globalThis.fetch
-  const base = deps.rpc ?? hosts().rpc
+  const base = deps.rpc ?? viewedSurfaceUrl('rpc')
   const res = await doFetch(base, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
