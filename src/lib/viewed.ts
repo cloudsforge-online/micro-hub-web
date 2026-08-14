@@ -87,9 +87,39 @@ export function viewedNetwork(): ViewedNetwork {
   return viewed ?? deploymentNetwork()
 }
 
+/**
+ * Told when the choice changes, for the one consumer that CANNOT be remounted by the switcher.
+ *
+ * The refetch mechanism for everything else is `<Outlet key={viewed}>` in `components/shell.tsx`:
+ * a switch remounts the page tree and every read in it runs again against the new estate. That
+ * works for pages. It does not work for anything mounted ABOVE the shell, and `DeploymentProvider`
+ * is deliberately mounted there — `src/app.tsx` argues why, and the argument still holds: the page
+ * and the mining session in the bar both read pool presence, and two fetches are two chances to
+ * disagree about it on one screen.
+ *
+ * So that one provider subscribes instead. Listeners are module-scoped and per tab like the choice
+ * itself; nothing is persisted and nothing is read back, so the no-stored-network invariant is
+ * untouched.
+ */
+type Listener = (network: ViewedNetwork) => void
+const listeners = new Set<Listener>()
+
+/** Subscribe to changes of the viewed network. Returns the unsubscribe. */
+export function subscribeViewedNetwork(listener: Listener): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 /** Record the reader's choice. Choosing the hostname's own network clears the override. */
 export function setViewedNetwork(network: ViewedNetwork): void {
+  const before = viewedNetwork()
   viewed = network === deploymentNetwork() ? null : network
+  const after = viewedNetwork()
+  // Only on a real change. Re-selecting the network already being viewed is not an event, and
+  // announcing it would make a listener that refetches do so on every click of the current entry.
+  if (after !== before) for (const listener of listeners) listener(after)
 }
 
 /**

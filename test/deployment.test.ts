@@ -30,19 +30,23 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import { createElement as h, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 
 import { AuthProvider } from '../src/lib/auth.tsx'
 import {
+  DEPLOYMENT_API_PATH,
+  DEPLOYMENT_CROSS_ESTATE_TIMEOUT_MS,
   DEPLOYMENT_PATH,
   DEPLOYMENT_TIMEOUT_MS,
   DeploymentProvider,
+  deploymentUrl,
   fetchPresence,
   poolApiWorthAsking,
   readPresence,
 } from '../src/lib/deployment.tsx'
+import { setViewedNetwork } from '../src/lib/viewed.ts'
 import { unlabelledSurfaceUrl } from '../src/lib/hosts.ts'
 import type { PoolSummary } from '../src/lib/pool.ts'
 import { MinePage } from '../src/pages/mine.tsx'
@@ -186,6 +190,97 @@ describe('fetching /deployment.json', () => {
     // outcome that changes nothing, because a timeout resolves to `present` anyway.
     assert.ok(DEPLOYMENT_TIMEOUT_MS > 0)
     assert.ok(DEPLOYMENT_TIMEOUT_MS <= 3000, 'the page waits too long for its own container')
+    // The cross-estate read is the other way round: there the fallback is the WRONG answer, so it
+    // buys its answer instead of guessing. Still under `lib/api.ts`'s eight seconds.
+    assert.ok(DEPLOYMENT_CROSS_ESTATE_TIMEOUT_MS > DEPLOYMENT_TIMEOUT_MS)
+    assert.ok(DEPLOYMENT_CROSS_ESTATE_TIMEOUT_MS <= 8000)
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 2b. AND WHOSE DEPLOYMENT IT IS, ONCE ONE BUNDLE SERVES BOTH NETWORKS
+ *
+ *     "on testnet -> account mine: The pool could not be read / Cannot reach the server."
+ *
+ * The document above answers for the CONTAINER. Under the combined view the container is mainnet's
+ * whatever the switcher says, and mainnet runs a pool — so a reader viewing testnet was told there
+ * is a pool, every pool read went to the estate that deploys none, and the page rendered a
+ * transport error about a service that was never there.
+ *
+ * The sibling's document cannot be read across: `<sub>-testnet.<apex>` WEB paths 302 back to their
+ * mainnet siblings, so `/deployment.json` on that hostname is answered by the estate being asked
+ * ABOUT, and would say `present` for ever. `/v1` is the half of those hostnames that still answers
+ * from testnet, which is why hub-api serves the same fact under `/v1/deployment`.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+describe('the deployment fact follows the network being VIEWED', () => {
+  const MAINNET_PAGE = 'https://hub.cloudsforge.online/mine'
+
+  afterEach(() => {
+    // Module state, and clearing it needs a window: "is this the deployment's own network" is a
+    // question about a hostname. So the reset happens BEFORE the window is torn down, every time.
+    installWindow(MAINNET_PAGE)
+    setViewedNetwork('mainnet')
+    removeWindow()
+  })
+
+  it('reads its own container while the reader is viewing the network serving the page', async () => {
+    installWindow(MAINNET_PAGE)
+    const stub = installFetch(() => json(200, { poolApi: 'present' }))
+    try {
+      assert.equal(deploymentUrl(), `https://hub.cloudsforge.online${DEPLOYMENT_PATH}`)
+      assert.equal(await fetchPresence(), 'present')
+      assert.equal(stub.calls[0]?.url, `https://hub.cloudsforge.online${DEPLOYMENT_PATH}`)
+    } finally {
+      stub.restore()
+      removeWindow()
+    }
+  })
+
+  it('asks the TESTNET api once the reader switches, and believes it when it says absent', async () => {
+    // The whole defect, in one assertion: on a mainnet hostname, viewing testnet, the answer is
+    // `absent` — which is what removes the pool panel instead of failing to load it.
+    installWindow(MAINNET_PAGE)
+    setViewedNetwork('testnet')
+    const stub = installFetch(() => json(200, { poolApi: 'absent' }))
+    try {
+      assert.equal(
+        deploymentUrl(),
+        `https://hub-testnet.cloudsforge.online${DEPLOYMENT_API_PATH}`,
+        'the fact was read from the estate serving the page rather than the one being viewed',
+      )
+      assert.equal(await fetchPresence(), 'absent')
+      const call = stub.calls[0]
+      assert.ok(call)
+      assert.equal(call.method, 'GET')
+      // A HYPHEN, not a nested label: the edge's certificate is a wildcard over one label of the
+      // apex, so `hub.testnet.<apex>` fails the TLS handshake before a request is ever made.
+      assert.ok(call.url.startsWith('https://hub-testnet.'))
+    } finally {
+      stub.restore()
+      removeWindow()
+    }
+  })
+
+  it('still says "present" when the sibling estate cannot be reached at all', async () => {
+    // A cross-origin read the other estate declines, a 502, a timeout: none of them is a deploy
+    // saying "no pool here". Only the deploy may say that, and only in those exact words.
+    installWindow(MAINNET_PAGE)
+    setViewedNetwork('testnet')
+    for (const handler of [
+      () => json(502, { error: 'bad_gateway' }),
+      () => {
+        throw new TypeError('Failed to fetch')
+      },
+    ]) {
+      const stub = installFetch(handler)
+      try {
+        assert.equal(await fetchPresence(), 'present')
+      } finally {
+        stub.restore()
+      }
+    }
+    removeWindow()
   })
 })
 
@@ -452,6 +547,65 @@ describe('/mine on a network with no pool', () => {
           'the pool was never read on a deployment that has one',
         )
         s.clean('the ordinary page')
+      },
+    )
+  })
+
+  it('re-asks, and stops asking the pool, when the reader switches to a network with none', async () => {
+    /*
+     * THE COMBINED VIEW'S VERSION OF THE SAME DEFECT, and the reason this needs a mounted tree
+     * rather than another unit test of `fetchPresence`.
+     *
+     * `DeploymentProvider` sits ABOVE the router, deliberately — one fetch for the page and for
+     * the mining session in the bar that outlives it — so the switcher's `<Outlet key={viewed}>`
+     * remount cannot reach it. Without a subscription it would hold mainnet's `present` for the
+     * whole tab, and every pool read on a testnet-marked page would go to an estate that deploys
+     * none. That is exactly what a reader met: "The pool could not be read".
+     */
+    await withScreen(
+      page(),
+      {
+        url: 'https://hub.cloudsforge.online/mine',
+        storage: SIGNED_IN,
+        routes: {
+          ...routes('present'),
+          // The sibling estate's answer, served from its API rather than from a document: under
+          // the combined view its WEB paths 302 back here, so `/deployment.json` cannot answer.
+          'GET /v1/deployment': { status: 200, body: { poolApi: 'absent' } },
+        },
+      },
+      async (s) => {
+        await s.settle()
+        assert.ok(
+          s.api.matching('GET /v1/pool').length > 0,
+          'the pool was never read on the estate that has one',
+        )
+
+        // The switch itself. `components/shell.tsx` calls exactly this, first, in the switcher's
+        // handler; the shell is not mounted here, so the test makes the same call it makes.
+        await s.fromOutside(() => setViewedNetwork('testnet'))
+
+        const asked = s.api.matching('GET /v1/deployment')
+        assert.equal(asked.length, 1, 'the provider kept an answer about the network left behind')
+        assert.equal(
+          asked[0]?.origin,
+          'https://hub-testnet.cloudsforge.online',
+          'the fact was re-read from the estate serving the page rather than the one now viewed',
+        )
+        assert.match(
+          s.text(),
+          /this network does not run a mining pool/i,
+          'the page still claims a pool on a network that deploys none',
+        )
+        assert.ok(
+          !/could not/i.test(s.text()),
+          'a deliberate absence is still being reported as a failure',
+        )
+        s.clean('the switch to a network with no pool')
+        // The viewed network is module state, and this scenario is the only one in the file that
+        // leaves it set. Cleared while the mainnet window is still up — "is this the deployment's
+        // own network" is a question about a hostname.
+        await s.fromOutside(() => setViewedNetwork('mainnet'))
       },
     )
   })
