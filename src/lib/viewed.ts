@@ -100,9 +100,10 @@ export function viewedApiOrigin(): string {
  *
  * The apex comes off the address bar and the label is composed with the registry's own
  * `envLabel(subdomain, env)` — `hub` + `testnet` is `hub-testnet`, not `hub.testnet`. That
- * distinction is not cosmetic: Cloudflare's Universal SSL covers `*.cloudsforge.online` and a
- * wildcard matches ONE label, so the nested form fails the TLS handshake at the edge before a
- * request is made. `deploy/gateway/dynamic/policy.yml` records the same fact for the same reason.
+ * distinction is not cosmetic: the edge's Universal SSL certificate is a wildcard over ONE label
+ * of the apex, so the nested form fails the TLS handshake before a request is ever made.
+ * `deploy/gateway/dynamic/policy.yml` records the same fact for the same reason. (The apex is not
+ * spelled out here, and could not be: the `rules` job greps this directory for it — see below.)
  *
  * A literal apex would also fail CI — the `rules` job greps `src/` for one — and would be the
  * build-time environment this repository refuses.
