@@ -29,6 +29,23 @@
  * from a confirmation count for exactly this reason — "41/0 is worse than 41 confirmations"
  * (`hub-api/src/nextactions.ts`) — and `micro-wallet` serves no route that states one. A
  * number invented here would be the denominator hub-api refused to invent.
+ *
+ * ── The addresses you ALREADY have, which nothing rendered ─────────────────────────────────────
+ *
+ * `wallet/src/server.ts` has served `GET /v1/deposits` — "every assignment this account holds" —
+ * since the route was written, and `lib/money.ts` has exported `loadDepositAddresses` for it. No
+ * screen in this bundle called either. So an address was visible for exactly as long as the
+ * button that fetched it stayed on screen: come back tomorrow and the account showed nothing, on
+ * every asset, and the only way to see your own Bitcoin address again was to know that a button
+ * on this panel would give it back to you.
+ *
+ * That is what the owner hit — *"I don't see on my account any bitcoin address"* — and it is not
+ * a missing feature. It is a rendered surface missing for a served route, the same shape as
+ * `micro-foresight`'s `/stake-assets`: the API answered correctly the whole time.
+ *
+ * The list is therefore the FIRST thing on the panel, before the selector, and it is loaded on
+ * mount rather than on a press. Getting an address is now the thing you do when the list does not
+ * already contain the asset you want.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { noticeFor, type ErrorNotice } from '../lib/api.ts'
@@ -37,6 +54,7 @@ import { useLatch } from '../lib/latch.ts'
 import {
   assignDepositAddress,
   depositableAssets,
+  loadDepositAddresses,
   settlesOnChain,
   type DepositAssignment,
 } from '../lib/money.ts'
@@ -82,6 +100,37 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
   const [notice, setNotice] = useState<ErrorNotice | null>(null)
 
   /**
+   * Every deposit address this account already holds.
+   *
+   * THREE STATES, NOT TWO, and the third is why `heldFailed` exists beside the array. `null` is
+   * "we have not been told yet", `[]` is "you genuinely have none", and a failed read is neither
+   * — drawing `[]` for it would be this bundle telling somebody they have no Bitcoin address
+   * while the row sits in the database. `lib/tile.ts` states the rule for the tiled reads and it
+   * governs the direct ones too: *"an empty array is a field that renders correctly by accident."*
+   *
+   * `epoch` re-runs the read after a fetch or a rotation, so the list below and the address in the
+   * panel above it are never two answers to one question.
+   */
+  const [held, setHeld] = useState<readonly DepositAssignment[] | null>(null)
+  const [heldFailed, setHeldFailed] = useState(false)
+  const [epoch, setEpoch] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    loadDepositAddresses(controller.signal)
+      .then((r) => {
+        setHeld(r.assignments)
+        setHeldFailed(false)
+      })
+      .catch(() => {
+        // An abort is this component going away, not a failure to report. Without the guard, every
+        // unmount would paint the "could not read" sentence on the way out.
+        if (controller.signal.aborted) return
+        setHeldFailed(true)
+      })
+    return () => controller.abort()
+  }, [epoch])
+
+  /**
    * There was no guard here at all beyond `disabled={busy}`, and this route carries no key.
    *
    * `POST /v1/deposits` with `rotate: true` is the sharp one: wallet's own note says defaulting to
@@ -99,7 +148,14 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
       setBusy(true)
       setNotice(null)
       assignDepositAddress(assetCode, rotate)
-        .then((answer) => setAssignment(answer.assignment))
+        .then((answer) => {
+          setAssignment(answer.assignment)
+          // The list above has just become wrong — a first assignment is missing from it, and a
+          // rotation left it showing the retired address. Re-read rather than splice: the service
+          // decides which assignment is `active`, and reproducing that decision here is a second
+          // implementation of it.
+          setEpoch((n) => n + 1)
+        })
         .catch((err: unknown) => setNotice(noticeFor(err, 'Could not get a deposit address.')))
         .finally(() => {
           request.release()
@@ -127,9 +183,16 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
         </p>
       )}
 
+      <HeldAddresses held={held} failed={heldFailed} />
+
       <div className="wt-field">
         <label className="wt-field__label" htmlFor="receive-asset">
-          Asset
+          {/*
+            The label used to be a bare "Asset", which was right when this control was the whole
+            panel. Above it there is now a list of the addresses you have, so the control's job has
+            narrowed to the one it is for: getting an address for something not on that list.
+          */}
+          Get an address for
         </label>
         <select
           className="cf-select"
@@ -249,5 +312,116 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * The deposit addresses this account already holds, from `GET /v1/deposits`.
+ *
+ * ── Why the ACTIVE ones and the older ones are two lists ───────────────────────────────────────
+ *
+ * `listAssignments` returns every row for the network, at every status, `order by id desc`. Drawn
+ * as one list that is a set of destinations with no statement of which one to use, and the answer
+ * matters: `wallet/src/deposits.ts` marks the previous row `rotated` and keeps crediting it,
+ * precisely so a payment already in flight is not lost. Both are real; only one is the address to
+ * hand out today.
+ *
+ * `retired` is never written by the service — its own comment says so — so a retired row would be
+ * data from somewhere this bundle cannot see, and it is labelled as unusable rather than dropped.
+ * A destination that vanishes from the screen is one somebody asks support about.
+ *
+ * ── `watchedAt` again, and it is the same warning as below ─────────────────────────────────────
+ *
+ * An unwatched address takes money on chain and credits nobody. The panel below says so for the
+ * address it has just fetched; this list has to say it too, because after this change the list is
+ * where most people will read an address off the screen.
+ */
+function HeldAddresses({
+  held,
+  failed,
+}: {
+  held: readonly DepositAssignment[] | null
+  failed: boolean
+}) {
+  if (failed) {
+    return (
+      <p className="wt-note" role="status">
+        We could not read the deposit addresses on this account just now. Nothing has changed about
+        them — this panel could not ask. Asking again below still works, and returns the address you
+        already have rather than a new one.
+      </p>
+    )
+  }
+  // NO ELLIPSIS IN THIS SENTENCE, and it is not a style choice. BJ-WAL-16 asserts that the whole
+  // rendered text of this panel contains no `…`, because a SHORTENED DEPOSIT ADDRESS is a
+  // destination somebody can copy and lose money to. A loading line that borrowed the ellipsis for
+  // decoration would put one in that text and make the assertion turn on the timing of a fetch.
+  if (held === null) return <p className="wt-note">Looking up the addresses you already have.</p>
+  if (held.length === 0) {
+    return (
+      <p className="wt-note">
+        You have no deposit address yet. Choose a coin below and we will assign you one. It is yours
+        from then on, and it is listed here every time you come back.
+      </p>
+    )
+  }
+
+  const active = held.filter((a) => a.status === 'active')
+  const older = held.filter((a) => a.status !== 'active')
+  return (
+    <>
+      <div className="wt-panel__sub wt-panel__sub--first">
+        <h3>Your deposit addresses</h3>
+        <ul className="wt-rows">
+          {active.map((assignment) => (
+            <AddressRow key={assignment.id} assignment={assignment} />
+          ))}
+        </ul>
+      </div>
+
+      {older.length > 0 && (
+        <div className="wt-panel__sub">
+          <h3>Older addresses</h3>
+          <p className="wt-note">
+            Replaced by the ones above. A <strong>rotated</strong> address still credits you, which
+            is why it is kept: a payment already on its way must not be lost because a new address
+            was issued after it was sent.
+          </p>
+          <ul className="wt-rows">
+            {older.map((assignment) => (
+              <AddressRow key={assignment.id} assignment={assignment} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
+}
+
+function AddressRow({ assignment }: { assignment: DepositAssignment }) {
+  // Two states are a warning and they are the two where sending is a mistake. `wt-row__sub--critical`
+  // is the existing colour for exactly that, so this borrows the rule rather than inventing one, and
+  // it is a wrapping text line rather than `wt-row__meta`, which is a fixed-width flex strip.
+  const unusable = assignment.status === 'retired' || assignment.watchedAt === null
+  return (
+    <li className="wt-row">
+      <span className="wt-row__main">
+        <span className="wt-row__title">
+          {assignment.assetCode}{' '}
+          <span className="wt-chip">
+            {assignment.chain} · {assignment.network}
+          </span>
+        </span>
+        <code className="cf-num wt-addr">{assignment.address}</code>
+        <span className={unusable ? 'wt-row__sub wt-row__sub--critical' : 'wt-row__sub'}>
+          {assignment.status === 'retired'
+            ? 'No longer in use — do not send to it. '
+            : assignment.watchedAt === null
+              ? '▲ Not watched yet, so anything sent now would land on chain and not be credited. '
+              : `Watched since ${utcDateTime(assignment.watchedAt)}. `}
+          Assigned {utcDateTime(assignment.assignedAt)}.
+        </span>
+      </span>
+    </li>
   )
 }
