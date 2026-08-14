@@ -35,6 +35,7 @@ import {
   surface,
   type SurfaceKey,
 } from '@cloudsforge/ui'
+import { keepNetworkInTheAddressBar } from '@cloudsforge/ui/network-view'
 import { hosts } from './hosts.ts'
 
 /** The hostname's own network. `currentNetwork` is null only off-registry (localhost); mainnet
@@ -82,6 +83,19 @@ function fromLink(): ViewedNetwork | null {
 
 let viewed: ViewedNetwork | null = fromLink()
 
+/**
+ * The address bar says what the reader is viewing, and keeps saying it.
+ *
+ *     "if we have testnet selected and we refresh the page it goes to mainnet"
+ *
+ * It did, and for the reason the paragraph above was proud of: the choice was module memory, and a
+ * reload discards module memory. `keepNetworkInTheAddressBar` writes `?net=` in place on every
+ * change — see it for why the reload case is not the stored-default this estate refuses, and why
+ * the write is wrapped around `history` rather than taught to each router.
+ */
+const syncAddressBar = keepNetworkInTheAddressBar(() => viewed)
+syncAddressBar()
+
 /** The network the reader is viewing: their in-tab choice, or the hostname's network. */
 export function viewedNetwork(): ViewedNetwork {
   return viewed ?? deploymentNetwork()
@@ -116,6 +130,7 @@ export function subscribeViewedNetwork(listener: Listener): () => void {
 export function setViewedNetwork(network: ViewedNetwork): void {
   const before = viewedNetwork()
   viewed = network === deploymentNetwork() ? null : network
+  syncAddressBar()
   const after = viewedNetwork()
   // Only on a real change. Re-selecting the network already being viewed is not an event, and
   // announcing it would make a listener that refetches do so on every click of the current entry.
