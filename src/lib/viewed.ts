@@ -27,7 +27,14 @@
  * screen moves real value.
  */
 
-import { currentNetwork, envLabel, networkOrigin, surface, type SurfaceKey } from '@cloudsforge/ui'
+import {
+  currentNetwork,
+  envLabel,
+  networkFromQuery,
+  networkOrigin,
+  surface,
+  type SurfaceKey,
+} from '@cloudsforge/ui'
 import { hosts } from './hosts.ts'
 
 /** The hostname's own network. `currentNetwork` is null only off-registry (localhost); mainnet
@@ -38,7 +45,42 @@ function deploymentNetwork(): ViewedNetwork {
 
 export type ViewedNetwork = 'mainnet' | 'testnet'
 
-let viewed: ViewedNetwork | null = null
+/**
+ * The choice a link arrived carrying, read ONCE, at load.
+ *
+ *     "if you select testnet and switch product you are back to mainnet"
+ *
+ * Every surface is its own origin, so the module memory below stops at the hostname and a link
+ * from the explorer to here could not bring the reader's choice with it. `?net=` is the one
+ * channel that survives a cross-origin navigation without being storage — and it has to survive
+ * the combined view's retirement redirect too, which it does: `hub-testnet.<apex>` 302s to
+ * `hub.<apex>` preserving path and query.
+ *
+ * It is read and never written. Nothing here persists, so the estate's no-stored-network
+ * invariant is untouched: the parameter is a statement the LINK made, not a preference this tab
+ * keeps. Once the reader navigates in-app the parameter is gone and a reload falls back to the
+ * hostname's own network, exactly as before this existed.
+ *
+ * Normalised through the same rule as `setViewedNetwork`: `?net=mainnet` on a mainnet page is not
+ * an override, it is agreement, and recording it as an override would make every cross-estate
+ * base composed below take the long way round to its own origin.
+ *
+ * Off-registry it answers null, and that check is `currentNetwork()` rather than
+ * `deploymentNetwork()` on purpose. Localhost has no sibling estate: `NetworkSwitcher` hides
+ * itself there, so no CLICK can produce an override — but a link can, and `deploymentNetwork()`
+ * reads localhost as mainnet, so `?net=testnet` would have looked like a real choice.
+ * `viewedApiOrigin()` would then have pointed a dev bundle's authenticated reads at the live
+ * testnet estate. `viewedSurfaceUrl` already refuses to compose on a host it does not understand;
+ * this is the same refusal, one layer earlier, where it also covers the API base.
+ */
+function fromLink(): ViewedNetwork | null {
+  if (currentNetwork() === null) return null
+  const asked = networkFromQuery()
+  if (asked === null) return null
+  return asked === deploymentNetwork() ? null : asked
+}
+
+let viewed: ViewedNetwork | null = fromLink()
 
 /** The network the reader is viewing: their in-tab choice, or the hostname's network. */
 export function viewedNetwork(): ViewedNetwork {
