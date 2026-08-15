@@ -43,11 +43,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createElement as h } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 
-import { withScreen } from './dom.ts'
+import { withScreen, type Routes } from './dom.ts'
 import * as fx from './fixtures.ts'
 import { __resetAuth } from '../src/lib/api.ts'
 import { ReceivePanel } from '../src/components/receive.tsx'
+import { OverviewPage } from '../src/pages/overview.tsx'
 import type { DepositAssignment } from '../src/lib/money.ts'
 
 const ORIGIN = 'https://hub.cloudsforge.online'
@@ -375,6 +377,141 @@ describe('the deposit addresses an account already holds', () => {
         assert.ok(
           !s.text().includes('You have no deposit address yet'),
           'the panel showed an address and the list under it still said the account had none',
+        )
+      },
+    )
+  })
+})
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE SAME DEFECT, REPORTED A THIRD TIME, ON A DIFFERENT PAGE
+ *
+ *   *"in overview no bitcoin address exist again (i already discuss this with you twice)"*
+ *
+ * The scenarios above fixed the first half honestly and put the list on the RECEIVE panel, which
+ * lives on the Wallet page. The Overview — the page somebody means when they say "my account" —
+ * still carried no deposit address of any kind, so a reader who never opened Wallet saw exactly
+ * what they saw before the fix, and reported it again.
+ *
+ * ── AND THE HALF NOBODY FIXED, WHICH IS THE ONE THAT PRODUCES THE SENTENCE ────────────────────
+ *
+ * `wallet/src/deposits.ts` assigns ON DEMAND and nothing pre-creates anything, so an account has
+ * a Bitcoin address only if somebody explicitly asked for one. Measured on mainnet 2026-08-14:
+ *
+ *     EMBER 237    BTC 3    LTC 3    XRP 3    ETH 2    SOL 2
+ *
+ * Every one of those 237 came from the Receive selector, which defaults to `assets[0]` — EMBER.
+ * So the FIRST scenario below is the one the owner actually hit, and it is the one a list-shaped
+ * panel can never pass: the account holds no Bitcoin address, and Bitcoin must still be on the
+ * screen, by name, with the way to get one inside it. A test that only ever arranges an account
+ * that already HAS a BTC row is arranging the easy case and would have passed throughout.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+describe('the Overview, which is the page the owner meant', () => {
+  const overview = () => h(MemoryRouter, { initialEntries: ['/'] }, h(OverviewPage))
+
+  const routes = (assignments: readonly DepositAssignment[], extra: Routes = {}): Routes => ({
+    'GET /v1/dashboard': { body: fx.dashboard() },
+    'GET /v1/deposits/assets': ASSETS,
+    'GET /v1/deposits': { body: { assignments } },
+    ...extra,
+  })
+
+  it('names Bitcoin, and offers the address, on an account that holds only EMBER', async () => {
+    fresh()
+    await withScreen(
+      overview(),
+      { url: `${ORIGIN}/`, storage: SIGNED_IN, routes: routes([ember()]) },
+      async (s) => {
+        await s.settle()
+
+        // The page rendered at all — without this the assertions below pass on a blank document.
+        assert.match(s.text(), /Overview/)
+
+        assert.ok(
+          s.text().includes('Bitcoin'),
+          'the Overview does not contain the word Bitcoin. This is the reported defect verbatim: ' +
+            'the estate takes Bitcoin deposits and the account page never mentions it',
+        )
+        assert.ok(
+          s.byRole('button', /Get my Bitcoin address/i),
+          'Bitcoin is named but there is no way to get an address from this page, which leaves the ' +
+            'reader exactly where they were — behind a select on another page that defaults to EMBER',
+        )
+        // And the one they DO hold is printed, in full, rather than behind a press.
+        assert.ok(
+          s.text().includes(ember().address),
+          'the EMBER address this account holds was not printed on the Overview',
+        )
+      },
+    )
+  })
+
+  it('prints the Bitcoin address in full once the account has one', async () => {
+    fresh()
+    await withScreen(
+      overview(),
+      { url: `${ORIGIN}/`, storage: SIGNED_IN, routes: routes([btc(), ember()]) },
+      async (s) => {
+        await s.settle()
+        assert.ok(
+          s.text().includes(btc().address),
+          'the account holds a Bitcoin address and the Overview did not print it',
+        )
+        // NO TRUNCATION, the same rule the Receive panel is held to: a shortened deposit address
+        // is a destination somebody can copy and lose money to.
+        assert.ok(!s.text().includes('…'), 'an ellipsis appeared in a screen that prints addresses')
+        assert.ok(
+          s.byRole('button', /Copy the Bitcoin deposit address/i),
+          'a 42-character address was printed with no way to copy it but by hand',
+        )
+      },
+    )
+  })
+
+  it('mints nothing by being looked at', async () => {
+    // wallet's own rule, and the reason this panel does not just assign what is missing:
+    // "Defaulting to it would mint a new address on every page load and leave a trail of
+    // addresses nobody was told about." A panel that provisioned all three on mount would be that,
+    // once per coin, for every reader who came to look at their balance.
+    fresh()
+    await withScreen(
+      overview(),
+      { url: `${ORIGIN}/`, storage: SIGNED_IN, routes: routes([ember()]) },
+      async (s) => {
+        await s.settle()
+        assert.equal(
+          s.api.wire.filter((c) => c.method === 'POST' && c.path === '/v1/deposits').length,
+          0,
+          'the Overview assigned a deposit address without anybody asking for one',
+        )
+      },
+    )
+  })
+
+  it('says so when the read failed, rather than showing an account with no addresses', async () => {
+    // `lib/tile.ts`: "an empty array is a field that renders correctly by accident." Drawing a
+    // failed read as an empty one tells somebody they have no Bitcoin address while the row sits
+    // in the database — and they may then go and mint a second one.
+    fresh()
+    await withScreen(
+      overview(),
+      {
+        url: `${ORIGIN}/`,
+        storage: SIGNED_IN,
+        routes: routes([], {
+          'GET /v1/deposits': {
+            status: 503,
+            body: fx.errorBody('upstream_unavailable', 'The wallet did not answer.'),
+          },
+        }),
+      },
+      async (s) => {
+        await s.settle()
+        assert.ok(
+          s.text().includes('could not read your deposit addresses'),
+          'a failed read was drawn as an account that has no addresses',
         )
       },
     )

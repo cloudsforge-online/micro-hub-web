@@ -14,10 +14,13 @@
  * The layout follows design-system.md §6, in its order and for its stated reasons:
  *
  *   1. Portfolio first, carrying its pricing timestamp.
- *   2. "Needs you" as the primary call to action, one card per source, each degrading alone.
- *   3. Wallet lifecycle state visible in the list rather than behind a detail view.
- *   4. Activity as a preview of the last four, with one link out.
- *   5. Notifications, the newest few and the unread total — last because it is the only region
+ *   2. Deposit addresses — the one departure from §6's order, argued at the panel itself. What you
+ *      hold and how anything gets in are one question, and this half of it had never been on the
+ *      page at all.
+ *   3. "Needs you" as the primary call to action, one card per source, each degrading alone.
+ *   4. Wallet lifecycle state visible in the list rather than behind a detail view.
+ *   5. Activity as a preview of the last four, with one link out.
+ *   6. Notifications, the newest few and the unread total — last because it is the only region
  *      here that is purely informational, and because it was absent altogether until micro-org
  *      #415: the tile it draws was a hard-coded `unavailable`, which put a permanent
  *      "notifications is not showing current data" banner at the top of this page for every user.
@@ -25,6 +28,7 @@
 import { useCallback, useId } from 'react'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
 import { Link } from 'react-router-dom'
+import { AddressBook } from '../components/addressbook.tsx'
 import { DegradedBanner, TilePanel } from '../components/tile.tsx'
 import { EstimateNotice } from '../components/estimate.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
@@ -154,7 +158,31 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         )}
       </TilePanel>
 
-      {/* ── 2. "Needs you" — the primary call to action ───────────────────────────────────── */}
+      {/*
+        ── 2. HOW MONEY GETS IN, DIRECTLY UNDER WHAT YOU HOLD ──────────────────────────────────
+
+        This panel is here because of a defect reported three times, the last of them:
+
+          *"in overview no bitcoin address exist again (i already discuss this with you twice)"*
+
+        And the reader was right on every occasion. The Overview is the page somebody means when
+        they say "my account", and it has never carried a deposit address of any kind — the only
+        one in this bundle was on Wallet → Receive, behind a `<select>` that defaults to EMBER.
+        `components/addressbook.tsx` records the measurement that proves the consequence: 237
+        accounts on mainnet hold an EMBER address and three hold a Bitcoin one, on an estate that
+        has taken Bitcoin deposits, correctly and completely, the whole time.
+
+        It sits second because it is the pair to the panel above it. Portfolio says what you have;
+        this says how anything gets in. Putting it below "Waiting on you", where a strict reading
+        of design-system.md §6 would have it, would leave the answer to "where do I send my
+        Bitcoin" under a fold on the one page that is supposed to answer it.
+
+        `compact` gives it the link out to Wallet rather than repeating rotation and the older
+        addresses here — that screen owns those, and this one owns the question.
+      */}
+      <AddressBook compact />
+
+      {/* ── 3. "Needs you" — the primary call to action ───────────────────────────────────── */}
       <section className="wt-panel">
         <header className="wt-panel__head">
           <h2 className="wt-panel__title">Waiting on you</h2>
@@ -186,7 +214,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
       </section>
 
       <div className="wt-columns">
-        {/* ── 3. Wallets, with lifecycle state in the list ────────────────────────────────── */}
+        {/* ── 4. Wallets, with lifecycle state in the list ────────────────────────────────── */}
         <TilePanel
           title="Wallets"
           tile={tiles.wallets}
@@ -211,7 +239,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
           )}
         </TilePanel>
 
-        {/* ── 4. Activity: the last four, and one link out ────────────────────────────────── */}
+        {/* ── 5. Activity: the last four, and one link out ────────────────────────────────── */}
         <TilePanel
           title="Activity"
           tile={tiles.activity}
@@ -232,7 +260,7 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         </TilePanel>
       </div>
 
-      {/* ── 5. Notifications ──────────────────────────────────────────────────────────────── */}
+      {/* ── 6. Notifications ──────────────────────────────────────────────────────────────── */}
       <NotificationsPanel tile={tiles.notifications} />
 
       {/*
