@@ -863,13 +863,26 @@ body {
   padding: 0;
 }
 
+/*
+ * ── `--cf-border` IS NOT A TOKEN, AND NEVER HAS BEEN ──────────────────────────────────────────
+ *
+ * Every rule below that draws a hairline used to name `var(--cf-border)`. There is no such custom
+ * property in `@cloudsforge/ui/tokens.css` or in this file, so the declaration was invalid at
+ * computed-value time and `border-color` fell back to its initial value — `currentColor`. Each of
+ * those borders was therefore drawn in the element's own TEXT colour: a full-strength bone rule
+ * around a card, where a 10%-alpha hairline was meant. It reads as a heavy white box, which is
+ * precisely the *"ugly text in boxes"* being reported. Screenshotting the real markup is what
+ * caught it; it is invisible in a DOM test, which asserts structure and never colour.
+ *
+ * All of them now name `--cf-line` (or `--cf-line-strong` where an edge has to carry meaning).
+ */
 .wt-choice {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
   width: 100%;
   padding: var(--cf-space-sm) var(--cf-space-md);
-  border: 1px solid var(--cf-border);
+  border: 1px solid var(--cf-line);
   border-radius: var(--cf-radius-sm);
   background: var(--cf-bg-sunken);
   color: inherit;
@@ -899,7 +912,7 @@ body {
 .wt-panel__sub {
   margin-top: var(--cf-space-lg);
   padding-top: var(--cf-space-md);
-  border-top: 1px solid var(--cf-border);
+  border-top: 1px solid var(--cf-line);
 }
 
 .wt-panel__sub h3 {
@@ -928,4 +941,450 @@ body {
   gap: var(--cf-space-sm);
   margin-top: var(--cf-space-sm);
   font-size: var(--cf-text-sm);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE ADDRESS BOOK — every coin this account can be paid in
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * ── THE ONE PLACE THIS FILE CARRIES A LITERAL COLOUR, AND WHY IT HAS TO ───────────────────────
+ *
+ * The header of this stylesheet states the rule: *"a literal hex here is a colour that will not
+ * follow the substrate."* The seven values below are exactly that, on purpose, because they are
+ * not this estate's palette — they are OTHER PEOPLE'S MARKS. Bitcoin's orange is #f7931a on a
+ * white page and on a black one; a Bitcoin that turned khaki in light mode would be a worse bug
+ * than the one this panel fixes, because the whole point of the mark is that it is recognised
+ * before it is read.
+ *
+ * They are declared once, as tokens, and used for ONE thing: a 4px rule down the left edge of a
+ * card and a wash behind it at 6–10% alpha. Never as text and never as a fill behind text, so no
+ * contrast ratio depends on them. EMBER is the exception in the other direction: it is this
+ * platform's own chain and it takes the substrate's own `--cf-ember`, which does follow the
+ * scheme, because that one IS our palette.
+ *
+ * Colour is never the only channel here — the ticker and the full name are on every card, which
+ * is the same rule `.wt-choice--on` and the tile notes are built on.
+ */
+:root {
+  --wt-coin-btc: #f7931a;
+  --wt-coin-ltc: #a5a8a9;
+  --wt-coin-eth: #8a92b2;
+  --wt-coin-doge: #c2a633;
+  --wt-coin-sol: #9945ff;
+  --wt-coin-xrp: #6d8ba3;
+  --wt-coin-etc: #3ab83a;
+  --wt-coin-default: var(--cf-fg-mute);
+}
+
+.wt-coins {
+  display: grid;
+  gap: var(--cf-space-md);
+  margin: var(--cf-space-lg) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two up once there is room for a 42-character address to sit on one line beside a copy button.
+   Below that they stack, which is the only honest thing to do with an address that must not be
+   shortened. */
+@media (min-width: 52rem) {
+  .wt-coins {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wt-coin {
+  position: relative;
+  display: grid;
+  gap: var(--cf-space-sm);
+  align-content: start;
+  padding: var(--cf-space-md) var(--cf-space-lg) var(--cf-space-lg);
+  padding-left: calc(var(--cf-space-lg) + 4px);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--wt-coin, var(--wt-coin-default)) 7%, transparent),
+      transparent 62%
+    ),
+    var(--cf-bg-sunken);
+}
+
+/* The mark: a rule down the left edge in the coin's own colour. It is `aria-hidden`, it carries no
+   information the name and ticker do not, and it is the thing that makes eight cards scannable. */
+.wt-coin__mark {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: var(--cf-radius) 0 0 var(--cf-radius);
+  background: var(--wt-coin, var(--wt-coin-default));
+}
+
+.wt-coin--btc { --wt-coin: var(--wt-coin-btc); }
+.wt-coin--ltc { --wt-coin: var(--wt-coin-ltc); }
+.wt-coin--eth { --wt-coin: var(--wt-coin-eth); }
+.wt-coin--doge { --wt-coin: var(--wt-coin-doge); }
+.wt-coin--sol { --wt-coin: var(--wt-coin-sol); }
+.wt-coin--xrp { --wt-coin: var(--wt-coin-xrp); }
+.wt-coin--etc { --wt-coin: var(--wt-coin-etc); }
+.wt-coin--ember { --wt-coin: var(--cf-ember); }
+
+/* A coin the estate cannot take is quiet rather than absent: naming it and saying why is what
+   stops somebody sending it anyway, which absence never does. */
+.wt-coin--off {
+  opacity: 0.72;
+  background: var(--cf-bg-sunken);
+}
+
+.wt-coin__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cf-space-sm);
+}
+
+.wt-coin__name {
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-tight);
+}
+
+.wt-coin__ticker {
+  font-size: var(--cf-text-2xs);
+  letter-spacing: var(--cf-tracking-wide);
+  text-transform: uppercase;
+  color: var(--cf-fg-mute);
+}
+
+.wt-coin__chain {
+  margin-left: auto;
+  font-size: var(--cf-text-2xs);
+  color: var(--cf-fg-mute);
+}
+
+.wt-coin__addr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cf-space-sm);
+}
+
+/* `anywhere`, not `break-word`: an address has no break opportunities in it at all, so a rule that
+   only breaks between words leaves a 42-character run to overflow the card on a phone. */
+.wt-coin__addr .wt-addr {
+  flex: 1 1 22ch;
+  min-width: 0;
+  padding: var(--cf-space-sm) var(--cf-space-md);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg);
+  font-size: var(--cf-text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.wt-coin__hint,
+.wt-coin__why {
+  margin: 0;
+  font-size: var(--cf-text-xs);
+  line-height: 1.5;
+  color: var(--cf-fg-mute);
+}
+
+.wt-coin__warn {
+  margin: 0;
+  font-size: var(--cf-text-xs);
+  line-height: 1.5;
+  color: var(--cf-warn-text);
+}
+
+.wt-coin__get {
+  display: grid;
+  gap: var(--cf-space-xs);
+  justify-items: start;
+}
+
+/*
+ * COPY.
+ *
+ * The first copy control in this bundle. A deposit address is 42 characters and the cost of one
+ * wrong character is the whole payment, so hand-selection across a wrap was the previous state of
+ * the art and it is how a character goes missing.
+ */
+.wt-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cf-space-xs);
+  flex: 0 0 auto;
+  padding: var(--cf-space-sm) var(--cf-space-md);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-bg-raised);
+  color: inherit;
+  font: inherit;
+  font-size: var(--cf-text-sm);
+  cursor: pointer;
+  transition: border-color var(--cf-speed) var(--cf-ease);
+}
+
+.wt-copy:hover {
+  border-color: var(--cf-line-strong);
+}
+
+.wt-copy__glyph {
+  font-size: var(--cf-text-md);
+  line-height: 1;
+}
+
+/* A `<details>` for the coins the estate cannot take, and for the connection details on Settings.
+   Both are true, both are worth keeping, and neither should outweigh what the page is for. */
+.wt-more {
+  margin-top: var(--cf-space-lg);
+  border-top: 1px solid var(--cf-line);
+  padding-top: var(--cf-space-md);
+}
+
+.wt-more > summary {
+  cursor: pointer;
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg-mute);
+}
+
+.wt-more > summary:hover {
+  color: var(--cf-fg);
+}
+
+.wt-coins--quiet {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ACCESS — grants as cards, because a six-column table for two rows is the wrong instrument
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.wt-grants {
+  display: grid;
+  gap: var(--cf-space-md);
+  margin: var(--cf-space-md) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 52rem) {
+  .wt-grants {
+    grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  }
+}
+
+.wt-grant {
+  display: grid;
+  gap: var(--cf-space-sm);
+  align-content: start;
+  padding: var(--cf-space-lg);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-bg-sunken);
+  border-left: 3px solid var(--cf-good);
+}
+
+/* An expired or revoked grant is kept and dimmed rather than hidden: a reader asking "why can I no
+   longer open this" is answered by the row, and never by its absence. */
+.wt-grant--off {
+  border-left-color: var(--cf-line-strong);
+  opacity: 0.7;
+}
+
+.wt-grant__sku {
+  margin: 0;
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.wt-grant__scope {
+  margin: 0;
+  font-size: var(--cf-text-sm);
+  color: var(--cf-fg-dim);
+  overflow-wrap: anywhere;
+}
+
+.wt-grant__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cf-space-sm) var(--cf-space-lg);
+  margin: 0;
+  padding-top: var(--cf-space-sm);
+  border-top: 1px solid var(--cf-line);
+  font-size: var(--cf-text-2xs);
+  color: var(--cf-fg-mute);
+}
+
+.wt-grant__dates > span {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.wt-grant__dates b {
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-wide);
+  text-transform: uppercase;
+}
+
+/*
+ * An empty screen is an invitation, not a report. Access is empty for almost every account in the
+ * estate, so this state is the page for almost every reader — which makes it the design rather
+ * than the fallback.
+ */
+.wt-invite {
+  display: grid;
+  gap: var(--cf-space-sm);
+  justify-items: start;
+  padding: var(--cf-space-2xl) var(--cf-space-lg);
+  border: 1px dashed var(--cf-line-strong);
+  border-radius: var(--cf-radius);
+  background: var(--cf-bg-sunken);
+}
+
+.wt-invite__title {
+  margin: 0;
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-tight);
+}
+
+.wt-invite__body {
+  margin: 0;
+  max-width: 54ch;
+  font-size: var(--cf-text-sm);
+  line-height: 1.6;
+  color: var(--cf-fg-dim);
+}
+
+.wt-invite__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cf-space-lg);
+  margin-top: var(--cf-space-xs);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * SETTINGS — who you are, and what you can change from here
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.wt-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cf-space-lg);
+  padding: var(--cf-space-lg) 0 var(--cf-space-xl);
+}
+
+/* The initial, at display size. It is the one piece of an account that is unmistakably yours on a
+   page that otherwise carries no personal mark at all. */
+.wt-identity__initial {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cf-ember) 18%, var(--cf-bg-sunken));
+  border: 1px solid color-mix(in srgb, var(--cf-ember) 40%, transparent);
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-2xl);
+  font-weight: 600;
+  color: var(--cf-ember-text);
+  text-transform: uppercase;
+}
+
+.wt-identity__who {
+  display: grid;
+  gap: var(--cf-space-2xs);
+  min-width: 0;
+}
+
+.wt-identity__handle {
+  margin: 0;
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.wt-identity__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cf-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * A settings page is a list of things you can change. These are those things, and each one names
+ * the place that owns it — which is the honest shape for an account whose email, password and
+ * second factor live in a service this bundle does not own.
+ */
+.wt-settings {
+  display: grid;
+  gap: var(--cf-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 52rem) {
+  .wt-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wt-setting {
+  display: grid;
+  gap: var(--cf-space-2xs);
+  align-content: start;
+  padding: var(--cf-space-lg);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-bg-sunken);
+}
+
+.wt-setting__title {
+  margin: 0;
+  font-size: var(--cf-text-md);
+  font-weight: 600;
+}
+
+.wt-setting__sub {
+  margin: 0;
+  font-size: var(--cf-text-sm);
+  line-height: 1.5;
+  color: var(--cf-fg-mute);
+}
+
+/* `.cf-btn` is a transparent trigger with a transparent border — right for a toolbar, wrong for the
+   only thing on this page you can actually go and do. It is an `<a>`, so it also arrives carrying
+   the browser's underline. Both are corrected here rather than by promoting it to `--ember`: the
+   solid ember button is spent once per view, and on an account it is spent on getting an address. */
+.wt-setting__go {
+  margin-top: var(--cf-space-xs);
+  justify-self: start;
+  border-color: var(--cf-line-strong);
+  color: var(--cf-fg);
+  text-decoration: none;
+}
+
+/* A setting whose owner has no page yet. Stated, not hidden, and not dressed up as a control that
+   does nothing — but a hole should not out-shout the one card you can act on, so the dash is drawn
+   in the hairline colour and the card sits back on the page background. */
+.wt-setting--none {
+  border-style: dashed;
+  background: transparent;
 }
