@@ -39,7 +39,7 @@
  * submit still goes, identity still decides, and its answer still wins.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-import { handoffReturnUrl, mintHandoffCode } from '@cloudsforge/ui'
+import { handoffReturnUrl, mintHandoff } from '@cloudsforge/ui'
 import { nimbus, setTokens, type AuthTokens } from './api.ts'
 
 /** What identity puts in `user`, built by `toPublicUser` (`identity/src/users.ts`). */
@@ -444,11 +444,39 @@ export const revokeRefreshToken = (refreshToken: string): Promise<void> =>
 
 /* ─────────────────────────────── finishing a sign-in ─────────────────────────────── */
 
+/**
+ * Why a hand-off did not happen, and it is THREE facts rather than one — micro-org#480.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * The bug this type exists to end: every failure to mint printed *"CloudsForge will not hand a
+ * session to that origin… ask an operator to add it to the hand-off allowlist"*, and the apex was
+ * never off the allowlist. Measured on 2026-08-17: `/auth/handoff` answers 201 for the estate's own
+ * apex — the address `cloudsforgeHosts()` composes, not written down here, because CI greps `src`
+ * for a literal hostname and is right to — and identity's audit log holds zero `handoff_refused`
+ * lines for it in 72 hours. What people were hitting is an EXPIRED ACCESS TOKEN — `hasSession()` tests
+ * that `cf.accessToken` is PRESENT, never that it is live, and an access token lives 15 minutes.
+ * Reopen the browser the next morning and the mint goes out with a dead bearer, comes back 401,
+ * and the reader is told to go and talk to an operator about a list they are already on.
+ *
+ * A sentence blaming configuration for an expired session is worse than no sentence: it sends the
+ * one person who could fix it (sign in again) to bother somebody who cannot.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ *   `origin`  — identity refused this origin. `micro-identity#22` answers a distinct
+ *               `handoff_origin_refused` 403 code for it, which is the only thing that may
+ *               produce the allowlist sentence.
+ *   `session` — the bearer was not accepted. Nothing is misconfigured; sign in again.
+ *   `unknown` — the mint failed and said nothing usable, or this bundle is running against a
+ *               `@cloudsforge/ui` that still collapses every refusal to null. Neither claim may be
+ *               made, so neither is.
+ */
+export type HandoffRefusal = 'origin' | 'session' | 'unknown'
+
 /** Where a completed sign-in should send the browser next. */
 export type Completion =
   | { readonly kind: 'here'; readonly path: string }
   | { readonly kind: 'handoff'; readonly url: string }
-  | { readonly kind: 'refused'; readonly origin: string }
+  | { readonly kind: 'refused'; readonly origin: string; readonly why: HandoffRefusal }
 
 /**
  * Store the session and work out where the browser goes.
@@ -462,13 +490,13 @@ export type Completion =
  *
  * The return address is another surface (Worlds, Market, the marketing site): that origin cannot
  * read this one's storage, so identity mints a 60-second, single-use, origin-bound code and the
- * code — not a token — travels in the fragment. `mintHandoffCode` and `handoffReturnUrl` are in
+ * code — not a token — travels in the fragment. `mintHandoff` and `handoffReturnUrl` are in
  * `@cloudsforge/ui` beside `consumeAuthCallback`, which is what reads it at the other end.
  *
- * A refusal is its own case rather than a silent fall-back to Hub. identity refuses an origin that
- * is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts`), and that is a
- * misconfiguration somebody has to fix — sending the user to a dashboard they did not ask for
- * would hide it and look like the surface they came from is broken.
+ * A refusal is its own case rather than a silent fall-back to Hub. Sending the user to a dashboard
+ * they did not ask for would hide it and look like the surface they came from is broken. But WHICH
+ * refusal it was is carried out of here rather than assumed: see `HandoffRefusal` above for the
+ * months this app spent blaming an allowlist for an expired access token.
  */
 export async function completeSignIn(
   granted: SessionGranted,
@@ -498,9 +526,75 @@ export async function completeSignIn(
   // MINT for an origin that is not on `IDENTITY_HANDOFF_ORIGINS` (`identity/src/handoff.ts`),
   // so a code for somebody else's page is never issued, and the redirect below only ever happens
   // to an origin the platform has already agreed to hand tokens to.
-  const code = await mintHandoffCode(granted.accessToken, target.origin)
-  if (!code) return { kind: 'refused', origin: target.origin }
-  return { kind: 'handoff', url: handoffReturnUrl(target.toString(), code) }
+  const minted = readMint(await mintHandoff(granted.accessToken, target.origin))
+  if (minted.code === null) {
+    return { kind: 'refused', origin: target.origin, why: minted.why }
+  }
+  return { kind: 'handoff', url: handoffReturnUrl(target.toString(), minted.code) }
+}
+
+/**
+ * Read what `@cloudsforge/ui` answered a mint with, WITHOUT asserting which shape it is.
+ *
+ * ── WHY THIS TAKES `unknown` WHEN THE CALLER IS TYPED ─────────────────────────────────────────
+ *
+ * `mintHandoffCode` collapsed EVERY non-2xx to `null`. Its own comment said *"there is nothing
+ * useful for a caller to do with the distinction"*, and micro-org#480 is the proof that there is:
+ * the distinction is the difference between "sign in again" and "go and find an operator", and
+ * for months this app told everyone the second when the truth was the first. `mintHandoff` is the
+ * widened call that reports it, and `completeSignIn` above uses it.
+ *
+ * The two repositories ship separately and `@cloudsforge/ui` is linked, not versioned, so a
+ * checkout can hold either. Narrowing at RUNTIME rather than by type means an older package —
+ * which answers with the bare code or `null` — degrades to `unknown`, the one sentence that is
+ * true whatever happened, instead of throwing inside a sign-in. A version check would have to be
+ * kept in step with a release; a shape check is true whenever it is run.
+ *
+ * ── AN ERROR CODE IS NEVER MISTAKEN FOR A HAND-OFF CODE ───────────────────────────────────────
+ *
+ * A refusal envelope carries a code too — `handoff_origin_refused` IS a code, of a different kind
+ * — so a code is only read once it has been established that this is not a refusal. Getting that
+ * backwards would put the word `handoff_origin_refused` in the fragment of a redirect and hand the
+ * browser to the other surface with rubbish in its address bar, which fails in a way nobody would
+ * trace back to here.
+ */
+function readMint(minted: unknown): { readonly code: string | null; readonly why: HandoffRefusal } {
+  // An older `@cloudsforge/ui`: the code itself, or null for every possible reason.
+  if (typeof minted === 'string') {
+    return minted.length > 0 ? { code: minted, why: 'unknown' } : { code: null, why: 'unknown' }
+  }
+  if (minted === null || typeof minted !== 'object') return { code: null, why: 'unknown' }
+
+  const shape = minted as {
+    ok?: unknown
+    code?: unknown
+    refusal?: unknown
+    errorCode?: unknown
+    error?: unknown
+    status?: unknown
+  }
+  const said = typeof shape.errorCode === 'string' ? shape.errorCode : typeof shape.error === 'string' ? shape.error : ''
+  const status = typeof shape.status === 'number' ? shape.status : null
+  const refused = shape.ok === false || said !== '' || (status !== null && (status < 200 || status > 299))
+  if (refused) {
+    /*
+     * The package's own word for it wins over the status, because the package read the body and
+     * this did not. Its vocabulary is four values to these three: `unreachable` and `refused` both
+     * become `unknown`, which is the correct claim for both — the request never arrived, or
+     * identity refused for a reason it did not name, and neither supports blaming the allowlist.
+     */
+    if (shape.refusal === 'origin' || shape.refusal === 'session') {
+      return { code: null, why: shape.refusal }
+    }
+    if (shape.refusal === 'unreachable' || shape.refusal === 'refused') return { code: null, why: 'unknown' }
+    if (said === 'handoff_origin_refused' || status === 403) return { code: null, why: 'origin' }
+    if (status === 401) return { code: null, why: 'session' }
+    return { code: null, why: 'unknown' }
+  }
+  const code = shape.code
+  return typeof code === 'string' && code.length > 0
+    ? { code, why: 'unknown' }
+    : { code: null, why: 'unknown' }
 }
 
 /**

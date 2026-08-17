@@ -251,9 +251,11 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
           empty={<p className="wt-note">Nothing has been recorded against this account yet.</p>}
         >
           {tiles.activity.data.length === 0 ? null : (
-            <ul className="wt-rows">
+            // The same typed row the Activity page draws, so the preview and the page it links to
+            // are one design (micro-org#482). `showDate` because there are no day headings here.
+            <ul className="wt-tape wt-tape--tight">
               {tiles.activity.data.map((record) => (
-                <ActivityRow key={record.id} record={record} />
+                <ActivityRow key={record.id} record={record} showDate />
               ))}
             </ul>
           )}

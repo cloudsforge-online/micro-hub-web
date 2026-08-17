@@ -103,24 +103,78 @@ body {
   padding: 1.5rem 1rem 4rem;
 }
 
+/*
+ * ── `.wt-page__lede` HAD NO RULE, AND THAT IS THE WHOLE OF "IT IS JUST TEXT" ───────────────────
+ *
+ * micro-org#482 and #485 report the same thing about two different pages, and the mechanical cause
+ * was one missing selector. Seven pages render `<p class="wt-page__lede">` as a direct child of
+ * this header; this header was `display:flex; justify-content:space-between; align-items:baseline`.
+ * So the lede became a flex item beside the `<h1>` — sharing a baseline with a 21px title, taking
+ * whatever width was left, set in body colour at body size with no measure and no rhythm. On the
+ * Wallet page, where two such paragraphs ran to 120 words, the result was a wall of grey where the
+ * balances should have been.
+ *
+ * A grid, not a flex row, so the three parts can each be placed rather than fight for the line:
+ * the title and the summary figure share row one, and the lede takes the full width beneath them.
+ * `search.tsx` is the page that needs the old side-by-side behaviour and gets it unchanged, which
+ * is why the meta is pinned to row 1 rather than left to flow.
+ */
 .wt-page__head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
+  gap: var(--cf-space-2xs) var(--cf-space-xl);
+  margin-bottom: var(--cf-space-2xl);
 }
 
 .wt-page__title {
+  grid-column: 1;
   margin: 0;
-  font-size: var(--cf-text-xl);
-  letter-spacing: -0.01em;
+  font-family: var(--cf-font-display);
+  font-size: var(--cf-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--cf-tracking-tight);
 }
 
 .wt-page__meta {
   margin: 0;
   color: var(--cf-fg-mute);
   font-size: var(--cf-text-xs);
+}
+
+/*
+ * One sentence, at reading width, in the dimmed voice. It is under the title rather than beside it
+ * because a lede is a subtitle and a subtitle that shares a baseline with its title is a caption.
+ * `--cf-measure` is the estate's own reading measure; a lede that ran the full 1200px would be the
+ * same defect in a different direction.
+ */
+.wt-page__lede {
+  grid-column: 1 / -1;
+  margin: var(--cf-space-2xs) 0 0;
+  max-inline-size: var(--cf-measure);
+  color: var(--cf-fg-dim);
+  font-size: var(--cf-text-md);
+  line-height: var(--cf-leading);
+  text-wrap: pretty;
+}
+
+/* Wide enough for the summary figure to sit beside the title — which is what `search.tsx` has
+   always looked like, and the one arrangement the old flex row got right. */
+@media (min-width: 52rem) {
+  .wt-page__head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .wt-page__meta {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    text-align: right;
+  }
+
+  .wt-page__lede {
+    font-size: var(--cf-text-lg);
+  }
 }
 
 .wt-panel {
@@ -1139,8 +1193,9 @@ body {
   line-height: 1;
 }
 
-/* A `<details>` for the coins the estate cannot take, and for the connection details on Settings.
-   Both are true, both are worth keeping, and neither should outweigh what the page is for. */
+/* A `<details>` for the connection details on Settings: true, worth keeping, and not what the page
+   is for. The coins the estate cannot take used to live here too and no longer do — a reader
+   hunting for Dogecoin does not open a summary that does not say "Dogecoin" (micro-org#481). */
 .wt-more {
   margin-top: var(--cf-space-lg);
   border-top: 1px solid var(--cf-line);
@@ -1387,4 +1442,392 @@ body {
 .wt-setting--none {
   border-style: dashed;
   background: transparent;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE NETWORK MARK — one treatment, used by every figure in the account
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * micro-org#482 §3 and #485 §3 are the same requirement said twice: *"mainnet and testnet rows in
+ * one undifferentiated list is how somebody misreads a testnet amount as real."*
+ *
+ * It is deliberately NOT `.wt-chip`. A chip is the vocabulary for `hearth`, `managed`, `settling`
+ * — facts about a row that are all equally quiet, and the network is not one of those. A reader
+ * scanning a column of chips reads none of them, which is exactly how a testnet figure gets past.
+ * So the network gets a filled mark of its own, sized and spaced like a chip so the strip still
+ * lines up, and testnet takes the warn tone the bar's own testnet band already uses.
+ *
+ * Mainnet is deliberately quiet rather than green. Marking the ordinary case would make the mark
+ * meaningless within a page, and green on a mainnet amount reads as "this is fine" on a screen
+ * where the reader is about to send money.
+ *
+ * COLOUR IS NEVER THE ONLY CHANNEL: the element's text IS the word `mainnet` or `testnet`. Nothing
+ * here is inferrable only from the fill, so this survives a monochrome print and a reader who
+ * cannot separate the two hues.
+ */
+.wt-net {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--cf-radius-sm);
+  border: 1px solid var(--cf-line-strong);
+  background: var(--cf-bg-sunken);
+  color: var(--cf-fg-dim);
+  font-family: var(--cf-font-mono);
+  font-size: var(--cf-text-2xs);
+  letter-spacing: var(--cf-tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* An unrecognised value keeps the quiet treatment above rather than falling through to nothing —
+   a network this bundle has never heard of must still be printed, and printed legibly. */
+.wt-net--testnet {
+  border-color: var(--cf-warn-edge);
+  background: var(--cf-warn-wash);
+  color: var(--cf-warn-text);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ACTIVITY — the tape
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ *   *"It is just text."*  — micro-org#482
+ *
+ * It was. One `<ul class="wt-rows">`, every row the same weight, the same grey and the same shape,
+ * with the date reprinted two hundred times down the left. The redesign gives the list three
+ * structural channels it did not have, and each one carries a fact rather than a decoration:
+ *
+ *   * THE DAY IS A HEADING. Printed once, in the mono eyebrow the rest of the estate uses for a
+ *     label, over the rows that belong to it. The rows keep a clock time, which is the part that
+ *     differs between them.
+ *   * THE TONE MARK IS A COLUMN. Five tones — arrived, left, needs you, access, noted — each an
+ *     outlined glyph in its own square, aligned so that a month of history has a visible SHAPE
+ *     before a word of it is read. This is the page's one signature element and the only place it
+ *     spends any boldness.
+ *   * MONEY IS A COLUMN, RIGHT-ALIGNED AND TABULAR. Two figures in two sentences are not
+ *     comparable; two figures in a column are. The network mark sits under the figure, so no
+ *     amount on this page is ambiguous between the two estates.
+ */
+
+.wt-day {
+  margin-block: var(--cf-space-2xl) 0;
+}
+
+.wt-day:first-of-type {
+  margin-block-start: var(--cf-space-xl);
+}
+
+/* The eyebrow, and the rule under it. Uppercase mono at 11px is this estate's label voice — the
+   same one `.wt-coin__ticker` and the chart captions are set in — so a day reads as a label rather
+   than competing with the row titles beneath it. */
+.wt-day__label {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-space-md);
+  margin: 0 0 var(--cf-space-sm);
+  font-family: var(--cf-font-mono);
+  font-size: var(--cf-text-2xs);
+  font-weight: 400;
+  letter-spacing: var(--cf-tracking-wide);
+  text-transform: uppercase;
+  color: var(--cf-fg-mute);
+}
+
+.wt-day__label::after {
+  content: '';
+  flex: 1 1 auto;
+  block-size: 1px;
+  background: var(--cf-line);
+}
+
+.wt-tape {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-surface-solid);
+  overflow: hidden;
+}
+
+/* The dashboard preview: the same row, in a panel that already has a border of its own. */
+.wt-tape--tight {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/*
+ * Mobile first, and the mark stays in its column at every width.
+ *
+ * The time moves under the title on a narrow screen rather than being dropped: a feed with no
+ * clock on it is a feed you cannot cite in a support request. The money block moves with it, which
+ * costs the column alignment on a phone and keeps the figure beside the thing it belongs to.
+ */
+.wt-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--cf-space-2xs) var(--cf-space-md);
+  padding: var(--cf-space-md) var(--cf-space-lg);
+  border-block-start: 1px solid var(--cf-line);
+}
+
+.wt-entry:first-child {
+  border-block-start: 0;
+}
+
+.wt-tape--tight .wt-entry {
+  padding-inline: 0;
+}
+
+/* The tone mark. The glyph differs in OUTLINE per tone (↓ ↑ ▲ ◆ ◇) as well as in colour, and the
+   title beside it says the same thing in words, so nothing here depends on hue alone. */
+.wt-entry__mark {
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--cf-radius-sm);
+  border: 1px solid var(--wt-tone-edge, var(--cf-line-strong));
+  background: var(--wt-tone-wash, var(--cf-bg-sunken));
+  color: var(--wt-tone-text, var(--cf-fg-mute));
+  font-size: var(--cf-text-sm);
+  line-height: 1;
+}
+
+/* Arrived: value came in. The estate's "good" step, which is the only place this page uses it. */
+.wt-entry--in {
+  --wt-tone-edge: var(--cf-good-edge);
+  --wt-tone-wash: var(--cf-good-wash);
+  --wt-tone-text: var(--cf-good-text);
+}
+
+/* Left: value went out. Not a warning — a withdrawal is an ordinary thing somebody meant to do —
+   so it takes the substrate's accent rather than a danger colour. */
+.wt-entry--out {
+  --wt-tone-edge: color-mix(in srgb, var(--cf-accent) 45%, transparent);
+  --wt-tone-wash: color-mix(in srgb, var(--cf-accent) 12%, var(--cf-bg-raised));
+  --wt-tone-text: var(--cf-accent-text);
+}
+
+/* Needs you: something is waiting, refused or stuck. */
+.wt-entry--alert {
+  --wt-tone-edge: var(--cf-warn-edge);
+  --wt-tone-wash: var(--cf-warn-wash);
+  --wt-tone-text: var(--cf-warn-text);
+}
+
+/* Access: sign-ins, keys, second factors — the security spine of the account. Ember, because on a
+   hub-substrate page ember is the platform's own mark and this is the platform speaking. */
+.wt-entry--guard {
+  --wt-tone-edge: color-mix(in srgb, var(--cf-ember) 45%, transparent);
+  --wt-tone-wash: color-mix(in srgb, var(--cf-ember) 12%, var(--cf-bg-raised));
+  --wt-tone-text: var(--cf-ember-text);
+}
+
+/* Noted. `--wt-tone-*` unset, so the mark falls back to the hairline treatment above. */
+.wt-entry--note {
+  --wt-tone-text: var(--cf-fg-mute);
+}
+
+.wt-entry__when {
+  grid-column: 2;
+  color: var(--cf-fg-mute);
+  font-size: var(--cf-text-2xs);
+  white-space: nowrap;
+}
+
+.wt-entry__body {
+  grid-column: 2;
+  display: grid;
+  gap: var(--cf-space-3xs);
+  min-inline-size: 0;
+}
+
+.wt-entry__title {
+  font-size: var(--cf-text-md);
+  font-weight: 600;
+  line-height: var(--cf-leading-snug);
+}
+
+.wt-entry__detail {
+  color: var(--cf-fg-dim);
+  font-size: var(--cf-text-sm);
+  line-height: var(--cf-leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.wt-entry__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cf-space-sm);
+  margin-block-start: var(--cf-space-3xs);
+}
+
+.wt-entry__sum {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cf-space-sm);
+  margin-block-start: var(--cf-space-2xs);
+}
+
+.wt-entry__amount {
+  font-size: var(--cf-text-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/*
+ * Wide: four columns, and the money is a right-aligned tabular column down the page. That
+ * alignment is the whole argument for taking the figure out of the sentence — `0.0100` under
+ * `1.2500` is comparable at a glance, and the same two inside prose are not.
+ */
+@media (min-width: 52rem) {
+  .wt-entry {
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, auto);
+    column-gap: var(--cf-space-lg);
+  }
+
+  .wt-entry__when {
+    grid-column: 2;
+    padding-block-start: 0.15rem;
+  }
+
+  .wt-entry__body {
+    grid-column: 3;
+  }
+
+  .wt-entry__sum {
+    grid-column: 4;
+    display: grid;
+    justify-items: end;
+    gap: var(--cf-space-3xs);
+    margin-block-start: 0;
+    text-align: right;
+  }
+}
+
+/* ── The lens ─────────────────────────────────────────────────────────────────────────────────
+ *
+ * A radiogroup and not a row of links, because picking one of five is exactly what a radio group
+ * is, and because it must not put anything in the URL: the filter narrows the records ALREADY
+ * loaded, and a shareable link that reproduced the filter but not the cursor position would show a
+ * different set to whoever opened it. `aria-checked` carries the state to a screen reader; the
+ * fill and the weight carry it to everybody else.
+ */
+.wt-lens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cf-space-2xs);
+  margin-block-end: var(--cf-space-lg);
+  padding: var(--cf-space-3xs);
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-bg-sunken);
+}
+
+.wt-lens__opt {
+  padding: var(--cf-space-xs) var(--cf-space-lg);
+  border: 1px solid transparent;
+  border-radius: var(--cf-radius-sm);
+  background: transparent;
+  color: var(--cf-fg-dim);
+  font: inherit;
+  font-size: var(--cf-text-sm);
+  cursor: pointer;
+  transition: background var(--cf-speed) var(--cf-ease), color var(--cf-speed) var(--cf-ease);
+}
+
+.wt-lens__opt:hover {
+  background: var(--cf-surface-hover);
+  color: var(--cf-fg);
+}
+
+.wt-lens__opt:focus-visible {
+  outline: 2px solid var(--cf-accent);
+  outline-offset: 1px;
+}
+
+.wt-lens__opt--on {
+  border-color: var(--cf-line-strong);
+  background: var(--cf-surface-solid);
+  color: var(--cf-fg);
+  font-weight: 600;
+}
+
+.wt-lens__count {
+  margin: calc(-1 * var(--cf-space-sm)) 0 var(--cf-space-lg);
+  color: var(--cf-fg-mute);
+  font-size: var(--cf-text-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-lens__opt {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE COIN CARD, WITH A BALANCE ON IT — micro-org#485 §2
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * *"Each asset row: balance, the network it is on, and its deposit address where one exists. An
+ * asset showing nothing must say why in one line a person can act on."*
+ *
+ * The balance is the largest thing on the card because it is what the reader came for, and it is
+ * set in the mono face for the same reason every other figure in the estate is: eight cards of
+ * proportional digits do not line up, and a balance you cannot compare against yesterday's is a
+ * number you have to read twice.
+ */
+
+.wt-coin__bal {
+  display: grid;
+  gap: var(--cf-space-3xs);
+  margin: 0;
+  padding-block: var(--cf-space-2xs);
+}
+
+.wt-coin__figure {
+  font-size: var(--cf-text-2xl);
+  font-weight: 600;
+  line-height: var(--cf-leading-tight);
+  letter-spacing: var(--cf-tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+.wt-coin__unit {
+  font-size: var(--cf-text-sm);
+  font-weight: 400;
+  color: var(--cf-fg-mute);
+}
+
+/* "Nothing held" is set at the SAME size as a figure and not smaller. It is an answer to the
+   question the card is here to answer, and shrinking it would make an empty balance look like a
+   caption about a missing one. */
+.wt-coin__none {
+  font-family: var(--cf-font-mono);
+  font-size: var(--cf-text-lg);
+  color: var(--cf-fg-mute);
+  line-height: var(--cf-leading-tight);
+}
+
+/* The one line a person can act on. It carries the next move, so it is body colour rather than
+   the mute grey a caption would take. */
+.wt-coin__balnote {
+  color: var(--cf-fg-dim);
+  font-size: var(--cf-text-sm);
+  line-height: var(--cf-leading-snug);
+  text-wrap: pretty;
+}
+
+/* The chain slug loses `margin-left: auto` now that the network mark sits beside it — two things
+   pushed to the far edge of a flex row put a gap in the middle of the card's heading. */
+.wt-coin__chain {
+  margin-left: 0;
 }

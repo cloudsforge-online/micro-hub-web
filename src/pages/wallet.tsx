@@ -1,5 +1,37 @@
 /**
- * Wallet: send, receive, export a key — and the lists those three change.
+ * Wallet: what you hold, where it arrives, and how to send it out.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ── WHAT THIS PAGE WAS, AND WHY IT WAS REDESIGNED (micro-org#485) ─────────────────────────────
+ *
+ *   *"Useless text also."*
+ *
+ * The page opened with two paragraphs — a custody claim naming three coins, and every chain's
+ * confirmation depth spelled out in words — and then a Send form. A reader arriving to answer
+ * "how much Bitcoin have I got and where do I send more" read 120 words about neither. Three
+ * changes, and each one is a rearrangement rather than a decoration:
+ *
+ *   1. **The coins come first, and each one carries its own three facts.** #485 §2 asks for
+ *      "balance, the network it is on, and its deposit address where one exists" per asset, and
+ *      `components/addressbook.tsx` is now given the portfolio tile so its cards can say all
+ *      three. An asset showing nothing says which nothing it is, in a line with a next move in it.
+ *   2. **Nothing that must be said stands in front of the page.** The confirmation-depth sentence
+ *      was true and unreadable where it was; it is now inside "Arriving", which is the panel it is
+ *      about and the only one it changes how you read. The custody sentence was a claim about
+ *      three coins that the coin cards themselves now make, per coin, from what the service
+ *      answers rather than from prose that has already gone stale once (micro-org#421).
+ *   3. **Every figure on the page names its network.** #485 §3. The coin cards, the wallet rows,
+ *      the arriving rows and — new here — the leaving rows all carry it, in one shared treatment
+ *      that reads differently for testnet. `WithdrawalRecord.network` was on the wire the whole
+ *      time and this page threw it away.
+ *
+ * ── THE ADDRESS APPEARS EXACTLY ONCE ──────────────────────────────────────────────────────────
+ *
+ * `AddressBook` and `ReceivePanel` both draw held addresses, and stacking them would print the
+ * same eight destinations twice — the complaint, reproduced. `ReceivePanel` takes `compact` here,
+ * which narrows it to the one job nothing else does: getting a SECOND address for a coin that
+ * already has one, and the rotated addresses that leaves behind.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  *
  * ── The page READS through hub-api and WRITES to the services directly ─────────────────────────
  *
@@ -28,6 +60,7 @@
  * what they actually are: what is in flight. The settled history is the Activity page.
  */
 import { useCallback } from 'react'
+import { AddressBook } from '../components/addressbook.tsx'
 import { KeyExportPanel } from '../components/keyexport.tsx'
 import { ReceivePanel } from '../components/receive.tsx'
 import { SendPanel } from '../components/send.tsx'
@@ -38,6 +71,7 @@ import { loadDashboard, type DepositCredit, type WalletRecord, type WithdrawalRe
 import { loadTokenSightings, type TokenSighting } from '../lib/money.ts'
 import { absenceOf, hasAnswer } from '../lib/tile.ts'
 import { useResource } from '../lib/resource.ts'
+import { viewedNetwork } from '../lib/viewed.ts'
 
 const alwaysPresent = () => 1
 
@@ -50,70 +84,61 @@ export function WalletPage() {
   if (state === 'loading' || !data) return <Loading label="Reading your wallets" />
 
   const { wallets, deposits, withdrawals, portfolio } = data.tiles
+  const network = viewedNetwork()
 
   return (
     <>
       <header className="wt-page__head">
         <h1 className="wt-page__title">Wallet</h1>
         {/*
-          THIS LIST WAS `CHAIN_ASSETS` FROM `lib/money.ts` AND IT IS NOT ANY MORE (micro-org#421).
+          ONE SENTENCE, NAMING THE TWO THINGS THE PAGE DOES. What used to be here is recorded at
+          the top of this file: a custody claim about three coins (micro-org#421) followed by every
+          chain's confirmation depth. Both were true; neither belonged in front of the balances.
 
-          It read "We hold EMBER, Bitcoin, Ether, Litecoin, Dogecoin, Ethereum Classic, Solana and
-          XRP for you" — the eight assets Send OFFERS, which is the right list for a menu and the
-          wrong one for the verb "hold". Measured on the mainnet estate 2026-08-11, micro-indexer
-          runs three followers (EMBER, BTC, LTC) and no address has ever been issued on ETH, ETC,
-          SOL or XRP: there is nothing of a reader's on those chains for us to be holding. The
-          owner caught the identical sentence on the public marketing site the same day. (Named
-          that way and not by hostname because the estate rule greps this file for one, comments
-          included, and it is right to.)
-
-          So the prose names what a deposit can arrive in — `CREDITABLE_ASSETS` in
-          `contracts/packages/chain`, written out in words rather than rendered from it, because a
-          sentence assembled from an array reads like one and this is the first paragraph on the
-          page. Dogecoin is named as NEXT rather than held, which is what it is: the code is
-          written and this estate's node is still catching up.
-
-          The MENU below is unchanged and stays eight, for the reason `lib/money.ts` argues at
-          length — a chain that is offered and refused with a reason is honest, and the panels are
-          gated on a real balance and on what the service answers rather than on this prose. What
-          changed is only the sentence that used the menu to make a custody claim.
+          The network is a chip and not a clause, because it qualifies every figure below rather
+          than the sentence beside it. `viewedNetwork()` and not `hosts()`: under the combined view
+          both networks are served from the mainnet hostnames, so the hostname is not an answer —
+          `lib/viewed.ts` has the whole of it. Every read on this page goes out through
+          `viewedApiOrigin()`, so this names the estate the figures came from and nothing else.
         */}
         <p className="wt-page__lede">
-          We hold EMBER, Bitcoin and Litecoin for you — Dogecoin is next — so sending, receiving and
-          spending across CloudsForge take no key handling on your part. Send anything out and the
-          network fee is taken from the amount rather than added to it, and the figure that will
-          actually land is shown before you commit.
+          What you hold, the address each coin arrives at, and how to send it out again.
         </p>
-        {/*
-          Every depth here is `confirmations` from `contracts/packages/chain/src/index.ts`, which is
-          the one place the estate agrees them — wallet, settlement, custody and the indexer all
-          read that package and none of them restate it. Ethereum Classic's 7,500 is not a typo and
-          is deliberately given as a number rather than spelled out: it is three orders of magnitude
-          above its neighbours, for the reason contracts records against it, and rounding it into a
-          phrase like "a few thousand" would hide the one figure on this line a person would want to
-          plan around.
-        */}
-        <p className="wt-note">
-          Money arriving is credited once the chain has buried it deep enough to be safe: one
-          confirmation on XRP, six on Bitcoin, twelve on Ether and Litecoin, thirty on Dogecoin,
-          thirty-two on Solana, sixty on EMBER and 7,500 on Ethereum Classic. Should a chain
-          reorganise beneath a deposit, crediting halts rather than guesses. If you would rather
-          hold the key yourself, any managed wallet can be exported below — that is deliberate,
-          deliberate enough to take a day, and it cannot be undone.
+        <p className="wt-page__meta">
+          Everything below is <span className={`wt-net wt-net--${network}`}>{network}</span>
         </p>
       </header>
 
       {/*
-        ── The three mutations, above the lists they change ────────────────────────────────────
-        Send and Receive go to `micro-wallet` and the export ceremony to `micro-custody`, each
-        directly and each with the user's own token: hub-api composes no mutation at all (five
-        routes, all reads), and custody's ceremony reads `amr` and `auth_time` off the token a
-        service credential could not carry. See `lib/money.ts` for the hosts and what still has to
-        be true in `micro-deploy` for the browser to reach them.
+        The exception report goes first. It renders nothing at all in the ordinary case, and when
+        it does render it is about money that arrived and was not credited — which outranks a
+        balance.
+      */}
+      <TokenSightingsPanel />
 
-        They read the wallet and holding lists this page has already loaded rather than fetching
-        their own. A Send form that asked the server what your balance was, while the page above it
-        showed a different figure, would be two answers to one question on one screen.
+      {/*
+        ── 1. THE COINS: BALANCE, NETWORK, ADDRESS ─────────────────────────────────────────────
+        micro-org#485 §2 in one panel. The balances are PASSED IN from the dashboard this page has
+        already read, not fetched again: a second read would be a second answer to one question on
+        one screen, and the two would disagree for as long as either was in flight. `absenceOf`
+        travels with them so a card can tell "you hold none" from "we could not ask" — the rule in
+        lib/tile.ts, on the screen that can least afford to break it.
+      */}
+      <AddressBook
+        balances={hasAnswer(portfolio) ? portfolio.data.holdings : []}
+        balanceAbsent={absenceOf(portfolio)}
+      />
+
+      {/*
+        ── 2. SENDING, WHICH IS THE OTHER ACTION ───────────────────────────────────────────────
+        Send goes to `micro-wallet` and the export ceremony to `micro-custody`, each directly and
+        each with the user's own token: hub-api composes no mutation at all (five routes, all
+        reads), and custody's ceremony reads `amr` and `auth_time` off the token a service
+        credential could not carry. See `lib/money.ts` for the hosts and what still has to be true
+        in `micro-deploy` for the browser to reach them.
+
+        It reads the wallet and holding lists this page has already loaded rather than fetching its
+        own, for the same reason the panel above does.
       */}
       <SendPanel
         holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []}
@@ -129,29 +154,7 @@ export function WalletPage() {
         onSent={reload}
       />
 
-      <ReceivePanel holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []} />
-
-      <TokenSightingsPanel />
-
-      <TilePanel
-        title="Addresses"
-        tile={wallets}
-        empty={
-          <p className="wt-note">
-            No wallet has been created or connected yet. We set up a managed wallet for you the
-            first time something arrives, so there is nothing to do here in advance.
-          </p>
-        }
-      >
-        {wallets.data.length === 0 ? null : (
-          <ul className="wt-rows">
-            {wallets.data.map((wallet) => (
-              <WalletRow key={wallet.id} wallet={wallet} showAddress />
-            ))}
-          </ul>
-        )}
-      </TilePanel>
-
+      {/* ── 3. WHAT IS IN FLIGHT, IN AND OUT ────────────────────────────────────────────────── */}
       <TilePanel
         title="Arriving"
         tile={deposits}
@@ -163,11 +166,40 @@ export function WalletPage() {
         }
       >
         {deposits.data.length === 0 ? null : (
-          <ul className="wt-rows">
-            {deposits.data.map((credit) => (
-              <DepositRow key={credit.id} credit={credit} />
-            ))}
-          </ul>
+          <>
+            <ul className="wt-rows">
+              {deposits.data.map((credit) => (
+                <DepositRow key={credit.id} credit={credit} />
+              ))}
+            </ul>
+            {/*
+              THE CONFIRMATION DEPTHS, BESIDE THE COUNTS THEY EXPLAIN — micro-org#485 §1,
+              *"anything that must be said belongs beside the control it qualifies"*. This
+              paragraph used to be the second thing on the page, three panels above the only
+              numbers it gives meaning to.
+
+              INSIDE the non-empty branch, and that is load-bearing rather than tidy. `TilePanel`
+              renders `children ?? empty`, so a paragraph that was always present would suppress
+              the empty state for ever — the panel would stop saying "No deposit is currently
+              confirming" and start printing depth figures at an account with nothing arriving,
+              which BJ-WAL-07 asserts against because a strip that prints a digit it did not read
+              is the defect this whole page is built to avoid. It also happens to be the better
+              design: an explanation of a confirmation count belongs where there is one.
+
+              Every depth is `confirmations` from `contracts/packages/chain/src/index.ts`, the one
+              place the estate agrees them — wallet, settlement, custody and the indexer all read
+              that package and none of them restate it. Ethereum Classic's 7,500 is not a typo and
+              is deliberately a number rather than words: it is three orders of magnitude above its
+              neighbours, and rounding it into "a few thousand" would hide the one figure here a
+              person would plan around.
+            */}
+            <p className="wt-note wt-note--caveat">
+              A deposit is credited once the chain has buried it deep enough to be safe: one
+              confirmation on XRP, six on Bitcoin, twelve on Ether and Litecoin, thirty on
+              Dogecoin, thirty-two on Solana, sixty on EMBER and 7,500 on Ethereum Classic. Should
+              a chain reorganise beneath one, crediting halts rather than guesses.
+            </p>
+          </>
         )}
       </TilePanel>
 
@@ -188,6 +220,40 @@ export function WalletPage() {
           </ul>
         )}
       </TilePanel>
+
+      {/*
+        ── 4. THE ACCOUNTS UNDERNEATH ──────────────────────────────────────────────────────────
+        Renamed from "Addresses", which it shared with two other things on this page after the
+        redesign: the deposit addresses on the coin cards and the rotated ones below. These are
+        managed wallets — the accounts custody holds a key for and the deposit addresses feed into
+        — and "Wallets" is what the Overview has always called the same tile.
+      */}
+      <TilePanel
+        title="Wallets"
+        tile={wallets}
+        empty={
+          <p className="wt-note">
+            No wallet has been created or connected yet. We set up a managed wallet for you the
+            first time something arrives, so there is nothing to do here in advance.
+          </p>
+        }
+      >
+        {wallets.data.length === 0 ? null : (
+          <ul className="wt-rows">
+            {wallets.data.map((wallet) => (
+              <WalletRow key={wallet.id} wallet={wallet} showAddress />
+            ))}
+          </ul>
+        )}
+      </TilePanel>
+
+      {/*
+        `compact`, so this draws no address the cards above have already drawn. What is left is the
+        one thing nothing else offers: a SECOND address for a coin that already has one, and the
+        rotated addresses that leaves behind — which still credit you, and are therefore not
+        something a screen may quietly drop.
+      */}
+      <ReceivePanel holdings={hasAnswer(portfolio) ? portfolio.data.holdings : []} compact />
 
       <KeyExportPanel
         wallets={hasAnswer(wallets) ? wallets.data : []}
@@ -270,7 +336,12 @@ export function WalletRow({
       </span>
       <span className="wt-row__meta">
         <span className="wt-chip">{wallet.chain}</span>
-        <span className="wt-chip">{wallet.network}</span>
+        {/*
+          The network is not a chip among chips — micro-org#485 §3. It gets its own treatment,
+          shared by every row and card on this page, so testnet cannot be read past. Colour is not
+          the only channel: the word itself is the content.
+        */}
+        <span className={`wt-net wt-net--${wallet.network}`}>{wallet.network}</span>
         <span className="wt-chip">{wallet.origin}</span>
         {verified && <span className="wt-chip wt-chip--ok">verified</span>}
         {/* Not a chip among chips: a key that has left custody is the loudest fact on the row. */}
@@ -372,7 +443,7 @@ function TokenSightingRow({ sighting }: { sighting: TokenSighting }) {
       </span>
       <span className="wt-row__meta">
         <span className="wt-chip">{sighting.chain}</span>
-        <span className="wt-chip">{sighting.network}</span>
+        <span className={`wt-net wt-net--${sighting.network}`}>{sighting.network}</span>
         <span className="wt-chip wt-chip--warn">not credited</span>
         <span className="wt-row__time cf-num">{utcDateTime(sighting.firstSeenAt)}</span>
         {sighting.explorerUrl && (
@@ -411,7 +482,7 @@ function DepositRow({ credit }: { credit: DepositCredit }) {
         </span>
       </span>
       <span className="wt-row__meta">
-        <span className="wt-chip">{credit.network}</span>
+        <span className={`wt-net wt-net--${credit.network}`}>{credit.network}</span>
         {credit.explorerUrl && (
           <a className="wt-link" href={credit.explorerUrl} rel="noreferrer noopener" target="_blank">
             Explorer ↗
@@ -450,6 +521,13 @@ function WithdrawalRow({ withdrawal }: { withdrawal: WithdrawalRecord }) {
         )}
       </span>
       <span className="wt-row__meta">
+        {/*
+          THE NETWORK WAS ON THE WIRE AND THIS ROW THREW IT AWAY — micro-org#485 §3.
+          `WithdrawalRecord.network` has always been in the response (`lib/hub.ts`), and a leaving
+          payment is the single row on the estate where confusing testnet for mainnet costs the
+          most. It goes first in the strip, ahead of the state.
+        */}
+        <span className={`wt-net wt-net--${withdrawal.network}`}>{withdrawal.network}</span>
         <span className={`wt-chip${stuck ? ' wt-chip--warn' : ''}`}>{withdrawal.state}</span>
         <span className="wt-row__time cf-num">{utcDateTime(withdrawal.requestedAt)}</span>
       </span>

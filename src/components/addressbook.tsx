@@ -53,8 +53,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { noticeFor, type ErrorNotice } from '../lib/api.ts'
-import { utcDateTime } from '../lib/format.ts'
+import { formatAmount, utcDateTime } from '../lib/format.ts'
 import { useLatch } from '../lib/latch.ts'
+import type { Holding } from '../lib/hub.ts'
+import type { Absence } from '../lib/tile.ts'
 import {
   assignDepositAddress,
   depositableAssets,
@@ -106,22 +108,95 @@ function inDisplayOrder(assets: readonly DepositableAsset[]): readonly Depositab
 /**
  * Why an asset cannot be deposited, said to the person rather than to the operator.
  *
- * `lib/money.ts` documents the three the service emits and they are three different facts about
- * the deployment. `unknown` is the one that matters to get right: it is transient and means we
- * could not ask, so telling somebody Bitcoin is unsupported on the strength of it would be a lie
- * that lasts until they reload. Anything unrecognised falls through to plain unavailability,
- * because a new reason must not turn into a blank space in a browser running an older bundle.
+ * ── THE SERVICE'S OWN SENTENCE WINS (micro-wallet#26) ─────────────────────────────────────────
+ *
+ * `GET /v1/deposits/assets` now carries `detail`: the prose wallet raises on the 503 when somebody
+ * asks for an address for this very asset. Printing it means the screen and the refusal cannot
+ * disagree, and it means a chain added to — or dropped from — a deployment explains itself here
+ * without a change to this file.
+ *
+ * The local prose stays as the fall-back, because a deployment running a wallet older than #26
+ * answers without the field and `undefined` is not a sentence. `lib/money.ts` documents the three
+ * reasons; `unknown` is the one that matters to get right, being transient — telling somebody
+ * Bitcoin is unsupported on the strength of it would be a lie that lasts until they reload.
  */
-function unavailableBecause(reason: string | null): string {
-  switch (reason) {
+function unavailableBecause(asset: DepositableAsset): string {
+  const authored = typeof asset.detail === 'string' ? asset.detail.trim() : ''
+  // Sentence case. wallet writes these to sit inside `"… because we could not confirm that …"`, so
+  // one of the three opens lower-case; standing on its own under a heading it needs a capital.
+  if (authored.length > 0) return authored.charAt(0).toUpperCase() + authored.slice(1)
+  switch (asset.reason) {
     case 'not_followed':
-      return 'We do not follow this chain yet.'
+      return 'We are not watching this chain yet, so anything sent would land on it and never be credited. Use one of the coins above instead.'
     case 'not_retrievable':
-      return 'We can watch this chain but cannot pay it back out, so we will not take a deposit we could not return.'
+      return 'We can watch this chain but have no way to pay it back out, so we will not take a deposit we could not return. Use one of the coins above instead.'
     case 'unknown':
-      return 'We could not check this one just now. Reload and it may come back.'
+      return 'We could not check this one just now — that is our end, not yours. Reload and it may come back.'
     default:
-      return 'Not accepted right now.'
+      return 'Not accepted right now. Use one of the coins above instead.'
+  }
+}
+
+/**
+ * What this account holds of one coin, said in one line — micro-org#485 §2.
+ *
+ * *"An asset showing nothing must say why in one line a person can act on."* There are three
+ * different nothings and they must not read alike:
+ *
+ *   * the ledger did not answer — the balance is UNKNOWN, and printing "None held" for it would
+ *     tell somebody their Bitcoin is gone because a read timed out (`lib/tile.ts`);
+ *   * the ledger answered and holds no row for this asset — genuinely none;
+ *   * the ledger holds a row of zero — also genuinely none, and the same sentence.
+ *
+ * The third argument is what turns the second and third into something actionable: with an
+ * address the next move is to send to it, without one the next move is to get one.
+ */
+function balanceLine(
+  holding: Holding | undefined,
+  absent: Absence | null,
+  hasAddress: boolean,
+): { readonly amount: string | null; readonly note: string } {
+  if (holding === undefined || holding.amount === '0') {
+    if (absent !== null) {
+      return {
+        amount: null,
+        // The upstream is named for the same reason `TilePanel` names it: "the balance is missing"
+        // and "the ledger is down" are different facts, and only the second says where to look.
+        note: `We could not read your balances just now — ${absent.reason}. Nothing has changed about what you hold.`,
+      }
+    }
+    return {
+      amount: null,
+      note: hasAddress
+        ? 'None held. Send to the address below and it lands in this balance once the chain has buried it deep enough to be safe.'
+        : 'None held. Get an address below and anything sent to it is credited here.',
+    }
+  }
+  /*
+    A holding whose scale nothing knows is NOT nothing. `amountFormatted` is null for a `TOKEN:`
+    asset, whose decimals no service in the fan-out can supply (`lib/hub.ts`), and drawing that as
+    "Nothing held" would report a balance somebody has as a balance they do not.
+  */
+  const figure = formatAmount(holding.amountFormatted)
+  if (figure === null) {
+    return {
+      amount: null,
+      note: 'You hold some of this, but nothing here knows how many decimal places it has, so we will not print a figure we cannot vouch for. Portfolio has it in smallest units.',
+    }
+  }
+  /*
+    NO FIGURE FOR THE RESERVED PART, deliberately. `available` and `reserved` are SMALLEST UNITS
+    (`hub-api/src/portfolio.ts`) and this card has no decimals table to turn them into human ones —
+    `lib/format.ts` records why this bundle cannot have one. Printing `120000` beside `0.0012 BTC`
+    would be two figures for one balance, differing by a factor nobody can see. The split has a
+    home already: the Portfolio table shows both columns, side by side, labelled.
+  */
+  return {
+    amount: figure,
+    note:
+      holding.reserved !== '0'
+        ? 'Part of this is reserved against something already in flight — Portfolio shows the split.'
+        : 'All of it free to spend.',
   }
 }
 
@@ -174,17 +249,23 @@ function CopyAddress({ address, label }: { address: string; label: string }) {
   )
 }
 
-/** One coin: its address if this account has one, and the way to get one if it does not. */
+/** One coin: what you hold of it, its address if this account has one, and how to get one. */
 function AddressCard({
   asset,
   assignment,
   onAssign,
   busy,
+  network,
+  balance,
 }: {
   asset: DepositableAsset
   assignment: DepositAssignment | undefined
   onAssign: (assetCode: string) => void
   busy: boolean
+  /** The network the wallet service answered on. Named on every card — micro-org#485 §3. */
+  network: string | null
+  /** What this account holds, when the caller has it. Absent on the Overview, which prices it. */
+  balance: { readonly amount: string | null; readonly note: string } | undefined
 }) {
   const name = assetName(asset.assetCode)
   const cls = `wt-coin wt-coin--${asset.assetCode.toLowerCase()}`
@@ -204,10 +285,37 @@ function AddressCard({
           <span className="wt-coin__name">{name}</span>
           {ticker ? <span className="wt-coin__ticker cf-num">{ticker}</span> : null}
         </span>
-        <p className="wt-coin__why">{unavailableBecause(asset.reason)}</p>
+        {/*
+          A balance on a coin we cannot take is the one figure a reader would most hate to have
+          hidden — it says the money is still theirs while the deposit route is shut. Only the
+          figure, and only when there is one: the "none held" line would be noise on a card whose
+          whole message is already that nothing can arrive.
+        */}
+        {balance?.amount != null && (
+          <p className="wt-coin__bal">
+            <span className="wt-coin__figure cf-num">
+              {balance.amount} <span className="wt-coin__unit">{asset.assetCode}</span>
+            </span>
+            <span className="wt-coin__balnote">Still yours. It is arriving that is shut, not it.</span>
+          </p>
+        )}
+        <p className="wt-coin__why">{unavailableBecause(asset)}</p>
       </li>
     )
   }
+
+  /*
+    THE NETWORK IS ON THE CARD WHETHER OR NOT AN ADDRESS EXISTS (micro-org#485 §3).
+
+    It used to come off `assignment.network`, so a coin this account had never asked for an address
+    for showed no network at all — and those are exactly the cards carrying the button that mints
+    one. `GET /v1/deposits/assets` answers with the deployment's own `WALLET_NETWORK` beside the
+    asset list; `components/receive.tsx` fetched that field and threw it away. The assignment's own
+    network still wins where there is one, because it is the per-row fact rather than the
+    per-deployment one, and the two can only differ if something is wrong.
+  */
+  const net = assignment?.network ?? network
+  const chain = asset.chain.toLowerCase() === asset.assetCode.toLowerCase() ? null : asset.chain
 
   return (
     <li className={cls}>
@@ -215,13 +323,23 @@ function AddressCard({
       <span className="wt-coin__head">
         <span className="wt-coin__name">{name}</span>
         {ticker ? <span className="wt-coin__ticker cf-num">{ticker}</span> : null}
-        <span className="wt-coin__chain cf-num">
-          {asset.chain.toLowerCase() === asset.assetCode.toLowerCase() ? '' : asset.chain}
-          {assignment
-            ? `${asset.chain.toLowerCase() === asset.assetCode.toLowerCase() ? '' : ' · '}${assignment.network}`
-            : ''}
-        </span>
+        {chain !== null && <span className="wt-coin__chain cf-num">{chain}</span>}
+        {/* The one network treatment the whole account uses, so testnet reads the same everywhere. */}
+        {net !== null && net !== '' && <span className={`wt-net wt-net--${net}`}>{net}</span>}
       </span>
+
+      {balance !== undefined && (
+        <p className="wt-coin__bal">
+          {balance.amount === null ? (
+            <span className="wt-coin__none">Nothing held</span>
+          ) : (
+            <span className="wt-coin__figure cf-num">
+              {balance.amount} <span className="wt-coin__unit">{asset.assetCode}</span>
+            </span>
+          )}
+          <span className="wt-coin__balnote">{balance.note}</span>
+        </p>
+      )}
 
       {assignment === undefined ? (
         <div className="wt-coin__get">
@@ -279,8 +397,27 @@ function AddressCard({
  * empty list tells somebody they have no Bitcoin address while the row sits in the database, and
  * they may then go and mint a second one. `failed` is therefore its own state and says so.
  */
-export function AddressBook({ compact = false }: { compact?: boolean }) {
+export function AddressBook({
+  compact = false,
+  balances,
+  balanceAbsent = null,
+}: {
+  compact?: boolean
+  /**
+   * What this account holds, when the caller already has it — micro-org#485 §2, *"each asset row:
+   * balance, the network it is on, and its deposit address where one exists"*.
+   *
+   * Passed in rather than fetched. The Wallet page has already read the dashboard and its
+   * portfolio tile is the same figure; a second read here would be a second answer to one question
+   * on one screen, and the two would disagree for as long as one of them was in flight. Absent on
+   * the Overview, where the Portfolio panel directly above already carries every balance.
+   */
+  balances?: readonly Holding[] | undefined
+  /** Why the balances are missing, when they are. An empty list and a failed read are not alike. */
+  balanceAbsent?: Absence | null | undefined
+}) {
   const [assets, setAssets] = useState<readonly DepositableAsset[] | null>(null)
+  const [network, setNetwork] = useState<string | null>(null)
   const [held, setHeld] = useState<readonly DepositAssignment[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [notice, setNotice] = useState<ErrorNotice | null>(null)
@@ -295,6 +432,8 @@ export function AddressBook({ compact = false }: { compact?: boolean }) {
       .then(([offered, mine]) => {
         if (!live) return
         setAssets(offered.assets)
+        // The deployment's own `WALLET_NETWORK`, straight off the wire. See `AddressCard`.
+        setNetwork(typeof offered.network === 'string' ? offered.network : null)
         setHeld(mine.assignments)
         setFailed(false)
       })
@@ -326,9 +465,15 @@ export function AddressBook({ compact = false }: { compact?: boolean }) {
     [request],
   )
 
+  /*
+    The panel is called what it CONTAINS. With balances on it, "Deposit addresses" names one of
+    the three things on each card and undersells the other two; without them, "Your coins" would
+    promise a balance that is not there. One component, two honest headings.
+  */
+  const withBalances = balances !== undefined
   const head = (
     <header className="wt-panel__head">
-      <h2 className="wt-panel__title">Deposit addresses</h2>
+      <h2 className="wt-panel__title">{withBalances ? 'Your coins' : 'Deposit addresses'}</h2>
       {compact && (
         <Link className="wt-link" to="/wallet">
           Wallet →
@@ -374,14 +519,36 @@ export function AddressBook({ compact = false }: { compact?: boolean }) {
   const shut = ordered.filter((a) => !a.depositable)
   const yours = open.filter((a) => active.has(a.assetCode)).length
 
+  // The ledger keys by asset code and so does the asset list, so this is a join and not a guess.
+  const byCode = new Map<string, Holding>()
+  for (const holding of balances ?? []) byCode.set(holding.assetCode, holding)
+  const balanceFor = (assetCode: string) =>
+    balances === undefined
+      ? undefined
+      : balanceLine(byCode.get(assetCode), balanceAbsent ?? null, active.has(assetCode))
+
   return (
     <section className="wt-panel">
       {head}
-      <p className="wt-note">
-        {yours === 0
-          ? 'Every coin below can be paid into this account. Pick one and we will give you an address for it.'
-          : `An address is a destination for one coin on one chain. ${yours === open.length ? 'You have one for each coin we take.' : 'Get one for anything you are missing.'}`}
-      </p>
+      {/*
+        One sentence, and only when it is doing work. micro-org#485: *"anything that must be said
+        belongs beside the control it qualifies"* — and with a balance, a network and an address on
+        every card, a standing paragraph above them qualifies nothing. It survives for the reader
+        who has no address at all, because that reader has nothing else on screen to read.
+      */}
+      {yours === 0 ? (
+        <p className="wt-note">
+          Every coin below can be paid into this account. Pick one and we will give you an address
+          for it.
+        </p>
+      ) : withBalances ? null : (
+        <p className="wt-note">
+          An address is a destination for one coin on one chain.{' '}
+          {yours === open.length
+            ? 'You have one for each coin we take.'
+            : 'Get one for anything you are missing.'}
+        </p>
+      )}
 
       {notice && (
         <p className="wt-formerror" role="alert">
@@ -403,15 +570,35 @@ export function AddressBook({ compact = false }: { compact?: boolean }) {
             assignment={active.get(asset.assetCode)}
             onAssign={assign}
             busy={pending === asset.assetCode}
+            network={network}
+            balance={balanceFor(asset.assetCode)}
           />
         ))}
       </ul>
 
+      {/*
+        ── REFUSED COINS ARE DRAWN, NOT HIDDEN (micro-org#481) ──────────────────────────────────
+
+        *"I don't see any dogecoin reference in the wallet."* The DOGE row has been in
+        `GET /v1/deposits/assets` the whole time; every surface threw it away. This panel kept it,
+        and then put it behind a collapsed `<details>` — which is the same defect wearing a
+        disclosure triangle, because a reader looking for Dogecoin and finding nothing does not
+        open a summary that does not say "Dogecoin".
+
+        So they are a plain section with the tickers visible. Quiet, after the coins that work,
+        each one carrying wallet's own sentence about why it cannot be used yet. The honest answer
+        to "where is Dogecoin" is a Dogecoin card that says what is missing, never an absence.
+      */}
       {shut.length > 0 && (
-        <details className="wt-more">
-          <summary>
-            {shut.length} coin{shut.length === 1 ? '' : 's'} we cannot take yet
-          </summary>
+        <div className="wt-panel__sub">
+          <h3>
+            {shut.length === 1 ? 'One coin we' : `${shut.length} coins we`} cannot take yet
+          </h3>
+          <p className="wt-note">
+            The estate knows about {shut.length === 1 ? 'this one' : 'these'} and is not taking{' '}
+            {shut.length === 1 ? 'it' : 'them'} today. Each card says what is missing — none of it
+            is anything you can fix, and none of it affects what you already hold.
+          </p>
           <ul className="wt-coins wt-coins--quiet">
             {shut.map((asset) => (
               <AddressCard
@@ -420,10 +607,12 @@ export function AddressBook({ compact = false }: { compact?: boolean }) {
                 assignment={undefined}
                 onAssign={assign}
                 busy={false}
+                network={network}
+                balance={balanceFor(asset.assetCode)}
               />
             ))}
           </ul>
-        </details>
+        </div>
       )}
     </section>
   )
