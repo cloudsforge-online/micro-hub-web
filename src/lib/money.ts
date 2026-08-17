@@ -379,8 +379,26 @@ export interface DepositableAsset {
    *
    * This type says `string` and not a union on purpose: a new reason must not break the build of a
    * bundle already in somebody's browser. Anything unrecognised renders as plain unavailability.
+   *
+   * Two of the three were being reported WRONGLY until micro-wallet#26: `payableChainsOnly`
+   * short-circuited before it asked the indexer, so DOGE, ETC, SOL and XRP all came back
+   * `not_retrievable` — "we watch it and cannot pay it out" — when nothing watches any of them.
+   * Nothing in this bundle has to change for that fix; it is recorded because the reason a screen
+   * prints is only as true as the one the service picked.
    */
   readonly reason: string | null
+  /**
+   * The same fact as a sentence, authored by the service — micro-wallet#26.
+   *
+   * `null` exactly when `depositable` is true. `reason` is a machine word, and a client holding
+   * `'not_followed'` has to invent the prose; wallet now shares the prose it already raises on the
+   * 503 for the same asset, so the screen and the refusal say the same thing in the same words.
+   *
+   * OPTIONAL AT RUNTIME even though the type says `string | null`: a deployment running a wallet
+   * older than #26 answers without the field, and a browser holding this bundle must not print
+   * `undefined` at somebody. Every render site falls back to the local prose below.
+   */
+  readonly detail: string | null
 }
 
 /**

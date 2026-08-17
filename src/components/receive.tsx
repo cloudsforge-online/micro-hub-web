@@ -60,7 +60,26 @@ import {
 } from '../lib/money.ts'
 import type { Holding } from '../lib/hub.ts'
 
-export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
+export function ReceivePanel({
+  holdings,
+  compact = false,
+}: {
+  holdings: readonly Holding[]
+  /**
+   * Drop the held-address list, because something above already drew it — micro-org#485.
+   *
+   * The Wallet page now opens with `components/addressbook.tsx`, which draws one card per coin
+   * carrying its balance, its network and its active address. Rendering `HeldAddresses` under that
+   * would put the same eight addresses on the same screen twice, which is the complaint the issue
+   * was filed about: *"useless text"*. What this panel still owns and nothing else does is
+   * ROTATION and the ROTATED ADDRESSES rotation leaves behind, so under `compact` it narrows to
+   * exactly that.
+   *
+   * The default is `false` and every direct mount of this component leaves it there, so BJ-WAL-16
+   * and BJ-WAL-17 continue to observe the whole panel.
+   */
+  compact?: boolean
+}) {
   // Every chain asset the account could receive, whether or not it holds any today — a receive
   // screen that only offers what you already have cannot be used for the first deposit.
   //
@@ -168,8 +187,20 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
   return (
     <section className="wt-panel">
       <header className="wt-panel__head">
-        <h2 className="wt-panel__title">Receive</h2>
+        {/*
+          Named for what it is left doing. On its own it is Receive; under the coin cards it is the
+          second address for a coin that already has one, which is a different sentence and a much
+          rarer thing to want.
+        */}
+        <h2 className="wt-panel__title">{compact ? 'Another address' : 'Receive'}</h2>
       </header>
+
+      {compact && (
+        <p className="wt-note">
+          Each coin above already has an address, and it keeps working for ever. Take a second one
+          only if you want to keep two sources of payment apart.
+        </p>
+      )}
 
       {notice && (
         <p className="wt-formerror" role="alert">
@@ -183,7 +214,7 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
         </p>
       )}
 
-      <HeldAddresses held={held} failed={heldFailed} />
+      <HeldAddresses held={held} failed={heldFailed} olderOnly={compact} />
 
       <div className="wt-field">
         <label className="wt-field__label" htmlFor="receive-asset">
@@ -339,10 +370,38 @@ export function ReceivePanel({ holdings }: { holdings: readonly Holding[] }) {
 function HeldAddresses({
   held,
   failed,
+  olderOnly = false,
 }: {
   held: readonly DepositAssignment[] | null
   failed: boolean
+  /**
+   * Draw only what rotation left behind — micro-org#485.
+   *
+   * Under `olderOnly` the panel above this one already reports the active addresses AND the three
+   * states of the read that produces them, so repeating either here would be the same fact twice
+   * on one screen. Rotated rows are the part nothing else draws, and they are drawn or the block
+   * is absent: there is no "you have no old addresses", because nobody was looking for one.
+   */
+  olderOnly?: boolean
 }) {
+  if (olderOnly) {
+    const older = (held ?? []).filter((a) => a.status !== 'active')
+    if (older.length === 0) return null
+    return (
+      <div className="wt-panel__sub wt-panel__sub--first">
+        <h3>Addresses you have replaced</h3>
+        <p className="wt-note">
+          A <strong>rotated</strong> address still credits you, which is why it is kept: a payment
+          already on its way must not be lost because a new address was issued after it was sent.
+        </p>
+        <ul className="wt-rows">
+          {older.map((assignment) => (
+            <AddressRow key={assignment.id} assignment={assignment} />
+          ))}
+        </ul>
+      </div>
+    )
+  }
   if (failed) {
     return (
       <p className="wt-note" role="status">

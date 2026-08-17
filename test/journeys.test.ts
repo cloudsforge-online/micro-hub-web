@@ -250,6 +250,17 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
     const elsewhere = 'https://worlds.cloudsforge.online/player'
     const code = 'handoff-code-9f3a'
     let minted = 0
+    /*
+      THE TOKEN IN STORAGE IS NOT THE TOKEN THAT GETS SPENT (micro-org#480).
+
+      An access token lives fifteen minutes and `hasSession()` only tests that one is PRESENT, so
+      this page used to hand a fifteen-hour-old bearer to `/auth/handoff` and print an allowlist
+      complaint at whoever reopened their browser in the morning. The refresh below is what the
+      page now does about it, and the two tokens are DIFFERENT STRINGS on purpose: the mint
+      assertion at the bottom names the refreshed one, so a page that went back to trusting
+      storage fails here rather than in somebody's morning.
+    */
+    const refreshed = 'access-token-minted-by-the-refresh'
 
     await withScreen(
       // UNDER StrictMode, which is the whole point of the ref this scenario guards: React mounts
@@ -262,6 +273,9 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
         url: `${ORIGIN}/account/login`,
         storage: SIGNED_IN,
         routes: {
+          'POST /auth/refresh': {
+            body: fx.session({ accessToken: refreshed, refreshToken: 'refresh-token-still-good' }),
+          },
           [`POST ${IDENTITY_ROUTES.handoff}`]: () => {
             minted += 1
             return { body: { code, expiresInSeconds: 60 } }
@@ -294,10 +308,23 @@ describe('BJ-ACC / BJ-SIGNIN — the estate’s sign-in surface', () => {
           'the fragment does not carry the code identity minted in this run',
         )
 
-        // The token was presented to mint it, and the origin asked for is an ORIGIN, not a URL.
+        // A token was presented to mint it, and the origin asked for is an ORIGIN, not a URL.
         const mint = s.api.matching(`POST ${IDENTITY_ROUTES.handoff}`)[0]
-        assert.equal(mint?.headers['authorization'], `Bearer ${SIGNED_IN['cf.accessToken']}`)
         assert.deepEqual(mint?.json, { redirectOrigin: new URL(elsewhere).origin })
+
+        // AND IT IS THE REFRESHED TOKEN, not the one that was sitting in storage. Both strings are
+        // this scenario's own — one seeded into `localStorage`, one returned by the stubbed refresh
+        // — so this compares two independent inputs and not a value with a copy of itself.
+        assert.equal(
+          mint?.headers['authorization'],
+          `Bearer ${refreshed}`,
+          'the hand-off spent the token in storage rather than proving it live first',
+        )
+        assert.notEqual(
+          mint?.headers['authorization'],
+          `Bearer ${SIGNED_IN['cf.accessToken']}`,
+          'a stale bearer went to /auth/handoff — this is micro-org#480, exactly',
+        )
       },
     )
   })
@@ -1390,6 +1417,15 @@ const walletPageAt = (
       'GET /v1/dashboard': { body: fx.dashboard(tiles) },
       'GET /v1/exports': { body: { exports } },
       'GET /v1/deposits/token-sightings': { body: { sightings, nextCursor: null } },
+      /*
+        The coin cards read these two on mount — micro-org#485 put `AddressBook` at the top of this
+        page so that each asset can carry its balance, its network and its address. Answered at
+        their emptiest by default, because these scenarios are about the dashboard tiles: the
+        address book itself is the subject of `test/deposit-addresses.test.ts`, and an unrouted
+        request throws inside the harness rather than quietly degrading.
+      */
+      'GET /v1/deposits/assets': { body: { assets: [], network: 'mainnet' } },
+      'GET /v1/deposits': { body: { assignments: [] } },
     } as Routes,
   },
 })
@@ -1434,7 +1470,7 @@ describe('BJ-WAL-07 — an empty strip may be correct rather than broken', () =>
     })
 
     await withScreen(element, options, async (s) => {
-      const unread = s.textOf(panel(s, 'Addresses'))
+      const unread = s.textOf(panel(s, 'Wallets'))
       const answered = s.textOf(panel(s, 'Arriving'))
       const populated = s.textOf(panel(s, 'Leaving'))
 
@@ -1446,7 +1482,7 @@ describe('BJ-WAL-07 — an empty strip may be correct rather than broken', () =>
       assert.ok(unread.includes(reason), 'the unread strip does not carry the service’s own reason')
       // 3. And it is announced, not merely styled: `role="alert"` for the warning tone.
       assert.ok(
-        panel(s, 'Addresses').querySelector('[role="alert"]'),
+        panel(s, 'Wallets').querySelector('[role="alert"]'),
         'an unavailable strip is not announced',
       )
 
@@ -1523,7 +1559,7 @@ describe('BJ-WAL-07 — an empty strip may be correct rather than broken', () =>
       assert.match(send, /There is no balance to send/i, 'an answered-empty account was told it was an outage')
       assert.ok(!/could not read/i.test(send), 'an answered-empty account was told it was an outage')
 
-      const addresses = s.textOf(panel(s, 'Addresses'))
+      const addresses = s.textOf(panel(s, 'Wallets'))
       assert.match(addresses, /No wallet has been created or connected/i)
       assert.ok(!addresses.includes('did not answer'), 'an answered-empty list claims an outage')
     })

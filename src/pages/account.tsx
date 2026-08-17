@@ -40,7 +40,14 @@ import {
 } from 'react'
 import { useLatch } from '../lib/latch.ts'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ApiError, clearTokens, getAccessToken, getRefreshToken, hasSession } from '../lib/api.ts'
+import {
+  ApiError,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  hasSession,
+  refreshSession,
+} from '../lib/api.ts'
 import {
   EMAIL_UNVERIFIED_CODE,
   answerMfaChallenge,
@@ -55,6 +62,7 @@ import {
   signInWithPassword,
   verifyEmail,
   type Completion,
+  type HandoffRefusal,
   type SessionGranted,
   type SignInOutcome,
 } from '../lib/identity.ts'
@@ -121,6 +129,51 @@ function RefusalNotice({ refusal }: { refusal: Refusal }) {
           Quote <code className="cf-num wt-reqid">{refusal.requestId}</code> to support.
         </>
       )}
+    </p>
+  )
+}
+
+/**
+ * A hand-off that did not happen, said in the words the cause actually supports — micro-org#480.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ONE OF THESE THREE SENTENCES WAS PRINTED FOR ALL THREE CAUSES, AND IT WAS THE WRONG ONE.
+ *
+ * *"CloudsForge will not hand a session to that origin… ask an operator to add it to the hand-off
+ * allowlist."* Measured on 2026-08-17, `POST /auth/handoff` answers 201 for the apex and
+ * identity's audit log holds zero `handoff_refused` lines for it across 72 hours. Nobody was ever
+ * off the allowlist. What they were hitting is a fifteen-minute access token gone stale overnight,
+ * and the sentence sent the one person who could fix it to go and bother somebody who could not.
+ *
+ * `origin` is now the ONLY branch that mentions the allowlist, and it is reached only when
+ * identity has said `handoff_origin_refused` in as many words (micro-identity#22). `unknown` is
+ * the branch this bundle takes until `@cloudsforge/ui` reports the refusal code, and it deliberately
+ * asserts nothing about whose fault it is — the reader is given the move that works in every case.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+function HandoffNotice({ origin, why }: { origin: string; why: HandoffRefusal }) {
+  if (why === 'session') {
+    return (
+      <p className="wt-formerror" role="alert">
+        Your session expired before we could hand it to <code className="cf-num">{origin}</code>.
+        Sign in again and you will go straight back there.
+      </p>
+    )
+  }
+  if (why === 'origin') {
+    return (
+      <p className="wt-formerror" role="alert">
+        You are signed in, but CloudsForge will not hand a session to{' '}
+        <code className="cf-num">{origin}</code>. Sign in on that surface directly, or ask an
+        operator to add it to the hand-off allowlist.
+      </p>
+    )
+  }
+  return (
+    <p className="wt-formerror" role="alert">
+      You are signed in here, and we could not pass that session on to{' '}
+      <code className="cf-num">{origin}</code>. Nothing has happened to your account. Sign in on
+      that surface directly, or try this again.
     </p>
   )
 }
@@ -214,7 +267,14 @@ export function SignInPage() {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<Refusal | null>(null)
-  const [refused, setRefused] = useState<string | null>(null)
+  /**
+   * A hand-off that did not happen, and WHY — micro-org#480.
+   *
+   * It used to be the origin alone, and the sentence beside it named the allowlist. See
+   * `HandoffRefusal` in `lib/identity.ts`: the apex was never off that list, and what people were
+   * actually hitting was a fifteen-minute access token that had expired overnight.
+   */
+  const [refused, setRefused] = useState<{ origin: string; why: HandoffRefusal } | null>(null)
   /**
    * The password was right and the address has not been proved yet.
    *
@@ -224,6 +284,14 @@ export function SignInPage() {
    * an enumeration oracle. `null` means it has not happened; `'sent'` means one has been issued.
    */
   const [unverified, setUnverified] = useState<null | 'offer' | 'sent'>(null)
+  /**
+   * The tokens in this browser were there and would not refresh — micro-org#480.
+   *
+   * Its own state rather than a `Refusal`, because nothing was submitted: the reader arrived
+   * holding a session that has since died, and the only sentence worth printing is the one naming
+   * what to do about it.
+   */
+  const [expired, setExpired] = useState(false)
 
   const finish = useCallback(
     async (outcome: SignInOutcome) => {
@@ -235,10 +303,10 @@ export function SignInPage() {
       setStage({ at: 'handing-off', to: returnTo })
       const completion = await completeSignIn(outcome, returnTo, pageOrigin())
       if (completion.kind === 'refused') {
-        // Not silently redirected to the dashboard. identity would not hand a session to that
-        // origin, which is a misconfiguration somebody has to see rather than a place to bounce
-        // the user away from.
-        setRefused(completion.origin)
+        // Not silently redirected to the dashboard. The hand-off did not happen, and bouncing the
+        // reader to a page they did not ask for would hide that and look like the surface they
+        // came from is broken. What is SAID about it depends on `why` — see `HandoffNotice`.
+        setRefused({ origin: completion.origin, why: completion.why })
         setStage({ at: 'password' })
         setBusy(false)
         return
@@ -255,15 +323,31 @@ export function SignInPage() {
    * hand-off worse than no SSO at all. So a signed-in visitor arriving from another surface is
    * handed straight over — vision test 1, BJ-ACC-04: "no second credential prompt on either hop".
    *
+   * ── AND IT IS PROVED LIVE BEFORE IT IS SPENT (micro-org#480) ─────────────────────────────────
+   *
+   * This used to hand `getAccessToken()` straight to `completeSignIn`, on the strength of
+   * `hasSession()`. That function tests PRESENCE — `Boolean(getAccessToken() && getRefreshToken())`
+   * — and an access token lives fifteen minutes. Reopen the browser the next morning and a
+   * fifteen-hour-old bearer went out to `/auth/handoff`, came back 401, and the page told the
+   * reader the destination was off the hand-off allowlist. It never was; nothing was
+   * misconfigured; the fix was to sign in again, which is the one thing the sentence did not say.
+   *
+   * `refreshSession()` already exists for exactly this and is already used on every 401 in
+   * `lib/api.ts`. Calling it here spends the refresh token — which lives far longer — and either
+   * produces a live access token or establishes that this browser has no session at all. Both
+   * outcomes are true, and neither of them is a claim about somebody else's configuration.
+   *
    * It runs once, guarded by a ref rather than by the effect's dependency list, because
    * StrictMode mounts every effect twice and a second run would spend a second hand-off code.
+   * There is deliberately no cleanup flag: the ref is set BEFORE the await, so under StrictMode
+   * the second run returns early — and a `live` flag cancelled by the first run's cleanup would
+   * then cancel the only run there was, and the page would sit on "handing off" for ever.
    */
   const handedOff = useRef(false)
   useEffect(() => {
     if (handedOff.current) return
-    const accessToken = getAccessToken()
-    const refreshToken = getRefreshToken()
-    if (!hasSession() || !accessToken || !refreshToken) {
+    /** No session in this browser at all. Nothing to refresh and nothing to hand over. */
+    const nothingHere = (): void => {
       // ── ANSWERING A SILENT PROBE ──────────────────────────────────────────────────────────────
       //
       // `silent=1` means no human asked for this page: another surface found the shared hint
@@ -271,24 +355,40 @@ export function SignInPage() {
       // none. Showing the sign-in form would be the defect the probe exists to avoid, in reverse
       // — a reader who never asked to sign in, staring at a login screen they did not navigate
       // to. So bounce straight back saying so, and let the caller clear its hint.
-      if (silent) {
-        handedOff.current = true
-        const back = new URL(returnTo)
-        back.hash = 'cf_sso=none'
-        window.location.assign(back.toString())
-      }
+      if (!silent) return
+      const back = new URL(returnTo)
+      back.hash = 'cf_sso=none'
+      window.location.assign(back.toString())
+    }
+
+    if (!hasSession()) {
+      handedOff.current = true
+      nothingHere()
       return
     }
     handedOff.current = true
-    const granted: SessionGranted = {
-      kind: 'session',
-      accessToken,
-      refreshToken,
-      expiresIn: 0,
-      user: { id: '', handle: '', email: '' },
-    }
     setStage({ at: 'handing-off', to: returnTo })
-    void finish(granted)
+    void refreshSession().then((alive) => {
+      const accessToken = getAccessToken()
+      const refreshToken = getRefreshToken()
+      if (!alive || !accessToken || !refreshToken) {
+        // The stored session is dead. For a person: say so, in the words that name the actual next
+        // move. For a silent probe: the same answer it would have got had there been no tokens at
+        // all, because there effectively are none.
+        setStage({ at: 'password' })
+        setExpired(true)
+        nothingHere()
+        return
+      }
+      const granted: SessionGranted = {
+        kind: 'session',
+        accessToken,
+        refreshToken,
+        expiresIn: 0,
+        user: { id: '', handle: '', email: '' },
+      }
+      void finish(granted)
+    })
   }, [finish, returnTo, silent])
 
   /**
@@ -409,13 +509,12 @@ export function SignInPage() {
           One sign-in covers trading, the marketplace, the chain, the worlds and everything else we
           run. Your balance, your history and your settings are the same wherever you go.
         </p>
-        {refused && (
+        {expired && (
           <p className="wt-formerror" role="alert">
-            You are signed in, but CloudsForge will not hand a session to{' '}
-            <code className="cf-num">{refused}</code>. Sign in on that surface directly, or ask an
-            operator to add it to the hand-off allowlist.
+            Your session expired. Sign in again.
           </p>
         )}
+        {refused && <HandoffNotice origin={refused.origin} why={refused.why} />}
         {refusal && <RefusalNotice refusal={refusal} />}
 
         {/*

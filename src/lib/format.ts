@@ -157,6 +157,33 @@ export function utcDateTime(iso: string | null | undefined): string | null {
 }
 
 /**
+ * The UTC day an instant falls in, as a grouping key.
+ *
+ * `2026-08-17`, sortable and comparable, and UTC for the same reason every other clock in this
+ * file is: a feed grouped by the reader's local midnight would put one record under two different
+ * headings for two readers looking at the same account.
+ */
+export function utcDay(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  return at.toISOString().slice(0, 10)
+}
+
+/** `17 August 2026` UTC — the heading over one day of a feed. */
+export function utcDayLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  return at.toLocaleDateString('en-GB', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+/**
  * The pricing stamp, rendered beside any valuation.
  *
  * `undefined` rather than null, because it is spread into `StatTile`'s optional `pricedAt` and
