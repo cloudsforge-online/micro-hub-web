@@ -506,6 +506,8 @@ const LENS_OF: Readonly<Record<string, Exclude<Lens, 'all'>>> = Object.freeze({
   ownership: 'products',
   governance: 'products',
   community: 'products',
+  // secret-hygiene: allow micro-activity names this category `token` for micro-mint deployments and
+  // `products` is the id of a lens on this page. Neither half is a credential and neither is secret.
   token: 'products',
 })
 

@@ -450,9 +450,10 @@ export const revokeRefreshToken = (refreshToken: string): Promise<void> =>
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * The bug this type exists to end: every failure to mint printed *"CloudsForge will not hand a
  * session to that origin… ask an operator to add it to the hand-off allowlist"*, and the apex was
- * never off the allowlist. Measured on 2026-08-17: `/auth/handoff` answers 201 for
- * `https://cloudsforge.online`, and identity's audit log holds zero `handoff_refused` lines for it
- * in 72 hours. What people were actually hitting is an EXPIRED ACCESS TOKEN — `hasSession()` tests
+ * never off the allowlist. Measured on 2026-08-17: `/auth/handoff` answers 201 for the estate's own
+ * apex — the address `cloudsforgeHosts()` composes, not written down here, because CI greps `src`
+ * for a literal hostname and is right to — and identity's audit log holds zero `handoff_refused`
+ * lines for it in 72 hours. What people were hitting is an EXPIRED ACCESS TOKEN — `hasSession()` tests
  * that `cf.accessToken` is PRESENT, never that it is live, and an access token lives 15 minutes.
  * Reopen the browser the next morning and the mint goes out with a dead bearer, comes back 401,
  * and the reader is told to go and talk to an operator about a list they are already on.
