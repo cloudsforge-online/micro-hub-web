@@ -34,7 +34,7 @@
  * ── EVERY TYPE THE ESTATE CAN EMIT IS NAMED HERE ──────────────────────────────────────────────
  *
  * `activity/src/classify.ts` maps 70 registered topics onto 79 `type` values, and all 79 are in
- * the table below, grouped by the category activity files them under. Nine of them are
+ * the table below, grouped by the category activity files them under. Ten of them are
  * `visibility: 'internal'` and can therefore never reach a person's feed — they are kept anyway
  * and marked, because a visibility change in `micro-activity` must not produce an unlabelled row
  * in a browser running this bundle.
