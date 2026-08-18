@@ -96,7 +96,26 @@ export function WalletPage() {
 
   if (state === 'forbidden') return <Forbidden notice={error ?? undefined} />
   if (state === 'failed' && error) return <Failed notice={error} onRetry={reload} />
-  if (state === 'loading' || !data) return <Loading label="Reading your wallets" />
+  /*
+   * `!data`, and NOT `state === 'loading'`. The difference is a first read against a refresh, and
+   * on this page it is the difference between a receipt and no receipt.
+   *
+   * `onSent` below reloads this dashboard so the balance beside each coin is the one after the
+   * withdrawal — and `useResource` reports a refresh as `loading` exactly as it reports a first
+   * read. A guard on the STATE therefore unmounted `SendPanel` at the instant its withdrawal
+   * succeeded, and the receipt is `SendPanel`'s own state, so it went with it: the reader pressed
+   * Send it now, the screen blinked, and they were handed an empty form. The withdrawal id, the
+   * network fee finally quoted, the net arriving, and "already requested" for a replay are all on
+   * that receipt and nowhere else on the page. On a screen that moves coins nobody can pull back,
+   * "it looks like nothing happened" is the most expensive sentence available, and it invites the
+   * one response that costs the most.
+   *
+   * `pages/convert.tsx` records the same defect and the same fix; this page was missed. Once
+   * there IS data there is something to draw, so a refresh redraws it in place. The two guards
+   * above stay on the state deliberately: a dashboard that has stopped answering is a page that
+   * cannot say what you hold, which is a different thing from one that is merely re-reading.
+   */
+  if (!data) return <Loading label="Reading your wallets" />
 
   const { wallets, deposits, withdrawals, portfolio } = data.tiles
   const network = viewedNetwork()
