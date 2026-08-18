@@ -19,13 +19,18 @@ import { __resetAuth, setTokens } from '../src/lib/api.ts'
 import { __resetObs } from '../src/lib/obs.ts'
 import {
   ACTIVITY_PAGE_SIZE,
+  CONVERSION_PAGE_SIZE,
   MAX_SEARCH_LENGTH,
+  convert,
   loadActivity,
+  loadConversions,
   loadDashboard,
   loadFactors,
   loadNextActions,
   loadPortfolio,
   loadSessions,
+  loadTransfers,
+  quoteConversion,
   revokeAllSessions,
   revokeSession,
   search,
@@ -172,6 +177,134 @@ describe('GET /v1/search — hub-api/src/server.ts', () => {
   })
 })
 
+/* ─────────────────────────── the conversion desk ──────────────────────────── */
+
+describe('POST /v1/conversions/quote — hub-api/src/server.ts, 557', () => {
+  it('posts the intent and asks for no idempotency key', async () => {
+    // The quote books nothing, and wallet's quote route takes no key. Sending one would put a key
+    // in play that the conversion is then either forced to reuse or forced to abandon.
+    stub.restore()
+    stub = installFetch(() => body({ quote: { toAssetCode: 'EMBER', hold: false, holdNotice: 'x' } }))
+    const answer = await quoteConversion(signal(), {
+      fromAssetCode: 'BTC',
+      toAssetCode: 'EMBER',
+      amount: '100000',
+    })
+    const call = only()
+    assert.equal(call.method, 'POST')
+    assert.equal(call.url, `${HUB}/v1/conversions/quote`)
+    assert.equal(call.headers['idempotency-key'], undefined)
+    assert.deepEqual(JSON.parse(call.body ?? 'null'), {
+      fromAssetCode: 'BTC',
+      toAssetCode: 'EMBER',
+      amount: '100000',
+    })
+    assert.equal(answer.quote.hold, false)
+  })
+
+  it('reads the quote from under the `quote` key, not from the top level', async () => {
+    // Same class of defect as the portfolio tile above: a client typed against the quote at the
+    // top level compiles and then renders `undefined` where the amounts go.
+    stub.restore()
+    stub = installFetch(() => body({ quote: { toAmountFormatted: '12.5', holdNotice: 'not held' } }))
+    const answer = await quoteConversion(signal(), {
+      fromAssetCode: 'LTC',
+      toAssetCode: 'EMBER',
+      amount: '1',
+    })
+    assert.equal(answer.quote.toAmountFormatted, '12.5')
+    assert.equal(answer.quote.holdNotice, 'not held')
+  })
+})
+
+describe('POST /v1/conversions — hub-api/src/server.ts, 587', () => {
+  it('carries the caller’s idempotency key in the header the service reads', async () => {
+    // `micro-wallet` answers 400 `idempotency_key_required` without it, and the whole
+    // one-intent-one-conversion mechanism is this header. The spelling is the one thing about it a
+    // type cannot check.
+    stub.restore()
+    stub = installFetch(() => body({ entryId: 'e1', replayed: false, summary: {} }))
+    const receipt = await convert(
+      { fromAssetCode: 'DOGE', toAssetCode: 'EMBER', amount: '5000' },
+      'convert:2026-08-17:abcdefgh',
+    )
+    const call = only()
+    assert.equal(call.method, 'POST')
+    assert.equal(call.url, `${HUB}/v1/conversions`)
+    assert.equal(call.headers['idempotency-key'], 'convert:2026-08-17:abcdefgh')
+    assert.deepEqual(JSON.parse(call.body ?? 'null'), {
+      fromAssetCode: 'DOGE',
+      toAssetCode: 'EMBER',
+      amount: '5000',
+    })
+    assert.equal(receipt.replayed, false)
+  })
+
+  it('sends the intent it was handed and nothing else', async () => {
+    // The frozen object from the confirm step goes on the wire unchanged. A client that added a
+    // field — a display amount, a client timestamp — would be a second body under one key the
+    // moment anything about the display changed, which is a 409 the reader cannot act on.
+    await convert({ fromAssetCode: 'BTC', toAssetCode: 'EMBER', amount: '1' }, 'convert:k')
+    assert.deepEqual(Object.keys(JSON.parse(only().body ?? '{}')).sort(), [
+      'amount',
+      'fromAssetCode',
+      'toAssetCode',
+    ])
+  })
+})
+
+describe('GET /v1/conversions — hub-api/src/server.ts, 631', () => {
+  it('OMITS the cursor on the first page, which is the page hub-api caches', async () => {
+    // Same cache key rule as activity: hub-api keys the cached branch on the cursor being absent,
+    // so `cursor=` defeats the cache on every first load of this panel in the estate.
+    await loadConversions(signal())
+    const url = new URL(only().url)
+    assert.equal(url.pathname, '/v1/conversions')
+    assert.equal(url.searchParams.get('cursor'), null)
+    assert.equal(url.searchParams.get('limit'), String(CONVERSION_PAGE_SIZE))
+  })
+
+  it('sends a limit inside hub-api’s accepted range', async () => {
+    assert.ok(Number.isInteger(CONVERSION_PAGE_SIZE))
+    assert.ok(CONVERSION_PAGE_SIZE >= 1 && CONVERSION_PAGE_SIZE <= 100)
+  })
+
+  it('parses the FLAT page shape, so an outage is not read as an empty history', async () => {
+    // `status` sits beside the records rather than wrapping them. A client that dropped it would
+    // render hub-api's `empty: { conversions: [] }` fallback as "you have never converted
+    // anything" on the one screen where that is a statement about somebody's money.
+    stub.restore()
+    stub = installFetch(() =>
+      body({ conversions: [], nextCursor: null, status: 'unavailable', reason: 'wallet did not answer', cached: false, ageMs: null }),
+    )
+    const page = await loadConversions(signal())
+    assert.equal(page.conversions.length, 0)
+    assert.equal(page.status, 'unavailable')
+    assert.equal(page.reason, 'wallet did not answer')
+  })
+})
+
+describe('GET /v1/transfers — hub-api/src/server.ts, 681', () => {
+  it('is its own path, paged the same way', async () => {
+    await loadTransfers(signal(), 'cursor-1')
+    const url = new URL(only().url)
+    assert.equal(url.pathname, '/v1/transfers')
+    assert.equal(url.searchParams.get('cursor'), 'cursor-1')
+    assert.equal(url.searchParams.get('limit'), String(CONVERSION_PAGE_SIZE))
+  })
+
+  it('carries the direction, which is the only thing that makes a transfer readable', async () => {
+    // `out` and `in` are the same row otherwise. A list that drops it shows the reader a set of
+    // amounts with no sign.
+    stub.restore()
+    stub = installFetch(() =>
+      body({ transfers: [{ id: 't1', direction: 'in', assetCode: 'EMBER' }], nextCursor: null, status: 'ok', reason: null, cached: false, ageMs: null }),
+    )
+    const page = await loadTransfers(signal())
+    assert.equal(page.transfers[0]?.direction, 'in')
+  })
+})
+
 /* ──────────────────────── identity, called directly ───────────────────────── */
 
 describe('identity', () => {
@@ -222,14 +355,30 @@ describe('the request surface', () => {
   it('touches ONLY paths hub-api and identity actually serve', async () => {
     // The guard against the `/v1/quotes` class of defect. Every path this bundle can produce is
     // exercised and compared with the two route tables, read off:
-    //   hub-api/src/server.ts, 251, 265, 285, 312, 347, 396, 421
+    //   hub-api/src/server.ts, 251, 265, 285, 312, 347, 396, 421, 557, 587, 631, 681
     //   identity/src/server.ts, 1082, 1092, 1104
-    const HUB_ROUTES = new Set(['/v1/dashboard', '/v1/portfolio', '/v1/activity', '/v1/search', '/v1/next-actions'])
+    //
+    // `/v1/conversions/:id` (server.ts, 728) is deliberately absent: this bundle never calls it,
+    // because every field of that response is already on the row the list rendered. A route in
+    // this set that nothing below produces would assert nothing at all.
+    const HUB_ROUTES = new Set([
+      '/v1/dashboard',
+      '/v1/portfolio',
+      '/v1/activity',
+      '/v1/search',
+      '/v1/next-actions',
+      '/v1/conversions/quote',
+      '/v1/conversions',
+      '/v1/transfers',
+    ])
     const IDENTITY_ROUTES = new Set(['/sessions', '/mfa/factors', '/auth/me', '/auth/refresh', '/auth/exchange'])
 
     stub.restore()
-    stub = installFetch(() => body({ portfolio: {}, sessions: [], factors: [], recoveryCodesRemaining: 0 }))
+    stub = installFetch(() =>
+      body({ portfolio: {}, quote: {}, summary: {}, sessions: [], factors: [], recoveryCodesRemaining: 0 }),
+    )
 
+    const intent = { fromAssetCode: 'BTC', toAssetCode: 'EMBER', amount: '1' }
     await Promise.all([
       loadDashboard(signal()),
       loadPortfolio(signal()),
@@ -237,13 +386,18 @@ describe('the request surface', () => {
       loadActivity(signal(), 'c1'),
       loadNextActions(signal()),
       search(signal(), 'x'),
+      quoteConversion(signal(), intent),
+      convert(intent, 'convert:surface'),
+      loadConversions(signal()),
+      loadConversions(signal(), 'c1'),
+      loadTransfers(signal()),
       loadSessions(signal()),
       loadFactors(signal()),
       revokeSession('s1'),
       revokeAllSessions(),
     ])
 
-    assert.ok(stub.calls.length >= 10)
+    assert.ok(stub.calls.length >= 15)
     for (const call of stub.calls) {
       const url = new URL(call.url)
       const origin = `${url.protocol}//${url.host}`

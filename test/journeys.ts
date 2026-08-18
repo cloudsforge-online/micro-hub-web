@@ -549,9 +549,18 @@ export const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'BJ-WAL-21-ABSENT',
-    what: 'the five things this surface does not build are named on the page with their reasons, rather than being silently absent',
+    what: 'what this surface does not build is named on the page with its reason rather than being silently absent, and what it has since built is no longer named as missing',
     asserts: 'presentation',
     tier: 'T1',
+    caveat:
+      'The second half is the one that has actually failed twice. A stated hole is only honest ' +
+      'while it stays a hole: this page carried "Transfers and conversions — neither has a READ ' +
+      'route anywhere in the estate" for as long as it took micro-org#495 to ship both and ' +
+      'micro-org#496 to compose them, telling every reader in between that a working capability ' +
+      'was missing. hub-api’s `notifications` tile did the same thing for months (micro-org#415). ' +
+      'What is NOT asserted is the wallet service’s side of either route, and it cannot be here ' +
+      'because this file sees only the harness’s own answers: "the estate really does serve GET ' +
+      '/v1/transfers" is test/hub.test.ts’s job, against the route table.',
   },
 
   /* ══════════════════════════════════════════════════════════════════════════════════════════

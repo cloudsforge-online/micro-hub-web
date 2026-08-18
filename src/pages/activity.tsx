@@ -67,8 +67,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
+import { FeedStatus } from '../components/tile.tsx'
 import {
-  ageLabel,
   formatAmount,
   utcDay,
   utcDayLabel,
@@ -180,28 +180,17 @@ export function ActivityPage() {
         </p>
       </header>
 
-      {feed.status === 'unavailable' && (
-        <p className="wt-banner wt-banner--degraded" role="alert">
-          <span className="wt-banner__icon" aria-hidden="true">
-            ▲
-          </span>
-          {feed.reason ?? 'Nothing came back from the service that keeps your history.'}{' '}
-          {feed.records.length > 0
-            ? 'What you can see below reached us before it went quiet, so treat it as partial.'
-            : 'We could read none of it, which is a different thing entirely from nothing having happened.'}
-        </p>
-      )}
-      {feed.status === 'degraded' && (
-        <p className="wt-banner wt-banner--degraded" role="status">
-          <span className="wt-banner__icon" aria-hidden="true">
-            ▲
-          </span>
-          {feed.reason ?? 'What follows is behind. Something newer may have happened since.'}
-        </p>
-      )}
-      {feed.status === 'ok' && feed.cached && ageLabel(feed.ageMs) && (
-        <p className="wt-note">Held over from an earlier read, {ageLabel(feed.ageMs)}.</p>
-      )}
+      {/*
+        Lifted into `components/tile.tsx` by micro-org#496, unchanged word for word. Conversions
+        and transfers are paged the same flat way and needed the same three sentences, and three
+        hand-written copies of "what an unavailable list means" is the drift `TilePanel` was
+        written to stop — arrived at from the side hub-api's non-tile routes come in on.
+      */}
+      <FeedStatus
+        page={feed}
+        fallbackReason="Nothing came back from the service that keeps your history."
+        partial={feed.records.length > 0}
+      />
 
       {feed.records.length === 0 ? (
         feed.status === 'unavailable' ? null : (

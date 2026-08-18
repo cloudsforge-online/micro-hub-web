@@ -1426,6 +1426,15 @@ const walletPageAt = (
       */
       'GET /v1/deposits/assets': { body: { assets: [], network: 'mainnet' } },
       'GET /v1/deposits': { body: { assignments: [] } },
+      /*
+        The transfers list, answered at its emptiest for the same reason as the two above. It is
+        the panel micro-org#496 put where "Transfers and conversions" used to say the estate had
+        nowhere to show one; leaving it unrouted would throw inside the harness, and routing it to
+        a FAILURE would make every wallet scenario read the page through an error banner.
+      */
+      'GET /v1/transfers': {
+        body: { transfers: [], nextCursor: null, status: 'ok', reason: null, cached: false, ageMs: null },
+      },
     } as Routes,
   },
 })
@@ -2342,18 +2351,53 @@ describe('BJ-WAL-21-ABSENT / BJ-ADV-23 / BJ-A11Y — what is missing, and reachi
       // notifications tile records why: "a client given no tile at all shows nothing and nobody
       // notices the feature is missing".
       for (const [what, why] of [
-        ['Transfers and conversions', /lists what you did afterwards|internal identifier/i],
         ['Connecting an external wallet', /no way to reach a browser extension or a hardware device/i],
       ] as const) {
         assert.ok(body.includes(what), `${what} is not named on the page`)
         assert.match(body, why, `${what} is named without its reason`)
       }
-      // And they are marked as holes rather than looking like empty features.
+      // And it is marked as a hole rather than looking like an empty feature.
       const holes = [...s.document.querySelectorAll('.wt-panel--hole')]
-      assert.equal(holes.length, 2, `expected two named holes, found ${holes.length}`)
+      assert.equal(holes.length, 1, `expected one named hole, found ${holes.length}`)
       for (const hole of holes) {
         assert.match(s.textOf(hole), /not composed/, 'a hole is not labelled as one')
       }
+
+      /*
+        ── THE OTHER HALF: A HOLE THAT HAS BEEN FILLED MUST NOT STILL BE DRAWN AS ONE ──────────
+
+        There were two holes here. "Transfers and conversions" said the estate had no read route
+        for either, which was true when it was written and stopped being true when micro-org#495
+        shipped both — and the paragraph outlived it by long enough to tell readers that a
+        working capability was missing. That is the second time (hub-api's `notifications` tile,
+        micro-org#415), which is what makes it worth a permanent assertion rather than a fix.
+
+        So: transfers are a REAL panel, conversions have left this page for `/convert`, and
+        neither word may appear inside a `not composed` panel again.
+      */
+      assert.ok(body.includes('Transfers'), 'the transfers list is not on the page at all')
+      assert.doesNotMatch(
+        body,
+        /Transfers and conversions/,
+        'the filled hole is still being drawn as a hole',
+      )
+      for (const hole of holes) {
+        assert.doesNotMatch(
+          s.textOf(hole),
+          /transfer|conversion/i,
+          'a shipped capability is named inside a "not composed" panel',
+        )
+      }
+      // The half that is still genuinely missing is stated, narrowly, where the list is — and it
+      // is the reason micro-wallet's own route gives rather than a shrug.
+      assert.match(
+        body,
+        /cannot start a transfer|internal identifier/i,
+        'the transfers list does not say why nothing can be sent from it',
+      )
+      // And the reader is pointed at the operation this page no longer carries.
+      const convert = s.byRole('link', 'Convert')
+      assert.equal(convert.getAttribute('href'), '/convert', 'Convert is linked somewhere else')
     })
   })
 

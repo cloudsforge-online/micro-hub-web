@@ -4,11 +4,17 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ── WHY THIS BUNDLE TALKS TO THEM DIRECTLY, AND NOT THROUGH hub-api ───────────────────────────
  *
- * hub-api serves five routes and every one of them is a read: `/v1/dashboard`, `/v1/portfolio`,
- * `/v1/activity`, `/v1/search`, `/v1/next-actions` (`hub-api/src/server.ts`). **It
- * composes no mutation of any kind.** So a Send button routed through the BFF would need a sixth
- * hub-api route that does not exist, and inventing a client for a route nobody serves is exactly
+ * hub-api composes exactly one mutation, and it is not this one. Since micro-org#496 it serves the
+ * conversion desk — `POST /v1/conversions/quote` and `POST /v1/conversions` (`lib/hub.ts`) — and
+ * of everything else `micro-wallet` and `micro-custody` do it serves **no route at all**: no
+ * withdrawal, no deposit address, no key export. So a Send button routed through the BFF would
+ * need a route that does not exist, and inventing a client for a route nobody serves is exactly
  * how `wallet/src/pricingclient.ts` came to call a `/v1/quotes` that has never existed.
+ *
+ * The two are not the same operation and the difference is the token, not a preference. hub-api can
+ * compose a conversion because it forwards the READER'S OWN bearer and wallet checks it — the BFF
+ * gains no authority to move money. It could not compose the two below on any terms: see the
+ * `amr`/`auth_time` gates in the next paragraph.
  *
  * The estate already has the pattern for this: `lib/api.ts`'s `nimbus()` calls identity
  * cross-origin for the two things only identity owns, and `pages/security.tsx` revokes sessions
@@ -264,6 +270,28 @@ export const CHAIN_ASSETS: readonly string[] = Object.freeze([
  */
 export function settlesOnChain(assetCode: string): boolean {
   return CHAIN_ASSETS.includes(assetCode)
+}
+
+/**
+ * Whether the conversion desk will take this asset on either side — the only assets Convert may
+ * offer.
+ *
+ * This is `isConvertible` from `wallet/src/money.ts` written in this bundle's vocabulary:
+ *
+ *     assetCode === 'SHARD' || chainForAsset(assetCode) !== null
+ *
+ * and `chainForAsset` is keyed by `CHAIN_FOR_ASSET`, which is the table `CHAIN_ASSETS` above is
+ * pinned to by `test/wallet-assets.test.ts`. So the two rules are the same rule, and the check that
+ * keeps them the same rule already exists.
+ *
+ * SHARD is IN, and that is not an oversight to tidy up later. It is retired for new denominations
+ * (`RETIRED_ASSETS`, contracts-chain) and a balance somebody already holds in it is still theirs;
+ * converting it out is the one thing left to do with it, and wallet accepts it precisely so that
+ * can be done. USD and `TOKEN:` codes are out, and would be refused 422 `not_convertible` — the
+ * dead-end-presented-as-a-choice this file's header is about.
+ */
+export function convertible(assetCode: string): boolean {
+  return assetCode === 'SHARD' || settlesOnChain(assetCode)
 }
 
 /* ══════════════════════════════ withdrawals ══════════════════════════════ */
