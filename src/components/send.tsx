@@ -172,10 +172,31 @@ export function SendPanel({
       })
       .catch((err: unknown) => {
         setNotice(noticeFor(err, 'That withdrawal could not be requested.'))
-        if (err instanceof ApiError && err.status === 409) {
-          // `idempotency_key_reused` — two different bodies under one key. That is a bug in this
-          // bundle rather than something the user can fix, so the intent is dropped: pressing
-          // Confirm again against a key the service has already bound would repeat it forever.
+        /*
+         * THE CODE, NOT THE STATUS — and the difference between them is a second withdrawal.
+         *
+         * This read `err.status === 409`, under a comment naming one refusal. 409 on this route is
+         * three, and `wallet/src/server.ts` distinguishes them by code:
+         *
+         *   idempotency_key_reuse    two different bodies under one key. This bundle's bug, not
+         *                            anything the reader can fix, and the key is what the service
+         *                            is objecting to — re-sending it produces the same 409 forever
+         *   idempotency_in_flight    the FIRST request is still running. Pressing again under the
+         *                            same key is exactly what idempotency is for
+         *   insufficient_funds       the ledger's refusal, raised inside the transaction with the
+         *                            balance row locked. Nothing was reserved and nothing moved
+         *
+         * Dropping `armed` drops the KEY with it (`review()` mints a fresh one when the previous
+         * intent is gone) while `destination` and `amountText` are left standing — the failure
+         * path deliberately does not clear the form. So on either of the last two the reader
+         * pressed Review, got a NEW key for a body the service had already accepted or was still
+         * processing, and posted the same withdrawal a second time with nothing left to collapse
+         * it. The one branch that existed to protect the key was the thing spending it.
+         *
+         * `pages/convert.tsx` has always branched on the code, for these exact three sentences.
+         * This is that decision, one screen over, on the route where the coin does not come back.
+         */
+        if (err instanceof ApiError && err.code === 'idempotency_key_reuse') {
           setArmed(null)
         }
       })

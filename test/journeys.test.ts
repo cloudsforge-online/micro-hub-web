@@ -2158,7 +2158,26 @@ describe('BJ-ADV-20 — Send, the six hazards', () => {
     )
   })
 
-  it('BJ-ADV-20-H4 ★ T1: a 409 key-reuse DROPS the intent, because that one is this bundle’s bug', async () => {
+  /*
+   * ── THIS SCENARIO USED TO PROVE THE DEFECT ────────────────────────────────────────────────────
+   *
+   * It asserted that "a 409" drops the intent, and it drove that with the code
+   * `idempotency_key_reused` — which `micro-wallet` has never emitted. The real one is
+   * `idempotency_key_reuse`, and the misspelling did not matter, because the branch it was written
+   * against read `err.status === 409` and never looked at the code at all. A scenario naming a
+   * code no service produces, passing against a component that ignores codes, is a green test for
+   * a behaviour nobody chose.
+   *
+   * And the behaviour was wrong. 409 on this route is three refusals — the two below and the
+   * ledger's insufficient-funds — and dropping the intent drops the KEY with it while leaving the
+   * destination and the amount in the fields. So a reader refused for either of the other two
+   * reviewed again, got a FRESH key for a body the service had already taken, and posted the same
+   * withdrawal twice. The one branch written to protect the key was the thing spending it.
+   *
+   * Both codes are driven here, with the service's own spelling, so the pair cannot drift apart
+   * again. `test/withdraw-refusal.test.ts` carries the rest, including the key-level proof.
+   */
+  it('BJ-ADV-20-H4 ★ T1: key-reuse drops the intent; every other 409 keeps it', async () => {
     fresh()
     await withScreen(
       page(sendPanel(), '/wallet'),
@@ -2167,7 +2186,7 @@ describe('BJ-ADV-20 — Send, the six hazards', () => {
         routes: {
           'POST /v1/withdrawals': {
             status: 409,
-            body: fx.errorBody('idempotency_key_reused', 'That key has already been used for a different payment.'),
+            body: fx.errorBody('idempotency_key_reuse', 'That key has already been used for a different payment.'),
           },
         },
       },
@@ -2175,11 +2194,45 @@ describe('BJ-ADV-20 — Send, the six hazards', () => {
         await arm(s, fx.OTHER_ADDRESS, '1')
         await s.click(s.byRole('button', 'Send it'))
 
-        // `idempotency_key_reused` means two different intents were sent under one key — a defect
-        // in this bundle rather than something the user can fix. Pressing Confirm again against a
-        // key the service has already bound would repeat it for ever, so the intent is dropped.
-        assert.equal(s.queryByRole('button', 'Send it'), null, 'a 409 left the commit control armed')
+        // Two different intents went under one key — a defect in this bundle rather than anything
+        // the user can fix. Pressing Confirm again against a key the service has already bound can
+        // only produce the same 409 for ever, so the intent is dropped.
+        assert.equal(
+          s.queryByRole('button', 'Send it'),
+          null,
+          'a key the service has already bound to another withdrawal left the commit control armed',
+        )
         assert.ok(s.text().includes('already been used'), 'the refusal is not shown')
+      },
+    )
+
+    fresh()
+    await withScreen(
+      page(sendPanel(), '/wallet'),
+      {
+        url: `${ORIGIN}/wallet`,
+        routes: {
+          'POST /v1/withdrawals': {
+            status: 409,
+            body: fx.errorBody(
+              'idempotency_in_flight',
+              'A request with this idempotency key is still being processed.',
+            ),
+          },
+        },
+      },
+      async (s) => {
+        await arm(s, fx.OTHER_ADDRESS, '1')
+        await s.click(s.byRole('button', 'Send it'))
+
+        // The SAME status, and the opposite handling. The first request is still running; pressing
+        // again under the same key is exactly what idempotency is for, and re-arming from the form
+        // would mint a new one.
+        assert.ok(
+          s.queryByRole('button', 'Send it'),
+          'a withdrawal that is merely still in flight had its intent — and its key — thrown away',
+        )
+        assert.ok(s.text().includes('still being processed'), 'the refusal is not shown')
       },
     )
   })
