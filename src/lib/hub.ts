@@ -12,16 +12,25 @@
  * So each function carries the `hub-api/src/server.ts` line its path and its response shape were
  * verified against. If one of them moves, the citation is how the next person finds out.
  *
- *   GET /v1/dashboard      server.ts   → Dashboard          (dashboard.ts)
- *   GET /v1/portfolio      server.ts   → { portfolio: Tile<PortfolioView> }  (line 338)
- *   GET /v1/activity       server.ts   → a FLAT page, not a Tile  (lines 377-387)
- *   GET /v1/search         server.ts   → SearchResponse     (search.ts)
- *   GET /v1/next-actions   server.ts   → NextActions        (nextactions.ts)
+ *   GET  /v1/dashboard          server.ts   → Dashboard          (dashboard.ts)
+ *   GET  /v1/portfolio          server.ts   → { portfolio: Tile<PortfolioView> }  (line 338)
+ *   GET  /v1/activity           server.ts   → a FLAT page, not a Tile  (lines 377-387)
+ *   GET  /v1/search             server.ts   → SearchResponse     (search.ts)
+ *   GET  /v1/next-actions       server.ts   → NextActions        (nextactions.ts)
+ *   POST /v1/conversions/quote  server.ts, 557 → { quote: ConversionQuote }
+ *   POST /v1/conversions        server.ts, 587 → ConversionReceipt; 201, or 200 on a replay
+ *   GET  /v1/conversions        server.ts, 631 → a FLAT page, like `/v1/activity`
+ *   GET  /v1/transfers          server.ts, 681 → a FLAT page, like `/v1/activity`
  *
- * There are five. **hub-api serves no wallet route, no security route, no settings route and no
- * entitlements route** — those four pages are drawn from tiles of `/v1/dashboard`, plus, for the
- * things identity alone owns, direct calls to identity listed at the bottom of this file. Nothing
- * in this app may invent a sixth hub-api path.
+ * There are nine. hub-api serves a tenth, `GET /v1/conversions/:id` (server.ts, 728), and this
+ * bundle deliberately does not call it: `ConversionRecord` is the whole of what that route returns,
+ * so a detail fetch would ask the server for fields the row on the screen is already holding.
+ *
+ * **hub-api serves no security route, no settings route and no entitlements route, and of
+ * micro-wallet it composes the desk and nothing else** — no wallet list, no deposit address, no
+ * withdrawal. Those pages are drawn from tiles of `/v1/dashboard`, from direct calls to micro-wallet
+ * (`lib/money.ts`, which says why), and from direct calls to identity at the bottom of this file.
+ * Nothing in this app may invent an eleventh hub-api path.
  *
  * ── Types are mirrors, and they are `readonly` ─────────────────────────────────────────────────
  *
@@ -30,6 +39,7 @@
  * `@cloudsforge/hub-contracts` that nobody generates is a third description of the same shape.
  */
 import { api, nimbus, type RequestOptions } from './api.ts'
+import { IDEMPOTENCY_HEADER } from './idempotency.ts'
 import type { Tile } from './tile.ts'
 
 /* ─────────────────────────────── portfolio ─────────────────────────────── */
@@ -472,6 +482,226 @@ export const MAX_SEARCH_LENGTH = 128
 
 export const search = (signal: AbortSignal, q: string): Promise<SearchResponse> =>
   api<SearchResponse>('/v1/search', { signal, query: { q } })
+
+/* ──────────────────────────────── the desk ─────────────────────────────── */
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE DESK IS CUSTODIAL, AND THAT IS THE ONE THING EVERY SCREEN BUILT ON IT MUST SAY.
+ *
+ * A conversion here sells the reader coin out of CloudsForge's own inventory at a price
+ * CloudsForge quoted, and CloudsForge goes on holding it afterwards. Nothing touches a chain and
+ * no contract is involved. Forge Exchange, one hostname over, is the opposite arrangement — pools
+ * that live on Hearth, where the trade is a transaction and CloudsForge holds nothing — and the
+ * two are easy to confuse precisely because both are "swap one asset for another". Every surface
+ * that renders these types owes the reader the distinction in words.
+ *
+ * WHY THESE FOUR GO THROUGH hub-api WHEN A WITHDRAWAL DOES NOT: `lib/money.ts` calls micro-wallet
+ * directly because custody's export ceremony reads `amr` and `auth_time` off the user's own token
+ * and a service credential could not carry either. Conversions have no such requirement, they need
+ * the `?userId=` operator read that `resolveSubject` already owns, and micro-org#496 asked for the
+ * seam here. hub-api forwards the caller's bearer for the two writes, so it gains no authority to
+ * move money — `hub-api/src/upstreams.ts` has the whole argument.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * One conversion. Mirrors `ConversionRecord`, hub-api/src/upstreams.ts, which mirrors
+ * `ConversionView`, wallet/src/money.ts.
+ *
+ * `id` is the id of the JOURNAL ENTRY that is the conversion — wallet keeps no conversions table,
+ * "the entry IS the conversion" — so it is also what an activity row's `subjectUrn` names.
+ *
+ * Every amount is smallest units as a decimal string with the human form beside it, and the human
+ * form is the service's: `formatAmount` there knows each asset's decimals and nothing in a browser
+ * bundle does. Never a JSON number — these are 78-bit quantities and `JSON.parse` rounds one
+ * silently.
+ */
+export interface ConversionRecord {
+  readonly id: string
+  readonly occurredAt: string
+  readonly recordedAt: string
+  readonly fromAssetCode: string
+  readonly fromAmount: string
+  readonly fromAmountFormatted: string
+  readonly toAssetCode: string
+  readonly toAmount: string
+  readonly toAmountFormatted: string
+  readonly rateScale: string
+  /** When the price behind it was observed. Null for an entry booked before micro-org#495. */
+  readonly quotedAt: string | null
+}
+
+/**
+ * One transfer, from this reader's end of it. Mirrors `TransferRecord`, upstreams.ts.
+ *
+ * Sent and received arrive in ONE list because the ledger's subject filter returns an entry that
+ * touches this user's account whichever side of it they were on; `direction` is which side.
+ *
+ * `counterpartyUserId` is an internal id and may be null. Nothing in this estate resolves one to a
+ * handle — that missing lookup is also why there is no send form — so a surface renders the
+ * direction and leaves the other end unnamed rather than printing a uuid at somebody.
+ */
+export interface TransferRecord {
+  readonly id: string
+  readonly occurredAt: string
+  readonly recordedAt: string
+  readonly direction: 'out' | 'in'
+  readonly assetCode: string
+  readonly amount: string
+  readonly amountFormatted: string
+  readonly counterpartyUserId: string | null
+}
+
+/**
+ * What a conversion would come to. Mirrors `ConversionQuote`, upstreams.ts.
+ *
+ * **`hold` is `false` and `holdNotice` is the sentence saying so, and neither may be dropped on the
+ * way to the screen.** wallet made them fields rather than a line in its API docs for a reason it
+ * states: nothing is reserved by asking, the rate and the desk's inventory can both move before the
+ * conversion, and "a surface that renders a quote as though it were a hold is making a promise this
+ * service has not made". So the confirm step prints `holdNotice` verbatim. Writing the estate's
+ * second copy of that sentence in a JSX string is how the two come to disagree.
+ */
+export interface ConversionQuote {
+  readonly fromAssetCode: string
+  readonly fromAmount: string
+  readonly fromAmountFormatted: string
+  readonly toAssetCode: string
+  readonly toAmount: string
+  readonly toAmountFormatted: string
+  readonly rateScale: string
+  readonly quotedAt: string
+  readonly hold: false
+  readonly holdNotice: string
+}
+
+/**
+ * What a booked conversion answers with. Mirrors `ConversionReceipt`, upstreams.ts.
+ *
+ * `replayed` is true when this key had already been used: the SAME conversion read back, not a
+ * second one. hub-api answers 201 for a fresh one and 200 for a replay, and both are successes —
+ * nothing here may turn a replay into an error, because the retry that idempotency exists for is
+ * the browser sending one press twice.
+ */
+export interface ConversionReceipt {
+  readonly entryId: string
+  readonly replayed: boolean
+  readonly summary: {
+    readonly fromAssetCode: string
+    readonly fromAmount: string
+    readonly fromAmountFormatted: string
+    readonly toAssetCode: string
+    readonly toAmount: string
+    readonly toAmountFormatted: string
+    readonly quotedAt: string
+  }
+}
+
+/** What the reader is asking the desk for. The same body both write routes take. */
+export interface ConversionIntent {
+  readonly fromAssetCode: string
+  readonly toAssetCode: string
+  /** Smallest units, decimal string. */
+  readonly amount: string
+}
+
+/**
+ * The flat page both desk lists answer with — `records` under their own name, beside the tile's
+ * `status`, `reason`, `cached` and `ageMs`. Same shape as `ActivityPageResponse` and for the same
+ * reason: two paged lists reading two shapes is how a bundle ends up with two pagers.
+ */
+export interface ConversionPageResponse {
+  readonly conversions: readonly ConversionRecord[]
+  readonly nextCursor: string | null
+  readonly status: Tile<unknown>['status']
+  readonly reason: string | null
+  readonly cached: boolean
+  readonly ageMs: number | null
+}
+
+export interface TransferPageResponse {
+  readonly transfers: readonly TransferRecord[]
+  readonly nextCursor: string | null
+  readonly status: Tile<unknown>['status']
+  readonly reason: string | null
+  readonly cached: boolean
+  readonly ageMs: number | null
+}
+
+/** hub-api's own default for both desk lists — `PAGE.conversions`, upstreams.ts, 599. */
+export const CONVERSION_PAGE_SIZE = 25
+
+/**
+ * Price a conversion without making one.
+ *
+ * Not cached anywhere, deliberately, at either end: a quote is a price at an instant and a cached
+ * price is a price somebody trades at after it stopped being true.
+ *
+ * A quote does NOT prove the conversion will be filled. wallet declines to check inventory here —
+ * "an unlimited, free, unbooked route that answers 'can you fill N?' is an oracle" — so
+ * `desk_inventory_short` can only ever arrive from the conversion itself, and a caller that treats
+ * a successful quote as a promise is writing the bug that comment is about.
+ */
+export const quoteConversion = (
+  signal: AbortSignal,
+  intent: ConversionIntent,
+): Promise<{ quote: ConversionQuote }> =>
+  api<{ quote: ConversionQuote }>('/v1/conversions/quote', { method: 'POST', body: intent, signal })
+
+/**
+ * Make the conversion.
+ *
+ * `intent` is the object the confirm step RENDERED, passed through untouched, for the reason
+ * `requestWithdrawal` states at length in `lib/money.ts`: a form that shows one figure and submits
+ * another is the most expensive defect a screen that moves money can have, and the only way to make
+ * it impossible is for the rendered value and the submitted value to be the same object.
+ *
+ * The key is the caller's and is minted per INTENT, not per request — `lib/idempotency.ts`. It is
+ * required: hub-api refuses without it, in wallet's own `idempotency_key_required` spelling, so a
+ * client branches on one code whichever hop caught it.
+ */
+export const convert = (
+  intent: ConversionIntent,
+  idempotencyKey: string,
+): Promise<ConversionReceipt> =>
+  api<ConversionReceipt>('/v1/conversions', {
+    method: 'POST',
+    body: intent,
+    headers: { [IDEMPOTENCY_HEADER]: idempotencyKey },
+  })
+
+/**
+ * One page of this reader's conversions, newest first.
+ *
+ * The cursor is wallet's keyset position, opaque, passed back byte-for-byte, and a null one is
+ * OMITTED rather than sent empty — hub-api caches only the page whose `cursor` parameter is absent,
+ * exactly as `/v1/activity` does, and sending `cursor=` defeats that cache on every first load.
+ */
+export function loadConversions(
+  signal: AbortSignal,
+  cursor: string | null = null,
+  limit: number = CONVERSION_PAGE_SIZE,
+): Promise<ConversionPageResponse> {
+  const options: RequestOptions = {
+    signal,
+    query: cursor === null ? { limit } : { limit, cursor },
+  }
+  return api<ConversionPageResponse>('/v1/conversions', options)
+}
+
+/** One page of this reader's transfers, both directions. Same cursor rule as above. */
+export function loadTransfers(
+  signal: AbortSignal,
+  cursor: string | null = null,
+  limit: number = CONVERSION_PAGE_SIZE,
+): Promise<TransferPageResponse> {
+  const options: RequestOptions = {
+    signal,
+    query: cursor === null ? { limit } : { limit, cursor },
+  }
+  return api<TransferPageResponse>('/v1/transfers', options)
+}
 
 /* ───────────────── identity, called directly, on purpose ───────────────── */
 

@@ -26,6 +26,7 @@
  *      "notifications is not showing current data" banner at the top of this page for every user.
  */
 import { useCallback, useId } from 'react'
+import { surface, type SurfaceKey } from '@cloudsforge/ui'
 import { BarChart, StatTile } from '@cloudsforge/ui/charts'
 import { Link } from 'react-router-dom'
 import { AddressBook } from '../components/addressbook.tsx'
@@ -39,6 +40,7 @@ import { loadDashboard, type Dashboard, type NextAction } from '../lib/hub.ts'
 import { allocationData, estimatedAssets, hasAllocation, portfolioTotal } from '../lib/portfolio.ts'
 import { useResource } from '../lib/resource.ts'
 import { degradedSentence } from '../lib/tile.ts'
+import { viewedSurfaceUrl } from '../lib/viewed.ts'
 
 /**
  * A dashboard is never "empty".
@@ -94,9 +96,21 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
         title="Portfolio"
         tile={tiles.portfolio}
         action={
-          <Link className="wt-link" to="/portfolio">
-            See every holding →
-          </Link>
+          /*
+            Two ways out, because this panel answers two questions and only had a link for one.
+            "See every holding" is the reading move; Convert is the DOING move, and micro-org#496
+            put it a click away from the figures it operates on rather than behind a nav entry a
+            reader has to already know exists. The wrapper is what stops `space-between` from
+            throwing them to opposite ends of the header.
+          */
+          <span className="wt-panel__links">
+            <Link className="wt-link" to="/convert">
+              Convert to EMBER →
+            </Link>
+            <Link className="wt-link" to="/portfolio">
+              See every holding →
+            </Link>
+          </span>
         }
         empty={<p className="wt-note">You are not holding anything yet.</p>}
       >
@@ -265,70 +279,134 @@ function Overview({ dashboard }: { dashboard: Dashboard }) {
       {/* ── 6. Notifications ──────────────────────────────────────────────────────────────── */}
       <NotificationsPanel tile={tiles.notifications} />
 
-      {/*
-        The single-account story, said once on the surface that owns it. Every name below is a real
-        product in the shared surface registry the bar and the footer are also built from, so this
-        list cannot drift out of step with what the account actually reaches.
-      */}
-      <section className="wt-panel">
-        <header className="wt-panel__head">
-          <h2 className="wt-panel__title">What this one account reaches</h2>
-        </header>
-        <p className="wt-note">
-          Signing in here signs you in everywhere. There is no second password to keep, no separate
-          balance to top up, and no reconciling one product against another.
-        </p>
-        <ul className="wt-rows">
-          <li className="wt-row">
-            <span className="wt-row__main">
-              <span className="wt-row__title">Forge Trade</span>
-              <span className="wt-row__sub">
-                Put a trading rule through real price history with fees and slippage charged, then
-                run what survives on paper before anything is at stake.
-              </span>
-            </span>
-          </li>
-          <li className="wt-row">
-            <span className="wt-row__main">
-              <span className="wt-row__title">Forge Market</span>
-              <span className="wt-row__sub">
-                Buy and sell items, tokens and memberships. Escrow, the fee and every creator
-                royalty settle as one balanced entry against this account.
-              </span>
-            </span>
-          </li>
-          <li className="wt-row">
-            <span className="wt-row__main">
-              <span className="wt-row__title">Forge Network</span>
-              <span className="wt-row__sub">
-                The EMBER chain, its explorer and its faucet. It runs a real EVM — Solidity
-                compiles and deploys against it, Hardhat and Foundry work unmodified, and it is
-                held to Ethereum's own published test vectors.
-              </span>
-            </span>
-          </li>
-          <li className="wt-row">
-            <span className="wt-row__main">
-              <span className="wt-row__title">Forge Create, Worlds and Foresight</span>
-              <span className="wt-row__sub">
-                Making things, playing in them, and asking what happens next. Whatever you earn or
-                spend across them lands in the balance above.
-              </span>
-            </span>
-          </li>
-          <li className="wt-row">
-            <span className="wt-row__main">
-              <span className="wt-row__title">Developer Platform</span>
-              <span className="wt-row__sub">
-                API keys and the console, for building against any of it directly.
-              </span>
-            </span>
-          </li>
-        </ul>
-      </section>
+      <WhatThisAccountReaches />
     </>
   )
 }
+
+/* ─────────────────────── the rest of the estate, from the registry ─────────────────────── */
+
+/**
+ * What this account reaches, with each product's name and address taken from the shared registry.
+ *
+ * ── THE COMMENT THAT USED TO BE HERE WAS NOT TRUE, AND THAT IS THE WHOLE OF THIS CHANGE ───────
+ *
+ * It said: "Every name below is a real product in the shared surface registry the bar and the
+ * footer are also built from, so this list cannot drift out of step with what the account actually
+ * reaches." Underneath it were five hand-typed `<li>` rows. Nothing was derived from anything, no
+ * row was a link, and the drift the comment promised could not happen had already happened — Forge
+ * Exchange had shipped and this list, on the page a reader means when they say "my account", did
+ * not mention it, while the bar and the footer above and below it both did.
+ *
+ * So the NAMES and the ADDRESSES are now read from `surface(key)` and `viewedSurfaceUrl(key)`, and
+ * the claim is true by construction: a product renamed in the registry is renamed here, and a row
+ * naming a key that does not exist will not compile.
+ *
+ * ── THE PROSE STAYS LOCAL, AND THAT IS DELIBERATE ─────────────────────────────────────────────
+ *
+ * `surface(key).blurb` exists and is not used. The registry's blurb describes a product to someone
+ * who has never seen it — it is what the switcher and the footer show. These sentences describe
+ * what a product does TO THE BALANCE ON THIS PAGE ("lands in the balance above", "settle as one
+ * balanced entry against this account"), which is a fact about this screen and belongs to it.
+ *
+ * ── THE HOSTNAME IS NEVER TYPED ───────────────────────────────────────────────────────────────
+ *
+ * `viewedSurfaceUrl` composes it from the registry row and the network the reader is VIEWING, and
+ * self-checks its composition against `hosts()` before trusting it. A reader on testnet is offered
+ * the testnet estate; a preview deployment is offered the address that actually answers; and no
+ * environment is written into this bundle, which `test/no-build-time-config.test.ts` would fail the
+ * build over in any case. No path is appended to any of them: which address inside a surface is
+ * its front door is that repository's decision.
+ */
+function WhatThisAccountReaches() {
+  return (
+    <section className="wt-panel">
+      <header className="wt-panel__head">
+        <h2 className="wt-panel__title">What this one account reaches</h2>
+      </header>
+      <p className="wt-note">
+        Signing in here signs you in everywhere. There is no second password to keep, no separate
+        balance to top up, and no reconciling one product against another.
+      </p>
+      <ul className="wt-rows">
+        {REACHES.map((row) => (
+          <li className="wt-row" key={row.keys.join('+')}>
+            <span className="wt-row__main">
+              <span className="wt-row__title">
+                {row.keys.map((key, index) => (
+                  <span key={key}>
+                    {index > 0 && (index === row.keys.length - 1 ? ' and ' : ', ')}
+                    <a className="wt-link" href={viewedSurfaceUrl(key)} rel="noreferrer noopener">
+                      {surface(key).name}
+                    </a>
+                  </span>
+                ))}
+              </span>
+              <span className="wt-row__sub">{row.blurb}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * The products, in the order a reader meets them, and what each one does to the balance above.
+ *
+ * Grouped where the sentence is genuinely about several of them at once; the keys are what carry
+ * the names and the links, so a group is three links under one sentence rather than one link
+ * pretending to stand for three.
+ */
+const REACHES: ReadonlyArray<{ readonly keys: readonly SurfaceKey[]; readonly blurb: string }> = [
+  {
+    keys: ['trade'],
+    blurb:
+      'Put a trading rule through real price history with fees and slippage charged, then run ' +
+      'what survives on paper before anything is at stake.',
+  },
+  {
+    keys: ['market'],
+    blurb:
+      'Buy and sell items, tokens and memberships. Escrow, the fee and every creator royalty ' +
+      'settle as one balanced entry against this account.',
+  },
+  {
+    /*
+      THE ROW THIS PAGE WAS MISSING, and the reason its neighbour needs a sentence of its own.
+
+      Forge Exchange and the Convert page in this tab are both "swap one asset for another" and
+      they are not the same arrangement: here CloudsForge quotes a price, sells out of its own
+      holdings and keeps custody of both sides; there the trade is a transaction against pools on
+      the EMBER chain, priced by what is in the pool, with CloudsForge holding nothing. A reader
+      who conflates them has been misled about who is holding their money, so the distinction is
+      drawn where the two are named together and nowhere else on this page.
+    */
+    keys: ['exchange'],
+    blurb:
+      'Swap EMBER and the tokens minted on Forge Create against pools that live on the chain ' +
+      'itself. Those trades are transactions, priced by what is in the pool and settled in your ' +
+      'own wallet — unlike Convert in this tab, where you trade with CloudsForge at a quoted ' +
+      'price and we keep custody of both sides.',
+  },
+  {
+    keys: ['network'],
+    blurb:
+      "The EMBER chain, its explorer and its faucet. It runs a real EVM — Solidity compiles and " +
+      'deploys against it, Hardhat and Foundry work unmodified, and it is held to Ethereum’s own ' +
+      'published test vectors.',
+  },
+  {
+    keys: ['create', 'worlds', 'foresight'],
+    blurb:
+      'Making things, playing in them, and asking what happens next. Whatever you earn or spend ' +
+      'across them lands in the balance above.',
+  },
+  {
+    keys: ['developers'],
+    blurb: 'API keys and the console, for building against any of it directly.',
+  },
+]
 
 /**
  * Notifications — the newest few, and the unread total.

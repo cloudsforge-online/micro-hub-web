@@ -21,7 +21,7 @@
  */
 import type { ReactNode } from 'react'
 import { ageLabel } from '../lib/format.ts'
-import { hasAnswer, tileNote, type Tile } from '../lib/tile.ts'
+import { hasAnswer, tileNote, type Tile, type TileStatus } from '../lib/tile.ts'
 
 export function TilePanel({
   title,
@@ -102,12 +102,74 @@ export function DegradedBanner({ sentence }: { sentence: string | null }) {
 }
 
 /**
+ * The same three-way honesty, for hub-api's FLAT paged responses.
+ *
+ * `/v1/activity`, `/v1/conversions` and `/v1/transfers` are the routes that are not `Tile<T>`:
+ * they put `status`, `reason`, `cached` and `ageMs` beside the records at the top level, because a
+ * cursor and a tile envelope do not compose. `TilePanel` therefore cannot draw them, and each of
+ * the three screens wrote the banner out by hand — which is precisely the "seven different
+ * opinions about what `degraded` looks like" this file's header exists to prevent, arrived at from
+ * the other direction.
+ *
+ * ── THE ONE THAT MATTERS IS `unavailable` ─────────────────────────────────────────────────────
+ *
+ * hub-api answers 200 with an EMPTY LIST when the upstream is down, so an unavailable page and an
+ * account that has never done anything are the same array. Rendering the first as the second is
+ * how an outage reads as a quiet week, on the three screens that are somebody's financial history.
+ * `partial` is the second half of that: a feed that already holds records from an earlier page has
+ * shown the reader something true, and telling them they can see nothing would be its own lie.
+ */
+export function FeedStatus({
+  page,
+  fallbackReason,
+  partial = false,
+}: {
+  page: {
+    readonly status: TileStatus
+    readonly reason: string | null
+    readonly cached: boolean
+    readonly ageMs: number | null
+  }
+  /** What to say when the service went quiet without saying why. Name the list, not "data". */
+  fallbackReason: string
+  /** True when records from an earlier page are already on screen beneath this banner. */
+  partial?: boolean | undefined
+}) {
+  if (page.status === 'unavailable') {
+    return (
+      <p className="wt-banner wt-banner--degraded" role="alert">
+        <span className="wt-banner__icon" aria-hidden="true">
+          ▲
+        </span>
+        {page.reason ?? fallbackReason}{' '}
+        {partial
+          ? 'What you can see below reached us before it went quiet, so treat it as partial.'
+          : 'We could read none of it, which is a different thing entirely from nothing having happened.'}
+      </p>
+    )
+  }
+  if (page.status === 'degraded') {
+    return (
+      <p className="wt-banner wt-banner--degraded" role="status">
+        <span className="wt-banner__icon" aria-hidden="true">
+          ▲
+        </span>
+        {page.reason ?? 'What follows is behind. Something newer may have happened since.'}
+      </p>
+    )
+  }
+  const age = page.cached ? ageLabel(page.ageMs) : null
+  if (age) return <p className="wt-note">Held over from an earlier read, {age}.</p>
+  return null
+}
+
+/**
  * A fact this app cannot show, and why.
  *
  * Used wherever a screen has a region the estate does not yet serve — notification preferences,
- * transfers, conversions. It exists so that "not built" is visibly different from "empty" and
- * from "failed", which is the same three-way distinction `components/states.tsx` makes for a
- * request, applied to a capability.
+ * an external wallet nothing in this bundle can ask to sign. It exists so that "not built" is
+ * visibly different from "empty" and from "failed", which is the same three-way distinction
+ * `components/states.tsx` makes for a request, applied to a capability.
  *
  * The alternative — omitting the region — is worse in the specific way hub-api's `notifications`
  * tile used to document: "a client given no tile at all shows nothing and nobody notices the
@@ -117,6 +179,12 @@ export function DegradedBanner({ sentence }: { sentence: string | null }) {
  * every Overview in the estate carried an incident banner about a feature that was working
  * upstream the whole time (micro-org #415). Use this for a capability that does not exist; never
  * for one nobody has got round to wiring.
+ *
+ * It has now happened twice. The Wallet page carried a "Transfers and conversions" hole saying
+ * neither had anywhere to list a result — true when it was written, and the reason micro-org#496
+ * exists. `micro-wallet` grew both read routes, hub-api composed them, and the paragraph outlived
+ * the hole by long enough to become the thing telling readers a shipped feature was missing. When
+ * you write one of these, write down what would have to become true for it to be deleted.
  */
 export function NotComposed({ title, children }: { title: string; children: ReactNode }) {
   return (

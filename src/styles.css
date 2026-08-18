@@ -200,6 +200,19 @@ body {
   margin-bottom: 0.75rem;
 }
 
+/*
+ * Two ways out of one panel, kept together.
+ *
+ * `.wt-panel__head` is `space-between`, so two links passed as a panel's action become two flex
+ * items and get pushed to opposite ends of the header with the title stranded between them. This
+ * wraps them into one item so they read as a pair.
+ */
+.wt-panel__links {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cf-space-md);
+}
+
 .wt-panel__title {
   margin: 0;
   font-size: var(--cf-text-md);
@@ -792,6 +805,22 @@ body {
   min-height: 1rem;
   font-size: var(--cf-text-sm);
   color: var(--cf-fg-mute);
+}
+
+/*
+ * A field whose value is stated rather than chosen — the conversion desk's output asset, which is
+ * one asset until micro-org#492 and #493 close.
+ *
+ * Sized and coloured like an input's text rather than like a hint, because it IS the value: a
+ * `<select>` holding a single option is a control that cannot be operated, and rendering the value
+ * in the muted hint style instead makes the one fixed term of the trade the quietest thing in the
+ * form. The sentence explaining why it is fixed sits under it in `.wt-field__hint`, where the rest
+ * of the form's explanations are.
+ */
+.wt-field__value {
+  margin: 0;
+  font-size: var(--cf-text-md);
+  color: var(--cf-fg);
 }
 
 /*

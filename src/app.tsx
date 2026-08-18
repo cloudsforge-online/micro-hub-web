@@ -39,6 +39,7 @@ import {
   VerifyEmailPage,
 } from './pages/account.tsx'
 import { ActivityPage } from './pages/activity.tsx'
+import { ConvertPage } from './pages/convert.tsx'
 import { EntitlementsPage } from './pages/entitlements.tsx'
 import { MinePage } from './pages/mine.tsx'
 import { NotFoundPage } from './pages/not-found.tsx'
@@ -94,6 +95,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <WalletPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="convert"
+              element={
+                <ProtectedRoute>
+                  <ConvertPage />
                 </ProtectedRoute>
               }
             />

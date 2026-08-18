@@ -38,9 +38,16 @@
  * This page was read-only until docs/ecosystem/22 §8.2 named it as the estate's largest coverage
  * gap: no `<form>`, no `<button>`, no mutation, while 05's journeys 4, 5 and 6 and fifteen browser
  * scenarios waited on it. The three mutations are now here; `lib/money.ts` carries the reasoning
- * for why they go to `micro-wallet` and `micro-custody` directly, which is that **hub-api composes
- * no mutation at all** — its five routes are all reads — and inventing a sixth one to proxy them
- * is how `wallet/src/pricingclient.ts` came to call a `/v1/quotes` that has never existed.
+ * for why they go to `micro-wallet` and `micro-custody` directly, which was that hub-api composed
+ * no mutation at all and inventing one to proxy them is how `wallet/src/pricingclient.ts` came to
+ * call a `/v1/quotes` that has never existed.
+ *
+ * That is now a statement about THESE THREE rather than about hub-api. micro-org#496 gave hub-api
+ * two writes of its own — the conversion desk's quote and its conversion — for a reason none of
+ * the three on this page has: the desk refuses in ways a reader must be able to act on, and a 409
+ * `desk_inventory_short` arriving at a browser as a 500 is the difference between "we are out of
+ * EMBER just now" and "something went wrong". Proxying to preserve a refusal is worth a route;
+ * proxying a withdrawal to save a hostname is not.
  *
  * ── The reads still come from `/v1/dashboard`, and that is not laziness ────────────────────────
  *
@@ -60,14 +67,22 @@
  * what they actually are: what is in flight. The settled history is the Activity page.
  */
 import { useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { AddressBook } from '../components/addressbook.tsx'
 import { KeyExportPanel } from '../components/keyexport.tsx'
 import { ReceivePanel } from '../components/receive.tsx'
 import { SendPanel } from '../components/send.tsx'
-import { NotComposed, TilePanel } from '../components/tile.tsx'
+import { FeedStatus, NotComposed, TilePanel } from '../components/tile.tsx'
 import { Failed, Forbidden, Loading } from '../components/states.tsx'
 import { confirmationLabel, formatAmount, shortHash, utcDateTime } from '../lib/format.ts'
-import { loadDashboard, type DepositCredit, type WalletRecord, type WithdrawalRecord } from '../lib/hub.ts'
+import {
+  loadDashboard,
+  loadTransfers,
+  type DepositCredit,
+  type TransferRecord,
+  type WalletRecord,
+  type WithdrawalRecord,
+} from '../lib/hub.ts'
 import { loadTokenSightings, type TokenSighting } from '../lib/money.ts'
 import { absenceOf, hasAnswer } from '../lib/tile.ts'
 import { useResource } from '../lib/resource.ts'
@@ -132,10 +147,16 @@ export function WalletPage() {
       {/*
         ── 2. SENDING, WHICH IS THE OTHER ACTION ───────────────────────────────────────────────
         Send goes to `micro-wallet` and the export ceremony to `micro-custody`, each directly and
-        each with the user's own token: hub-api composes no mutation at all (five routes, all
-        reads), and custody's ceremony reads `amr` and `auth_time` off the token a service
-        credential could not carry. See `lib/money.ts` for the hosts and what still has to be true
-        in `micro-deploy` for the browser to reach them.
+        each with the user's own token — custody's ceremony reads `amr` and `auth_time` off a token
+        a service credential could not carry. See `lib/money.ts` for the hosts and what still has
+        to be true in `micro-deploy` for the browser to reach them.
+
+        This used to add "hub-api composes no mutation at all", and that stopped being true in
+        micro-org#496: it now proxies the conversion desk's two writes, forwarding the caller's own
+        bearer. Those two are there because their refusals — a 409 out of CloudsForge's inventory,
+        a 503 for a price nobody has — are readable only if the status and the code survive the
+        journey, which is the composition being paid for. A withdrawal has no such argument and is
+        still sent straight to the service.
 
         It reads the wallet and holding lists this page has already loaded rather than fetching its
         own, for the same reason the panel above does.
@@ -261,24 +282,31 @@ export function WalletPage() {
       />
 
       {/*
-        Transfers and conversions are real operations — wallet serves `POST /v1/transfers` and
-        `POST /v1/conversions` (wallet/src/server.ts, 761), both idempotency-keyed — but
-        neither has a READ route anywhere in the estate: hub-api composes neither and wallet lists
-        neither, so a form for them could submit but the result would vanish from the screen the
-        moment it was made. A money-moving control whose outcome the user cannot then see is worse
-        than no control, so the hole is named instead. `POST /v1/transfers` also takes a
-        `toUserId` — an internal identifier this app has no way to look up, and no route resolves a
-        handle to one.
+        ── 5. TRANSFERS, WHICH USED TO BE A PARAGRAPH SAYING THEY COULD NOT BE SHOWN ────────────
+
+        What stood here is worth recording, because deleting it is the reason micro-org#496 exists:
+
+            "Transfers and conversions are real operations — wallet serves POST /v1/transfers and
+             POST /v1/conversions, both idempotency-keyed — but neither has a READ route anywhere
+             in the estate… so a form for them could submit but the result would vanish from the
+             screen the moment it was made."
+
+        Every word of that was true when it was written and none of it is true now: micro-org#495
+        gave `micro-wallet` `GET /v1/conversions` and `GET /v1/transfers`, and hub-api composes
+        both. The hole outlived itself by long enough to become a paragraph telling readers that a
+        shipped capability was missing — the second time this estate has done that, after hub-api's
+        `notifications` tile (micro-org#415). `components/tile.tsx` now carries the rule.
+
+        The other half of the paragraph is still true and is NOT deleted, only narrowed: `POST
+        /v1/transfers` takes a `toUserId`, an internal identifier, and no route in the estate
+        resolves a handle or an email address to one. So this list can be read and cannot be added
+        to from here, and the note below says exactly that rather than the old sweeping claim.
+
+        Conversions moved out entirely: they are their own screen at `/convert`, because a control
+        that sells the reader coin out of CloudsForge's own inventory is a different operation from
+        the Send form above it and deserves more than a seventh panel on this page.
       */}
-      <NotComposed title="Transfers and conversions">
-        <p>
-          Shifting value between your own accounts, and swapping one asset for another, both work
-          at the service level. Neither has anywhere that lists what you did afterwards, and a
-          transfer has to name its recipient by an internal identifier that nothing here can look
-          up. Rather than give you a control whose result then vanishes off the screen, we have
-          left it out and said so.
-        </p>
-      </NotComposed>
+      <TransfersPanel />
 
       {/*
         05 journey 6. The flow is: `POST /v1/wallets` with `origin: external` issues a challenge
@@ -383,6 +411,116 @@ const countSightings = (answer: { sightings: readonly TokenSighting[] }) => answ
  * publishes `wallet_deposit_token_sightings` as a gauge, so nobody is relying on this component to
  * know the number is non-zero.
  */
+const countTransfers = (page: { transfers: readonly TransferRecord[] }) => page.transfers.length
+
+/**
+ * Transfers between CloudsForge accounts — the list that could not be drawn until micro-org#495.
+ *
+ * ── WHY THERE IS NO FORM UNDER IT, AND WHY THAT IS NOT A HOLE THIS TICKET LEFT ────────────────
+ *
+ * `POST /v1/transfers` names its recipient with `toUserId`, an internal identifier. Nothing in the
+ * estate resolves an email address or a handle to one — not identity, not hub-api, not search —
+ * and the resolution of "who is savva@example.com" to "a user id I may pay" is a lookup with a
+ * privacy answer attached, not a missing line of code. Inventing one here would publish an
+ * account-existence oracle to anybody with a session, on the surface that holds the money.
+ *
+ * So the list is read-only, and the note says which half is missing rather than the sweeping claim
+ * that used to stand here. See the deleted paragraph in `WalletPage` above.
+ *
+ * ── SETTLED, SO IT IS NOT A TILE AND NOT "IN FLIGHT" ──────────────────────────────────────────
+ *
+ * `Arriving` and `Leaving` above are filtered upstream to what has not finished. A transfer has no
+ * in-flight state at all — it is one ledger entry, booked or refused — so this is a history, and
+ * it sits below them with the other things that have already happened.
+ */
+function TransfersPanel() {
+  const load = useCallback((signal: AbortSignal) => loadTransfers(signal), [])
+  const { state, data, error, reload } = useResource(
+    load,
+    countTransfers,
+    'We could not read your transfers.',
+  )
+
+  return (
+    <section className="wt-panel">
+      <header className="wt-panel__head">
+        <h2 className="wt-panel__title">Transfers</h2>
+      </header>
+
+      {data && (
+        <FeedStatus
+          page={data}
+          fallbackReason="Nothing came back from the service that keeps your transfers."
+        />
+      )}
+
+      {state === 'loading' && <Loading label="Reading your transfers" />}
+      {state === 'forbidden' && <Forbidden notice={error ?? undefined} />}
+      {state === 'failed' && error && <Failed notice={error} onRetry={reload} />}
+      {state === 'empty' && data?.status !== 'unavailable' && (
+        <p className="wt-note">
+          Nothing has moved between your account and another CloudsForge account. Anything sent to
+          you appears here as soon as it is booked.
+        </p>
+      )}
+      {state === 'ok' && data && (
+        <ul className="wt-rows">
+          {data.transfers.map((transfer) => (
+            <TransferRow key={transfer.id} transfer={transfer} />
+          ))}
+        </ul>
+      )}
+
+      <p className="wt-note">
+        You cannot start a transfer from this page. Sending one means naming the recipient by the
+        internal identifier their account carries, and there is nothing here or anywhere else in
+        CloudsForge that turns an email address into one — so the list is what we can honestly
+        offer. To turn what you hold into EMBER instead, use{' '}
+        <Link className="wt-link" to="/convert">
+          Convert
+        </Link>
+        .
+      </p>
+    </section>
+  )
+}
+
+/**
+ * One transfer.
+ *
+ * The DIRECTION is the row, not a detail of it: `out` and `in` are otherwise the same amount and
+ * the same asset, and a list that renders them identically is a list of unsigned figures. The sign
+ * is drawn as a word as well as a mark, because a `−` is the one character that survives neither a
+ * screen reader nor a narrow column.
+ *
+ * `counterpartyUserId` is printed when wallet sends one and nothing is invented when it does not.
+ * It is an internal identifier and there is no route that turns it into a name — see the panel
+ * above — so it is shown shortened and labelled as the reference it is, which is what support will
+ * ask for.
+ */
+function TransferRow({ transfer }: { transfer: TransferRecord }) {
+  const incoming = transfer.direction === 'in'
+  return (
+    <li className="wt-row">
+      <span className={`wt-dot wt-dot--${incoming ? 'active' : 'pending'}`} aria-hidden="true" />
+      <span className="wt-row__main">
+        <span className="wt-row__title cf-num">
+          {incoming ? 'Received' : 'Sent'} {transfer.amountFormatted ?? transfer.amount}{' '}
+          {transfer.assetCode}
+        </span>
+        {transfer.counterpartyUserId !== null && (
+          <span className="wt-row__sub cf-num">
+            {incoming ? 'from' : 'to'} account {shortHash(transfer.counterpartyUserId)}
+          </span>
+        )}
+      </span>
+      <span className="wt-row__meta">
+        <span className="wt-row__time cf-num">{utcDateTime(transfer.occurredAt)}</span>
+      </span>
+    </li>
+  )
+}
+
 function TokenSightingsPanel() {
   const load = useCallback((signal: AbortSignal) => loadTokenSightings(signal), [])
   const { state, data } = useResource(

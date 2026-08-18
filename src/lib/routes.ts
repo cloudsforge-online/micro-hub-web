@@ -142,6 +142,13 @@ export const ROUTES: readonly HubRoute[] = [
   // Wildcard: hub-api's deposit and withdrawal cards deep-link to `/wallet/deposits/<id>` and
   // `/wallet/withdrawals/<id>` (hub-api/src/nextactions.ts, 180).
   { path: 'wallet', label: 'Wallet', wildcard: true, indexable: false },
+  // The conversion desk (micro-org#496). It sits next to Wallet because it is the same money and
+  // the same custody, and NOT inside it: `/wallet` is already six panels deep, and a screen that
+  // sells the reader coin out of CloudsForge's own inventory is a different operation from sending
+  // their own coin to an address they typed. Both need to be findable, and one of them being a
+  // seventh panel under the other is how a capability nobody can find becomes a capability nobody
+  // has — the argument `mine` below is on the list for.
+  { path: 'convert', label: 'Convert', wildcard: false, indexable: false },
   { path: 'activity', label: 'Activity', wildcard: false, indexable: false },
   { path: 'security', label: 'Security', wildcard: false, indexable: false },
   { path: 'entitlements', label: 'Access', wildcard: false, indexable: false },
