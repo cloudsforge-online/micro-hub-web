@@ -39,6 +39,7 @@ import { describe, it } from 'node:test'
 import { createElement as h, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 
+import { SURFACES } from '@cloudsforge/ui/surfaces'
 import { withScreen, type MountOptions, type Routes, type Screen, type Wire } from './dom.ts'
 import * as fx from './fixtures.ts'
 import { __resetAuth } from '../src/lib/api.ts'
@@ -47,6 +48,33 @@ import type { Holding } from '../src/lib/hub.ts'
 
 const MAINNET = 'https://hub.cloudsforge.online'
 const TESTNET = 'https://hub-testnet.cloudsforge.online'
+
+/**
+ * Where the REGISTRY puts Forge Exchange, composed the way the shipped bundle composes it.
+ *
+ * ── THIS USED TO BE A TYPED HOSTNAME, UNDER A COMMENT SAYING "COMPOSED, NEVER TYPED" ────────────
+ *
+ * The two assertions below read `'https://exchange.cloudsforge.online'` as a literal while the
+ * comment above them explained that the address comes from the registry row. Both statements
+ * could not survive the row changing, and on 2026-08-19 it did: the apex consolidation made
+ * `exchange` a PATH — `subdomain: ''`, `basePath: '/exchange'` — so the link correctly became
+ * `https://cloudsforge.online/exchange` and these tests failed on hub-web's `main` without hub-web
+ * changing at all.
+ *
+ * That is the right failure and the wrong assertion. What this test is FOR is that the link is
+ * composed rather than guessed, and that it follows the viewed network — neither of which needs a
+ * hostname written down here. So it is derived, from the same two fields `cloudsforgeHosts()`
+ * reads, and the next surface to move will not touch this file.
+ *
+ * The apex is spelled out because that is the one thing the registry does not hold: `subdomain: ''`
+ * means "the apex", and which apex is a fact about the estate the page is served from.
+ */
+function exchangeUrl(apex: string): string {
+  const row = SURFACES.find((s) => s.key === 'exchange')
+  if (!row) throw new Error('the registry has no `exchange` surface; this seam has no destination')
+  const host = row.subdomain === '' ? apex : `${row.subdomain}.${apex}`
+  return `https://${host}${row.basePath ?? ''}`
+}
 const SIGNED_IN = { 'cf.accessToken': 'held-access-token', 'cf.refreshToken': 'held-refresh-token' }
 const fresh = (): void => __resetAuth()
 
@@ -686,10 +714,14 @@ describe('the seam to Forge Exchange', () => {
     const { element, options } = convertPage([btc()])
     await withScreen(element, options, async (s) => {
       const link = s.byRole('link', /Open Forge Exchange/)
-      // The hostname comes from the registry row's `subdomain: 'exchange'` and the reader's viewed
-      // network. Composed, never typed — and with NO path appended, because which address inside
-      // that surface is its front door is that repository's decision and not this bundle's guess.
-      assert.equal(link.getAttribute('href'), 'https://exchange.cloudsforge.online')
+      // The address comes from the registry row and the reader's viewed network. Composed, never
+      // typed — including HERE, which is what `exchangeUrl` is for; see its comment for the day
+      // that stopped being true of this assertion.
+      //
+      // NO path is appended BY THIS BUNDLE beyond what the registry itself carries: which address
+      // inside that surface is its front door is that repository's decision, and `basePath` is the
+      // registry stating where the surface begins rather than hub-web guessing where to enter it.
+      assert.equal(link.getAttribute('href'), exchangeUrl('cloudsforge.online'))
 
       const body = s.text()
       // The distinction, in both directions. A reader who conflates the two has been misled about
@@ -709,7 +741,7 @@ describe('the seam to Forge Exchange', () => {
     await withScreen(element, options, async (s) => {
       assert.equal(
         s.byRole('link', /Open Forge Exchange/).getAttribute('href'),
-        'https://exchange-testnet.cloudsforge.online',
+        exchangeUrl('testnet.cloudsforge.online'),
       )
       // And the page says which estate every figure on it belongs to, in the head.
       assert.match(s.text(), /Everything below is testnet/i)
