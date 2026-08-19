@@ -15,15 +15,25 @@ describe('hosts()', () => {
   it('resolves to the local dev ports when served from localhost', () => {
     installWindow('http://localhost:5180/')
     const resolved = hosts()
-    assert.equal(resolved.trade, 'http://localhost:4006')
+    // `status`, not `trade`: this asserts that a dev PORT is carried through, so it needs a
+    // surface that is still a hostname of its own. `trade` became `<apex>/trade`, and the
+    // assertion would then have been about a mount — which is the next line's job, deliberately
+    // kept alongside rather than replacing it, because the mounted spelling has to be resolved
+    // correctly too and nothing here covered it before.
+    assert.equal(resolved.status, 'http://localhost:3013')
+    assert.equal(resolved.trade, 'http://localhost:4006/trade')
     assert.equal(resolved.nimbus, 'http://localhost:4001')
     assert.equal(resolved.lantern, 'http://localhost:4010')
   })
 
   it('derives the apex from a product subdomain', () => {
-    installWindow('https://trade.cloudsforge.online/settings')
+    // Same substitution, and here it is not a preference: `trade.cloudsforge.online` is a host
+    // nothing serves any more. Installing it would have asserted that a dead hostname still
+    // strips correctly, which is true and worthless.
+    installWindow('https://status.cloudsforge.online/settings')
     const resolved = hosts()
-    assert.equal(resolved.trade, 'https://trade.cloudsforge.online')
+    assert.equal(resolved.status, 'https://status.cloudsforge.online')
+    assert.equal(resolved.trade, 'https://cloudsforge.online/trade')
     assert.equal(resolved.nimbus, 'https://nimbus.cloudsforge.online')
     assert.equal(resolved.account, 'https://account.cloudsforge.online')
     // The marketing site is the apex itself, with no subdomain.
