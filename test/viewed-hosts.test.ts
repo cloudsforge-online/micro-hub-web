@@ -122,7 +122,7 @@ describe('viewing testnet from the merged frontend', () => {
     // in the other direction now: a ticket minted by one pool is worthless on the other's socket.
     serving({ chain: 'ember', stratum: {} })
     await loadPool()
-    assert.equal(askedOnce(), 'https://pool-testnet.cloudsforge.online/v1/pool')
+    assert.equal(askedOnce(), 'https://testnet.cloudsforge.online/pool/v1/pool')
   })
 
   it('sweeps mined EMBER through the testnet node', async () => {
@@ -141,11 +141,20 @@ describe('viewing testnet from the merged frontend', () => {
     // `hub.testnet.<apex>` is not a style question. Cloudflare's Universal SSL is
     // `*.cloudsforge.online`, a wildcard matches ONE label, and the nested form therefore fails
     // the TLS handshake at the edge before a request is made. It has been in a config once.
-    for (const key of ['pay', 'keyvault', 'pool', 'rpc'] as const) {
+    // `pool` LEFT THIS LIST IN WAVE 3d, and it is the one whose absence is worth a sentence: it
+    // has no subdomain any more, so there is no first label for a hyphen to join and the testnet
+    // console is `testnet.<apex>/pool`. Asserting `-testnet.` on it would be demanding a hostname
+    // shape from a surface that no longer has a hostname — and the nested-form check below covers
+    // it either way, which is the half of this test that is about the TLS wildcard.
+    for (const key of ['pay', 'keyvault', 'rpc'] as const) {
       const url = viewedSurfaceUrl(key)
       assert.ok(!url.includes('.testnet.'), `${key} composed the nested form: ${url}`)
       assert.ok(url.includes('-testnet.cloudsforge.online'), `${key} did not reach testnet: ${url}`)
     }
+    // And the consolidated form, asserted rather than skipped: same estate, reached as a path.
+    const pool = viewedSurfaceUrl('pool')
+    assert.ok(!pool.includes('.testnet.'), `pool composed the nested form: ${pool}`)
+    assert.equal(pool, 'https://testnet.cloudsforge.online/pool')
   })
 
   it('keeps the money services on ONE network, which is what makes a withdrawal a transaction', () => {
@@ -209,7 +218,7 @@ describe('the network the hostname already names', () => {
     installWindow(TESTNET_PAGE)
     setViewedNetwork('mainnet')
     assert.equal(viewedSurfaceUrl('pay'), 'https://pay.cloudsforge.online')
-    assert.equal(viewedSurfaceUrl('pool'), 'https://pool.cloudsforge.online')
+    assert.equal(viewedSurfaceUrl('pool'), 'https://cloudsforge.online/pool')
   })
 
   it('does not switch on localhost, where there is no second estate to switch to', () => {

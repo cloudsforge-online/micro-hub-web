@@ -66,6 +66,7 @@
 import assert from 'node:assert/strict'
 import { Window } from 'happy-dom'
 import { StrictMode, createElement, type ReactElement } from 'react'
+import { SURFACES } from '@cloudsforge/ui/surfaces'
 
 /* ── the globals a React tree touches ───────────────────────────────────────────────────────── */
 
@@ -179,11 +180,43 @@ export const MINING_CAPABLE: Record<string, unknown> = {
 
 /* ── what went over the wire ────────────────────────────────────────────────────────────────── */
 
+/**
+ * Any consolidated surface's mount, taken off a path so a route key can be about the endpoint.
+ *
+ * Derived from `SURFACES` rather than listing `/pool`, because hub reads several surfaces' APIs
+ * and eight more are due to move. Longest first, so a future `/x` cannot shadow an `/xy`, and
+ * exact-prefix only — `/poolish` is not under `/pool`.
+ */
+const SURFACE_MOUNTS: readonly string[] = SURFACES.map((s) => s.basePath ?? '')
+  .filter((b): b is string => b !== '')
+  .sort((a, b) => b.length - a.length)
+
+function stripSurfaceMount(pathname: string): string {
+  for (const mount of SURFACE_MOUNTS) {
+    if (pathname === mount) return '/'
+    if (pathname.startsWith(`${mount}/`)) return pathname.slice(mount.length)
+  }
+  return pathname
+}
+
 export interface Wire {
   readonly method: string
   readonly url: string
   /** Path and query only, so an assertion does not have to know which origin the page was on. */
+  /**
+   * Path and query only, WITH ANY SURFACE MOUNT STRIPPED.
+   *
+   * Wave 3d of the apex consolidation put the mining pool at `<apex>/pool`, so this bundle asks
+   * for `/pool/v1/pool` where it used to ask `pool.<apex>` for `/v1/pool`. That is a fact about
+   * where the pool's CONSOLE lives, not about which endpoint hub asked for — micro-pool still
+   * serves `/v1/pool`, and the gateway strips the prefix before it sees the request.
+   *
+   * Every route key and `matching()` call in this repository names the ENDPOINT, so this stays the
+   * endpoint. {@link mountedPath} carries what actually went out.
+   */
   readonly path: string
+  /** The path exactly as the request was made, mount included. */
+  readonly mountedPath: string
   /** Scheme and host, for the scenarios about which SERVICE a request went to. */
   readonly origin: string
   readonly headers: Readonly<Record<string, string>>
@@ -634,7 +667,8 @@ export async function mount(element: ReactElement, options: MountOptions = {}): 
     const call: Wire = {
       method,
       url: raw,
-      path: `${parsed.pathname}${parsed.search}`,
+      path: `${stripSurfaceMount(parsed.pathname)}${parsed.search}`,
+      mountedPath: `${parsed.pathname}${parsed.search}`,
       origin: parsed.origin,
       headers,
       body,
