@@ -3,7 +3,7 @@
  * THE NETWORK THAT HAS NO MINING POOL — micro-org#406.
  *
  * MEASURED, 2026-08-11. `https://hub-testnet.cloudsforge.online/mine` could not load pool status:
- * `GET https://pool-testnet.cloudsforge.online/v1/pool` answers **502** and always will, because
+ * `GET https://testnet.cloudsforge.online/pool/v1/pool` answers **502** and always will, because
  * this estate runs no pool container at all — micro-pool is behind `profiles: ["pool"]` in
  * `deploy/compose/docker-compose.estate.yml` and `compose/testnet.env` does not name that profile.
  * Deliberate and permanent: micro-pool validates `POOL_NETWORK` against what its node reports and
@@ -349,11 +349,11 @@ describe('the container serves the document from its environment', () => {
     // estate is an image that works on one estate. The apex comes off the address of the page.
     assert.equal(
       unlabelledSurfaceUrl('hub-testnet.cloudsforge.online', 'pool'),
-      'https://pool.cloudsforge.online',
+      'https://cloudsforge.online/pool',
     )
     assert.equal(
       unlabelledSurfaceUrl('hub-staging.example.test', 'pool'),
-      'https://pool.example.test',
+      'https://example.test/pool',
     )
     // Null everywhere a composed address would resolve to nothing, or to this same estate.
     assert.equal(unlabelledSurfaceUrl('hub.cloudsforge.online', 'pool'), null)
@@ -469,7 +469,7 @@ describe('/mine on a network with no pool', () => {
           .map((el) => el.getAttribute('href'))
           .filter((href): href is string => href !== null)
         assert.ok(
-          onward.includes('https://pool.cloudsforge.online'),
+          onward.includes('https://cloudsforge.online/pool'),
           `no link to the network that does run a pool; found ${JSON.stringify(onward)}`,
         )
         s.clean('the no-pool explanation')
