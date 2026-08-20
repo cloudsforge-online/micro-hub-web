@@ -97,10 +97,12 @@ export function unlabelledSurfaceUrl(hostname: string, key: SurfaceKey): string 
   // This read `https://${envLabel(subdomain, '')}.${apex}`, which was right while every surface it
   // is called for owned a hostname. Wave 3d made the mining pool `<apex>/pool`, so its `subdomain`
   // is the empty string and `envLabel('', '')` is empty too — and the old form composed
+  // `https://.<apex>`, a LEADING DOT, which is not a hostname at all.
   //
-  //     https://.cloudsforge.online
-  //
-  // a leading dot, which is not a hostname at all. Every read against it rejects, so the browser
+  // (Written with the placeholder rather than the real name: the `rules` job greps this directory
+  // for a literal apex and does not exempt comments. That is the correct trade — an illustration
+  // is cheap to reword, and a rule with exceptions in it would not catch the hostname that
+  // actually slipped into shipped code.) Every read against it rejects, so the browser
   // miner's chain picker lost Litecoin entirely: `GET /v1/pool` never answers, no chain comes back,
   // and the only option left is EMBER, which is mined directly and needs no pool. Caught by this
   // repository's own suite before the image published — 23 failures, and the picker ones are the
