@@ -147,13 +147,46 @@ export function utcTime(iso: string | null | undefined): string | null {
   })
 }
 
-/** `14 Mar 14:22` UTC, for a feed where the day matters. */
+/**
+ * The three-letter month names, written out rather than asked of the runtime.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * **`month: 'short'` IS NOT THREE LETTERS IN en-GB, AND THE MONTH IT IS NOT IS SEPTEMBER.**
+ *
+ * `new Date('2026-09-01').toLocaleDateString('en-GB', { month: 'short' })` is `Sept`. Every other
+ * month is three characters; September is four. That is CLDR's en-GB data, not a bug in Node, and
+ * it means this format silently changed width on 1 September and changed back on 1 October — in a
+ * column of timestamps that is otherwise fixed-width, beside `cf-num` figures that are aligned on
+ * the assumption it is not.
+ *
+ * It shipped because it cannot be found by reading: eleven months out of twelve agree with the
+ * intent, and the suite that would have caught it builds its own expectation from a date THIRTY
+ * DAYS OUT — so it passed every day of the year except the thirty-one days when that date lands in
+ * September. CI went red on 2026-08-31 for the first time, having been green the day before.
+ *
+ * The fix is not a different locale. `en-US` happens to give `Sep` today, which makes the format
+ * depend on which CLDR revision the runtime was built with and on whether it is a full-icu build
+ * at all — a small-icu Node falls back to `en-US` regardless of what is asked for, so the same
+ * bundle would render two different strings on two hosts. A literal table is the same twelve
+ * answers everywhere, for ever, and it is what the test's independent transcription already
+ * assumes.
+ *
+ * `utcDayLabel` below keeps `month: 'long'`, deliberately: it is prose in a heading rather than a
+ * column, `September` is what a reader expects there, and no width depends on it.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const SHORT_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+] as const
+
+/** `14 Mar 14:22` UTC, for a feed where the day matters. Fixed width in every month. */
 export function utcDateTime(iso: string | null | undefined): string | null {
   if (!iso) return null
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null
-  const date = at.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short' })
-  return `${date} ${utcTime(iso)}`
+  const day = at.getUTCDate().toString().padStart(2, '0')
+  return `${day} ${SHORT_MONTHS[at.getUTCMonth()]} ${utcTime(iso)}`
 }
 
 /**
